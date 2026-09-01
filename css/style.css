@@ -1,3 +1,4 @@
+
 /* 1. Глобальный запрет горизонтального скролла */
 html, body {
   max-width: 100%;
@@ -504,18 +505,34 @@ section {
 }
 
 .btn-loyalty {
-  background: #2563eb;
-  color: #fff;
+  /* Сбрасываем дефолтную рамку и обводку браузера */
+  border: none;
+  outline: none;
+  
+  /* Чистый цвет фона (без встроенных браузерных градиентов) */
+  background-color: #2563eb; /* или твой фирменный голубой #00d2ff / #0284c7 */
+  color: #ffffff;
+  
+  /* Размеры и скругление */
   padding: 10px 20px;
-  border-radius: 8px;
-  text-decoration: none;
+  border-radius: 8px; /* или другое скругление под стиль сайта */
   font-size: 14px;
   font-weight: 600;
-  transition: 0.2s;
+  cursor: pointer;
+  
+  /* Плавность при наведении */
+  transition: background-color 0.2s ease, transform 0.1s ease;
 }
 
+/* Эффект при наведении */
 .btn-loyalty:hover {
-  background: #1d4ed8;
+  background-color: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+/* Эффект при клике */
+.btn-loyalty:active {
+  transform: translateY(0);
 }
 
 /* ========== B2B ========== */
@@ -978,11 +995,20 @@ footer {
   }
 
   /* На мобилах кнопки чуть уменьшаем */
-  .btn-whatsapp,
-  .btn-instagram {
-    padding: 8px 12px;
-    font-size: 13px;
+  .btn-whatsapp, .btn-instagram {
+  white-space: nowrap; /* Запрещает разрыв слова */
+  flex-shrink: 0;      /* Не дает кнопке сжиматься */
+}
+
+/* Фикс для узких экранов мобильных устройств */
+@media (max-width: 480px) {
+  .btn-whatsapp span, .btn-instagram span {
+    font-size: 13px; /* Слегка уменьшаем текст на смартфонах */
   }
+  .header-actions {
+    gap: 6px; /* Уменьшаем зазор между элементами в шапке */
+  }
+}
 }
 
 /* ========== МОБИЛЬНАЯ АДАПТАЦИЯ (CSS) ========== */
@@ -1208,5 +1234,199 @@ section {
   
   .legal-links span {
     display: none;
+  }
+}
+
+/* ==========================================
+   ФИКС ШАПКИ НА ВСЕХ МОБИЛЬНЫХ (Включая Android/узкие экраны)
+   ========================================== */
+.header-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 12px;
+}
+
+/* На узких смартфонах делаем кнопки шапки компактнее, чтобы бургер не улетал */
+@media (max-width: 480px) {
+  .logo {
+    font-size: 18px;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .btn-instagram, .btn-whatsapp {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  /* Если на совсем маленьком экране не влезает текст — оставляем иконку/компактный вид */
+  .btn-instagram span, .btn-whatsapp span {
+    font-size: 11px;
+  }
+
+  .burger {
+    flex-shrink: 0; /* Бургер никогда не сжимается и не уходит за экран */
+    margin-left: 4px;
+  }
+}
+
+/* ==========================================
+   АДАПТИВНЫЙ ФУТЕР (ПК — В колонке, Мобилка — Внизу)
+   ========================================== */
+.brand-col .legal-links {
+  margin-top: 15px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.brand-col .legal-links a {
+  color: #94a3b8;
+  font-size: 13px;
+  text-decoration: underline;
+}
+
+.brand-col .brand-ecosystem {
+  margin-top: 15px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+/* Адаптив для мобильных устройств */
+@media (max-width: 768px) {
+  .footer-grid {
+    display: flex;
+    flex-direction: column;
+    text-align: center;
+    align-items: center;
+    gap: 30px;
+  }
+
+  .footer-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  /* Переносим юр-блок на мобилках в самом низу колонки */
+  .brand-col {
+    order: 10; /* Смещает блок бренда и документов в самый конец на мобилке */
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 20px;
+    width: 100%;
+  }
+
+  .brand-col .legal-links {
+    justify-content: center;
+  }
+}
+
+/* Базовое выравнивание шапки */
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Кнопки Instagram и WhatsApp */
+.btn-instagram, .btn-whatsapp {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.btn-instagram {
+  background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
+}
+
+.btn-whatsapp {
+  background-color: #25d366;
+}
+
+/* Кнопка бургера / шестерёнки */
+.burger {
+  display: none; /* На ПК скрыть */
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  color: #fff;
+  cursor: pointer;
+  flex-shrink: 0; /* Гарантирует, что кнопка не сжимается */
+}
+
+/* ==========================================
+   АДАПТИВ ПОД МОБИЛЬНЫЕ (до 768px и 320px)
+   ========================================== */
+@media (max-width: 992px) {
+  /* Скрываем горизонтальную навигацию на планшетах и смартфонах */
+  .nav {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    width: 100%;
+    background: #0f172a;
+    flex-direction: column;
+    padding: 20px;
+    gap: 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  /* Показываем выпадающее меню при клике (класс active задается через JS) */
+  .nav.active {
+    display: flex;
+  }
+
+  /* Показываем бургер-шестерёнку */
+  .burger {
+    display: flex;
+  }
+}
+
+@media (max-width: 480px) {
+  .header-content {
+    padding: 8px 10px;
+  }
+
+  /* Скрываем текст "Instagram" и "WhatsApp", оставляя только иконки */
+  .btn-instagram .btn-text,
+  .btn-whatsapp .btn-text {
+    display: none;
+  }
+
+  .btn-instagram, .btn-whatsapp {
+    padding: 8px;
+  }
+
+  .burger {
+    width: 36px;
+    height: 36px;
   }
 }
