@@ -138,6 +138,13 @@
         <button class="filter-btn" data-filter="sale">Продажа и Предзаказ</button>
       </div>
 
+      <div class="filters filters-secondary" aria-label="Подбор по назначению">
+        <span class="filters-label">Подобрать для:</span>
+        <button class="filter-btn use-filter-btn active" data-use="all">Любой задачи</button>
+        <button class="filter-btn use-filter-btn" data-use="work">Работы и учёбы</button>
+        <button class="filter-btn use-filter-btn" data-use="gaming">Игр и графики</button>
+      </div>
+
       <div id="catalog-grid" class="cards-grid">
         <!-- Скелетоны загрузки -->
         <div class="card skeleton">
@@ -188,7 +195,7 @@
           <div class="tariff-days">4–14 дней</div>
           <div class="tariff-desc">Для проектной работы, учёбы и командировок.</div>
           <ul class="tariff-features">
-            <li>Скидка до 20% на каждый день</li>
+            <li>Скидка 15% на каждый день</li>
             <li>Бесплатная замена при форс-мажоре</li>
             <li>Доставка по городу</li>
           </ul>
@@ -198,7 +205,7 @@
           <div class="tariff-days">15+ дней</div>
           <div class="tariff-desc">Максимальная выгода для длительного пользования.</div>
           <ul class="tariff-features">
-            <li>Скидка до 35%</li>
+            <li>Скидка 30%</li>
             <li>Персональное обслуживание</li>
             <li>Гибкий залог</li>
           </ul>
@@ -488,7 +495,7 @@
 </div>
 
 <!-- Модальное окно: Публичная оферта -->
-<div id="modal-offer" class="modal-legal-overlay" style="display: none;">
+<div id="modal-offer-duplicate" class="modal-legal-overlay" style="display: none;" hidden aria-hidden="true">
   <div class="modal-legal-card">
     <button class="modal-legal-close close-legal">&times;</button>
     <h3 style="font-size: 18px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">
@@ -570,7 +577,7 @@
 </div>
 
 <!-- Модальное окно: Политика конфиденциальности -->
-<div id="modal-privacy" class="modal-legal-overlay" style="display: none;">
+<div id="modal-privacy-duplicate" class="modal-legal-overlay" style="display: none;" hidden aria-hidden="true">
   <div class="modal-legal-card">
     <button class="modal-legal-close close-legal">&times;</button>
     <h3>Политика конфиденциальности</h3>
@@ -685,6 +692,7 @@
           <span class="calc-total-text">Итого:</span>
           <span class="calc-total-price"><span id="total-price">0</span> сом</span>
         </div>
+        <p class="calc-discount" id="calc-discount">Без скидки</p>
       </div>
 
       <form id="order-form">

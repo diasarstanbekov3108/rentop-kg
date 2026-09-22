@@ -4,6 +4,9 @@ import { fetchLaptops } from './supabase.js';
 let laptops = [];
 let filteredLaptops = [];
 let currentLaptop = null;
+let activeCategoryFilter = 'all';
+let activeUseFilter = 'all';
+let savedLaptopIds = new Set();
 
 // Настройки пагинации
 const ITEMS_PER_PAGE = 6;
@@ -11,7 +14,8 @@ let currentPage = 1;
 
 // DOM Элементы
 const catalogGrid = document.getElementById('catalog-grid');
-const filterButtons = document.querySelectorAll('.filter-btn');
+const categoryFilterButtons = document.querySelectorAll('.filter-btn[data-filter]');
+const useFilterButtons = document.querySelectorAll('.use-filter-btn');
 const btnLoadMore = document.getElementById('btn-load-more');
 
 const modal = document.getElementById('order-modal');
@@ -22,6 +26,7 @@ const calcBox = document.getElementById('calc-box');
 const daysSlider = document.getElementById('days-slider');
 const daysCount = document.getElementById('days-count');
 const totalPriceEl = document.getElementById('total-price');
+const calcDiscountEl = document.getElementById('calc-discount');
 
 // Burger
 const burger = document.getElementById('burger');
@@ -44,6 +49,30 @@ const modalReady = document.getElementById('modal-ready');
 const modalDelivery = document.getElementById('modal-delivery');
 const modalLoyalty = document.getElementById('modal-loyalty');
 
+function getLaptopUse(laptop) {
+  if (laptop.use_case === 'gaming' || laptop.use_case === 'work') return laptop.use_case;
+
+  const gamingKeywords = /rog|razer|legion|tuf|gaming|игр|cyberpunk|gta|blender|3d|vfx|katana|gf\d|g15/i;
+  return gamingKeywords.test(`${laptop.title || ''} ${laptop.badge || ''}`) ? 'gaming' : 'work';
+}
+
+function getAvailability(laptop) {
+  return laptop.availability === 'busy' || laptop.status === 'busy' ? 'busy' : 'available';
+}
+
+function loadSavedLaptops() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('rentop-saved-laptops') || '[]');
+    savedLaptopIds = new Set(saved.map(String));
+  } catch {
+    savedLaptopIds = new Set();
+  }
+}
+
+function saveSavedLaptops() {
+  localStorage.setItem('rentop-saved-laptops', JSON.stringify([...savedLaptopIds]));
+}
+
 // ========== RENDER CATALOG ==========
 function renderLaptops(items, append = false) {
   if (!catalogGrid) return;
@@ -64,10 +93,20 @@ function renderLaptops(items, append = false) {
   items.forEach(laptop => {
     const isRent = laptop.category === 'rent';
     const badge = laptop.badge || (isRent ? 'Аренда' : 'Продажа');
+    const availability = getAvailability(laptop);
+    const isSaved = savedLaptopIds.has(String(laptop.id));
 
     const card = document.createElement('div');
     card.className = 'card';
     card.innerHTML = `
+      <div class="card-topline">
+        <span class="availability-status ${availability === 'busy' ? 'is-busy' : ''}">
+          ${availability === 'busy' ? 'Занят сейчас' : 'Доступен сейчас'}
+        </span>
+        <button class="save-laptop ${isSaved ? 'is-saved' : ''}" data-id="${laptop.id}" type="button" aria-label="${isSaved ? 'Убрать из избранного' : 'Сохранить ноутбук'}" aria-pressed="${isSaved}">
+          ${isSaved ? '♥' : '♡'}
+        </button>
+      </div>
       <img 
         src="${laptop.image}" 
         alt="${laptop.title}" 
@@ -103,6 +142,19 @@ function renderLaptops(items, append = false) {
     btn.onclick = (e) => {
       const id = Number(e.currentTarget.dataset.id);
       openOrderModal(id);
+    };
+  });
+
+  document.querySelectorAll('.save-laptop').forEach(btn => {
+    btn.onclick = (e) => {
+      const id = String(e.currentTarget.dataset.id);
+      if (savedLaptopIds.has(id)) {
+        savedLaptopIds.delete(id);
+      } else {
+        savedLaptopIds.add(id);
+      }
+      saveSavedLaptops();
+      updateCatalogView(false);
     };
   });
 
@@ -153,11 +205,10 @@ function loadMoreLaptops() {
 
 // ========== FILTER ==========
 function filterAndSearch() {
-  const activeBtn = document.querySelector('.filter-btn.active');
-  const activeFilter = activeBtn ? activeBtn.dataset.filter : 'all';
-
   filteredLaptops = laptops.filter(laptop => {
-    return activeFilter === 'all' || laptop.category === activeFilter;
+    const categoryMatches = activeCategoryFilter === 'all' || laptop.category === activeCategoryFilter;
+    const useMatches = activeUseFilter === 'all' || getLaptopUse(laptop) === activeUseFilter;
+    return categoryMatches && useMatches;
   });
 
   updateCatalogView(true);
@@ -194,6 +245,9 @@ function updateCalculator() {
 
   const total = Math.round(days * (currentLaptop.dailyRate || 0) * discount);
   totalPriceEl.textContent = total.toLocaleString('ru-RU');
+  if (calcDiscountEl) {
+    calcDiscountEl.textContent = discount === 0.85 ? 'Ваша скидка: 15%' : discount === 0.70 ? 'Ваша скидка: 30%' : 'Без скидки';
+  }
 }
 
 // Управление информационными модальными окнами
@@ -213,6 +267,7 @@ function closeInfoModal(m) {
 
 // ========== INIT ==========
 document.addEventListener('DOMContentLoaded', async () => {
+  loadSavedLaptops();
   // Загрузка ноутбуков из Supabase
   laptops = await fetchLaptops();
   filteredLaptops = [...laptops];
@@ -222,10 +277,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnLoadMore?.addEventListener('click', loadMoreLaptops);
 
   // Фильтры
-  filterButtons.forEach(btn => {
+  categoryFilterButtons.forEach(btn => {
     btn.addEventListener('click', () => {
-      filterButtons.forEach(b => b.classList.remove('active'));
+      categoryFilterButtons.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
+      activeCategoryFilter = btn.dataset.filter || 'all';
+      filterAndSearch();
+    });
+  });
+
+  useFilterButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      useFilterButtons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeUseFilter = btn.dataset.use || 'all';
       filterAndSearch();
     });
   });

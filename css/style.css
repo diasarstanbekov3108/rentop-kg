@@ -301,6 +301,25 @@ section {
   border-color: var(--accent);
 }
 
+.filters-secondary {
+  margin-top: -24px;
+  margin-bottom: 32px;
+  align-items: center;
+}
+
+.filters-label {
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 600;
+  margin-right: 2px;
+}
+
+.use-filter-btn.active {
+  background: rgba(0, 212, 255, 0.12);
+  border-color: rgba(0, 212, 255, 0.5);
+  color: var(--accent);
+}
+
 .cards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -316,6 +335,58 @@ section {
   flex-direction: column;
   justify-content: space-between;
   transition: transform 0.2s, border-color 0.2s;
+}
+
+.card-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.availability-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #86efac;
+}
+
+.availability-status::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 10px currentColor;
+}
+
+.availability-status.is-busy {
+  color: #fbbf24;
+}
+
+.save-laptop {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.72);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 18px;
+  transition: 0.2s ease;
+}
+
+.save-laptop:hover,
+.save-laptop.is-saved {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .card:hover {
@@ -899,6 +970,13 @@ footer {
   color: var(--accent);
 }
 
+.calc-discount {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
 /* Forms */
 .form-group {
   margin-bottom: 16px;
@@ -1071,6 +1149,26 @@ section {
   .filter-btn {
     flex: 0 0 auto;
   }
+
+  .filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    scrollbar-width: none;
+  }
+
+  .filters::-webkit-scrollbar {
+    display: none;
+  }
+
+  .filters-secondary {
+    margin-top: -16px;
+    margin-bottom: 24px;
+  }
+
+  .filters-label {
+    flex: 0 0 auto;
+  }
 }
 
 /* ========== МОБИЛЬНАЯ КАРУСЕЛЬ И ПОДВАЛ ========== */
@@ -1170,7 +1268,7 @@ section {
   top: 0;
   left: 0;
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
   background: rgba(0, 0, 0, 0.75);
   backdrop-filter: blur(5px);
   display: flex;
@@ -1187,9 +1285,13 @@ section {
   padding: 24px;
   max-width: 550px;
   width: 100%;
+  max-height: calc(100dvh - 32px);
   position: relative;
   color: #c9d1d9;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .modal-legal-card h3 {
@@ -1219,8 +1321,39 @@ section {
   line-height: 1.6;
 }
 
+/* Длинный текст прокручивается внутри карточки, а действие всегда остаётся доступным. */
+.modal-legal-card .modal-legal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  padding-right: 8px;
+}
+
+.modal-legal-card .close-legal.btn-submit {
+  flex: 0 0 auto;
+  margin-bottom: 0;
+}
+
 /* Адаптив под смартфоны */
 @media (max-width: 768px) {
+  .modal-legal-overlay {
+    align-items: flex-end;
+    padding: 8px;
+  }
+
+  .modal-legal-card {
+    max-height: calc(100dvh - 16px);
+    padding: 20px;
+    border-radius: 18px;
+  }
+
+  .modal-legal-card h3 {
+    font-size: 16px !important;
+    padding-right: 28px;
+  }
+
   .footer-grid {
     grid-template-columns: 1fr;
     gap: 30px;
