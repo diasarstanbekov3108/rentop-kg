@@ -348,9 +348,12 @@ section {
 .availability-status {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
+  min-width: 0;
   font-size: 12px;
   font-weight: 700;
+  line-height: 1.35;
   color: #86efac;
 }
 
@@ -365,6 +368,10 @@ section {
 
 .availability-status.is-busy {
   color: #fbbf24;
+}
+
+.availability-status.is-soon {
+  color: #7dd3fc;
 }
 
 .save-laptop {
@@ -989,7 +996,8 @@ footer {
   margin-bottom: 6px;
 }
 
-.form-group input {
+.form-group input,
+.form-group select {
   width: 100%;
   background: var(--bg-dark);
   border: 1px solid var(--border);
@@ -1000,8 +1008,15 @@ footer {
   outline: none;
 }
 
-.form-group input:focus {
+.form-group input:focus,
+.form-group select:focus {
   border-color: var(--accent);
+}
+
+.form-group input[type="date"],
+.form-group select {
+  font-size: 16px;
+  color-scheme: dark;
 }
 
 .btn-submit {
@@ -1018,6 +1033,54 @@ footer {
 
 .btn-submit:hover {
   background: var(--accent-hover);
+}
+
+.btn-submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.rental-dates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.rental-dates .form-group {
+  min-width: 0;
+  margin-bottom: 12px;
+}
+
+.calc-hint,
+.availability-message {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.calc-hint {
+  margin: 0 0 12px;
+}
+
+.availability-message {
+  margin: 8px 0 12px;
+}
+
+.availability-message:empty {
+  display: none;
+}
+
+.availability-message.is-error {
+  color: #fecaca;
+}
+
+.availability-message.is-ok {
+  color: #86efac;
+}
+
+#order-modal .modal-card {
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
 }
 
 /* Lightbox Content */
@@ -1715,5 +1778,21 @@ section {
 
   .footer .brand-col .legal-links {
     justify-content: flex-start;
+  }
+}
+
+@media (max-width: 420px) {
+  .rental-dates {
+    grid-template-columns: 1fr;
+  }
+
+  #order-modal .modal-card {
+    padding: 22px 14px;
+  }
+}
+
+@media (max-width: 360px) {
+  .cards-grid {
+    grid-template-columns: 1fr;
   }
 }

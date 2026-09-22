@@ -81,3 +81,38 @@ export async function fetchLaptops() {
     return fallbackLaptops;
   }
 }
+
+export async function fetchBlockingRentals() {
+  if (!supabaseClient) return { ok: true, rows: [] };
+
+  try {
+    const { data, error } = await supabaseClient
+      .from('laptop_availability')
+      .select('laptop_id, rental_start_date, rental_end_date, status, hold_expires_at');
+
+    if (error) {
+      console.warn('Не удалось загрузить занятость ноутбуков:', error.message);
+      return { ok: false, rows: [] };
+    }
+
+    return { ok: true, rows: data || [] };
+  } catch (error) {
+    console.warn('Не удалось загрузить занятость ноутбуков:', error);
+    return { ok: false, rows: [] };
+  }
+}
+
+export async function createRentalOrder(order) {
+  if (!supabaseClient) {
+    return { order: null, error: { message: 'NO_SUPABASE' } };
+  }
+
+  const { data, error } = await supabaseClient
+    .from('rental_orders')
+    .insert(order)
+    .select('id')
+    .single();
+
+  if (error) return { order: null, error };
+  return { order: data, error: null };
+}

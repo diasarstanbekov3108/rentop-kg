@@ -692,16 +692,35 @@
       <div class="modal-subtitle" id="modal-laptop-title">Ноутбук</div>
 
       <div class="calc-box" id="calc-box">
+        <div class="rental-dates">
+          <div class="form-group">
+            <label for="rental-start-date">Дата начала аренды</label>
+            <input type="date" id="rental-start-date" name="rental-start-date">
+          </div>
+          <div class="form-group">
+            <label for="rental-end-date">Дата окончания аренды</label>
+            <input type="date" id="rental-end-date" name="rental-end-date">
+          </div>
+        </div>
+        <p class="calc-hint">День окончания — день возврата. Он не входит в оплачиваемый срок, с этой даты ноутбук снова можно забронировать.</p>
         <div class="calc-label">
           <span>Срок аренды:</span>
           <span><strong id="days-count">2</strong> дн.</span>
         </div>
-        <input type="range" id="days-slider" class="calc-range" min="2" max="30" value="2">
+        <input type="range" id="days-slider" class="calc-range" min="1" max="30" value="2" aria-label="Срок аренды в днях">
         <div class="calc-total">
           <span class="calc-total-text">Итого:</span>
           <span class="calc-total-price"><span id="total-price">0</span> сом</span>
         </div>
         <p class="calc-discount" id="calc-discount">Без скидки</p>
+        <p class="availability-message" id="rental-availability-message" role="status"></p>
+        <div class="form-group">
+          <label for="delivery-type">Способ получения</label>
+          <select id="delivery-type" name="delivery-type">
+            <option value="delivery">Доставка по Бишкеку</option>
+            <option value="pickup">Самовывоз</option>
+          </select>
+        </div>
       </div>
 
       <form id="order-form">

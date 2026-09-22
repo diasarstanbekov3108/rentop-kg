@@ -1,12 +1,26 @@
 import { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } from './config.js';
-import { fetchLaptops } from './supabase.js';
+import { fetchLaptops, fetchBlockingRentals, createRentalOrder } from './supabase.js';
+import {
+  todayIso,
+  addDays,
+  daysBetween,
+  quoteRental,
+  validateRentalPeriod,
+  hasDateConflict,
+  cardAvailability,
+  deliveryLabel,
+  rentalErrorText
+} from './availability.js';
 
 let laptops = [];
 let filteredLaptops = [];
+let blockingRentals = [];
+let availabilityLoaded = false;
 let currentLaptop = null;
 let activeCategoryFilter = 'all';
 let activeUseFilter = 'all';
 let savedLaptopIds = new Set();
+let submitInFlight = false;
 
 // Настройки пагинации
 const ITEMS_PER_PAGE = 6;
@@ -27,6 +41,11 @@ const daysSlider = document.getElementById('days-slider');
 const daysCount = document.getElementById('days-count');
 const totalPriceEl = document.getElementById('total-price');
 const calcDiscountEl = document.getElementById('calc-discount');
+const rentalStartInput = document.getElementById('rental-start-date');
+const rentalEndInput = document.getElementById('rental-end-date');
+const deliveryTypeInput = document.getElementById('delivery-type');
+const rentalAvailabilityMessage = document.getElementById('rental-availability-message');
+const submitBtn = document.getElementById('submitBtn');
 
 // Burger
 const burger = document.getElementById('burger');
@@ -54,10 +73,6 @@ function getLaptopUse(laptop) {
 
   const gamingKeywords = /rog|razer|legion|tuf|gaming|игр|cyberpunk|gta|blender|3d|vfx|katana|gf\d|g15/i;
   return gamingKeywords.test(`${laptop.title || ''} ${laptop.badge || ''}`) ? 'gaming' : 'work';
-}
-
-function getAvailability(laptop) {
-  return laptop.availability === 'busy' || laptop.status === 'busy' ? 'busy' : 'available';
 }
 
 function loadSavedLaptops() {
@@ -93,15 +108,20 @@ function renderLaptops(items, append = false) {
   items.forEach(laptop => {
     const isRent = laptop.category === 'rent';
     const badge = laptop.badge || (isRent ? 'Аренда' : 'Продажа');
-    const availability = getAvailability(laptop);
+    const availability = cardAvailability(blockingRentals, laptop.id, todayIso());
     const isSaved = savedLaptopIds.has(String(laptop.id));
+    const statusClass = availability.state === 'busy'
+      ? 'is-busy'
+      : availability.state === 'soon'
+        ? 'is-soon'
+        : '';
 
     const card = document.createElement('div');
     card.className = 'card';
     card.innerHTML = `
       <div class="card-topline">
-        <span class="availability-status ${availability === 'busy' ? 'is-busy' : ''}">
-          ${availability === 'busy' ? 'Занят сейчас' : 'Доступен сейчас'}
+        <span class="availability-status ${statusClass}">
+          ${availability.label}
         </span>
         <button class="save-laptop ${isSaved ? 'is-saved' : ''}" data-id="${laptop.id}" type="button" aria-label="${isSaved ? 'Убрать из избранного' : 'Сохранить ноутбук'}" aria-pressed="${isSaved}">
           ${isSaved ? '♥' : '♡'}
@@ -214,6 +234,68 @@ function filterAndSearch() {
   updateCatalogView(true);
 }
 
+function getDailyRate(laptop) {
+  const rate = Number(laptop?.dailyRate ?? laptop?.daily_rate ?? 0);
+  return Number.isFinite(rate) ? rate : 0;
+}
+
+function createOrderId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = char === 'x' ? random : ((random & 0x3) | 0x8);
+    return value.toString(16);
+  });
+}
+
+function resetOrderSubmit() {
+  submitInFlight = false;
+  if (!submitBtn) return;
+  submitBtn.disabled = false;
+  submitBtn.textContent = 'Отправить заявку в WhatsApp';
+}
+
+function showRentalMessage(text, tone = 'neutral') {
+  if (!rentalAvailabilityMessage) return;
+  rentalAvailabilityMessage.textContent = text || '';
+  rentalAvailabilityMessage.classList.toggle('is-error', tone === 'error');
+  rentalAvailabilityMessage.classList.toggle('is-ok', tone === 'ok');
+}
+
+function clampRentalDates() {
+  const today = todayIso();
+  if (rentalStartInput) rentalStartInput.min = today;
+  if (rentalStartInput?.value && rentalStartInput.value < today) {
+    rentalStartInput.value = today;
+  }
+
+  const earliestEnd = rentalStartInput?.value && rentalStartInput.value > today
+    ? rentalStartInput.value
+    : today;
+  if (rentalEndInput) rentalEndInput.min = earliestEnd;
+  if (rentalEndInput?.value && rentalEndInput.value < today) {
+    rentalEndInput.value = today;
+  }
+}
+
+function currentRentalDraft(today = todayIso()) {
+  const startDate = rentalStartInput?.value || '';
+  const endDate = rentalEndInput?.value || '';
+  const validationError = validateRentalPeriod(startDate, endDate, today);
+  const days = validationError ? 0 : daysBetween(startDate, endDate);
+  const quote = quoteRental(days, getDailyRate(currentLaptop));
+  let availabilityError = '';
+
+  if (!validationError && currentLaptop && availabilityLoaded) {
+    if (hasDateConflict(blockingRentals, currentLaptop.id, startDate, endDate)) {
+      availabilityError = 'Этот ноутбук уже занят на выбранные даты. Выберите другой период.';
+    }
+  }
+
+  return { startDate, endDate, today, validationError, availabilityError, quote };
+}
+
 // ========== MODAL + CALCULATOR ==========
 function openOrderModal(id) {
   currentLaptop = laptops.find(item => item.id === id);
@@ -223,31 +305,68 @@ function openOrderModal(id) {
 
   if (currentLaptop.category === 'rent') {
     calcBox.style.display = 'block';
-    daysSlider.value = 2;
+    const today = todayIso();
+    if (rentalStartInput) rentalStartInput.value = today;
+    if (rentalEndInput) rentalEndInput.value = addDays(today, 2);
+    if (daysSlider) {
+      daysSlider.min = '1';
+      daysSlider.max = '30';
+      daysSlider.value = '2';
+    }
     updateCalculator();
   } else {
     calcBox.style.display = 'none';
+    showRentalMessage('');
+    if (submitBtn && !submitInFlight) submitBtn.disabled = false;
   }
 
   modal.classList.add('active');
   document.body.style.overflow = 'hidden';
 }
 
-function updateCalculator() {
-  if (!currentLaptop || !daysSlider) return;
+function updateCalculator(forcedMessage) {
+  if (!currentLaptop || currentLaptop.category !== 'rent') return;
 
-  const days = parseInt(daysSlider.value);
-  daysCount.textContent = days;
+  clampRentalDates();
+  const draft = currentRentalDraft();
 
-  let discount = 1;
-  if (days >= 4 && days <= 14) discount = 0.85;
-  else if (days > 14) discount = 0.70;
-
-  const total = Math.round(days * (currentLaptop.dailyRate || 0) * discount);
-  totalPriceEl.textContent = total.toLocaleString('ru-RU');
-  if (calcDiscountEl) {
-    calcDiscountEl.textContent = discount === 0.85 ? 'Ваша скидка: 15%' : discount === 0.70 ? 'Ваша скидка: 30%' : 'Без скидки';
+  if (daysCount) daysCount.textContent = String(draft.quote.days);
+  if (totalPriceEl) totalPriceEl.textContent = draft.quote.total.toLocaleString('ru-RU');
+  if (daysSlider && draft.quote.days >= 1) {
+    daysSlider.max = String(Math.max(30, draft.quote.days));
+    daysSlider.value = String(draft.quote.days);
   }
+  if (calcDiscountEl) {
+    if (!draft.quote.days) calcDiscountEl.textContent = 'Укажите корректные даты';
+    else if (draft.quote.discountPercent === 15) calcDiscountEl.textContent = 'Ваша скидка: 15%';
+    else if (draft.quote.discountPercent === 30) calcDiscountEl.textContent = 'Ваша скидка: 30%';
+    else calcDiscountEl.textContent = 'Без скидки';
+  }
+
+  if (forcedMessage) {
+    showRentalMessage(forcedMessage.text, forcedMessage.isError ? 'error' : 'ok');
+  } else if (draft.validationError || draft.availabilityError) {
+    showRentalMessage(draft.validationError || draft.availabilityError, 'error');
+  } else if (availabilityLoaded) {
+    showRentalMessage('На выбранные даты ноутбук свободен.', 'ok');
+  } else {
+    showRentalMessage('Занятость подтвердится при сохранении заявки.', 'neutral');
+  }
+
+  if (submitBtn && !submitInFlight) {
+    submitBtn.disabled = Boolean(draft.validationError || draft.availabilityError);
+  }
+}
+
+function syncEndDateFromSlider() {
+  const today = todayIso();
+  const startDate = rentalStartInput?.value && rentalStartInput.value >= today
+    ? rentalStartInput.value
+    : today;
+  if (rentalStartInput) rentalStartInput.value = startDate;
+  const days = Math.max(1, parseInt(daysSlider?.value, 10) || 1);
+  if (rentalEndInput) rentalEndInput.value = addDays(startDate, days);
+  updateCalculator();
 }
 
 // Управление информационными модальными окнами
@@ -262,6 +381,7 @@ function closeInfoModal(m) {
   if (m) {
     m.classList.remove('active');
     document.body.style.overflow = '';
+    if (m.id === 'order-modal') resetOrderSubmit();
   }
 }
 
@@ -270,6 +390,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadSavedLaptops();
   // Загрузка ноутбуков из Supabase
   laptops = await fetchLaptops();
+  const availability = await fetchBlockingRentals();
+  blockingRentals = availability.rows;
+  availabilityLoaded = availability.ok;
   filteredLaptops = [...laptops];
   updateCatalogView(true);
 
@@ -295,10 +418,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Калькулятор
-  if (daysSlider) {
-    daysSlider.addEventListener('input', updateCalculator);
-  }
+  // Калькулятор и даты аренды
+  daysSlider?.addEventListener('input', syncEndDateFromSlider);
+  rentalStartInput?.addEventListener('input', () => updateCalculator());
+  rentalStartInput?.addEventListener('change', () => updateCalculator());
+  rentalEndInput?.addEventListener('input', () => updateCalculator());
+  rentalEndInput?.addEventListener('change', () => updateCalculator());
 
   // Закрытие модалки заказа
   closeModalBtn?.addEventListener('click', closeModal);
@@ -306,6 +431,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function closeModal() {
     modal?.classList.remove('active');
     document.body.style.overflow = '';
+    resetOrderSubmit();
   }
 
   // FAQ Accordion
@@ -363,21 +489,99 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Отправка заявки (Telegram Bot + перенаправление в WhatsApp)
+  // Отправка заявки: для аренды сначала запись в Supabase, затем уведомление
   orderForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (!currentLaptop || submitInFlight) return;
 
     const name = document.getElementById('user-name')?.value.trim() || '';
     const phone = document.getElementById('user-phone')?.value.trim() || '';
     const promo = document.getElementById('user-promo')?.value.trim() || '';
-    const days = daysSlider ? daysSlider.value : 2;
-    const total = totalPriceEl ? totalPriceEl.textContent : '0';
-
+    const isRent = currentLaptop.category === 'rent';
     const clean = (str) => str.replace(/[_*`\[\]()]/g, '');
+    let rental = null;
 
-    // 1. Формируем сообщение для Telegram
+    if (isRent) {
+      clampRentalDates();
+      const draft = currentRentalDraft();
+      if (draft.validationError || draft.availabilityError) {
+        updateCalculator();
+        return;
+      }
+      if (name.length < 2 || phone.replace(/\D/g, '').length < 12) {
+        showRentalMessage('Укажите имя и полный номер телефона, чтобы сохранить заявку.', 'error');
+        return;
+      }
+
+      const deliveryType = deliveryTypeInput?.value === 'pickup' ? 'pickup' : 'delivery';
+      submitInFlight = true;
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Сохраняем заявку...';
+      }
+
+      const freshAvailability = await fetchBlockingRentals();
+      if (freshAvailability.ok) {
+        blockingRentals = freshAvailability.rows;
+        availabilityLoaded = true;
+        if (hasDateConflict(blockingRentals, currentLaptop.id, draft.startDate, draft.endDate)) {
+          updateCatalogView(false);
+          submitInFlight = false;
+          if (submitBtn) submitBtn.textContent = 'Отправить заявку в WhatsApp';
+          updateCalculator();
+          return;
+        }
+      }
+
+      const holdExpiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString();
+      const { order, error } = await createRentalOrder({
+        id: createOrderId(),
+        laptop_id: currentLaptop.id,
+        customer_name: name,
+        customer_phone: phone,
+        rental_start_date: draft.startDate,
+        rental_end_date: draft.endDate,
+        rental_days: draft.quote.days,
+        daily_rate: draft.quote.dailyRate,
+        discount_percent: draft.quote.discountPercent,
+        total_amount: draft.quote.total,
+        status: 'awaiting_payment',
+        delivery_type: deliveryType,
+        hold_expires_at: holdExpiresAt
+      });
+
+      if (error || !order?.id) {
+        submitInFlight = false;
+        if (submitBtn) submitBtn.textContent = 'Отправить заявку в WhatsApp';
+        updateCalculator({ text: rentalErrorText(error), isError: true });
+        return;
+      }
+
+      rental = {
+        id: order.id,
+        startDate: draft.startDate,
+        endDate: draft.endDate,
+        days: draft.quote.days,
+        total: draft.quote.total,
+        discountPercent: draft.quote.discountPercent,
+        deliveryType
+      };
+      blockingRentals.push({
+        laptop_id: currentLaptop.id,
+        rental_start_date: draft.startDate,
+        rental_end_date: draft.endDate,
+        status: 'awaiting_payment',
+        hold_expires_at: holdExpiresAt
+      });
+      updateCatalogView(false);
+    }
+
+    const totalText = rental
+      ? rental.total.toLocaleString('ru-RU')
+      : (totalPriceEl ? totalPriceEl.textContent : '0');
+
     let tgText = `🚀 *Новая заявка с сайта BAN Digital / RENTOP*\n\n`;
-    tgText += `💻 *Устройство:* ${clean(currentLaptop?.title || 'Ноутбук')}\n`;
+    tgText += `💻 *Устройство:* ${clean(currentLaptop.title || 'Ноутбук')}\n`;
     tgText += `👤 *Имя:* ${clean(name)}\n`;
     tgText += `📞 *Телефон:* ${clean(phone)}\n`;
 
@@ -385,14 +589,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       tgText += `🎁 *Промокод:* ${clean(promo)}\n`;
     }
 
-    if (currentLaptop?.category === 'rent') {
-      tgText += `⏱ *Срок:* ${days} дн.\n`;
-      tgText += `💰 *Сумма:* ${total} сом\n`;
+    if (isRent && rental) {
+      tgText += `🧾 *Номер заказа:* ${rental.id}\n`;
+      tgText += `📅 *Даты аренды:* ${rental.startDate} — ${rental.endDate}\n`;
+      tgText += `⏱ *Срок:* ${rental.days} дн.\n`;
+      tgText += `💸 *Скидка:* ${rental.discountPercent}%\n`;
+      tgText += `💰 *Сумма:* ${totalText} сом\n`;
+      tgText += `🚚 *Способ получения:* ${clean(deliveryLabel(rental.deliveryType))}\n`;
+      tgText += `⏳ Резерв на 20 минут, оплата на сайте не списывается\n`;
     } else {
       tgText += `🏷 *Тип:* Покупка / Предзаказ\n`;
     }
 
-    // 2. Отправляем в Telegram
     try {
       await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: 'POST',
@@ -407,23 +615,25 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.error('Ошибка отправки в Telegram:', err);
     }
 
-    // 3. Формируем текст и открываем WhatsApp у клиента
     let waMsg = `Здравствуйте! Я оставил(а) заявку на сайте:\n`;
-    waMsg += `💻 Ноутбук: ${currentLaptop?.title || 'Ноутбук'}\n`;
+    waMsg += `💻 Ноутбук: ${currentLaptop.title || 'Ноутбук'}\n`;
     waMsg += `👤 Имя: ${name}\n`;
     waMsg += `📞 Телефон: ${phone}\n`;
     if (promo) waMsg += `🎁 Промокод: ${promo}\n`;
-    if (currentLaptop?.category === 'rent') {
-      waMsg += `⏱ Срок аренды: ${days} дн.\n`;
-      waMsg += `💰 Итоговая сумма: ${total} сом`;
+    if (isRent && rental) {
+      waMsg += `🧾 Номер заказа: ${rental.id}\n`;
+      waMsg += `📅 Даты аренды: ${rental.startDate} — ${rental.endDate}\n`;
+      waMsg += `⏱ Срок аренды: ${rental.days} дн.\n`;
+      waMsg += `💸 Скидка: ${rental.discountPercent}%\n`;
+      waMsg += `💰 Итоговая сумма: ${totalText} сом\n`;
+      waMsg += `🚚 Способ получения: ${deliveryLabel(rental.deliveryType)}\n`;
+      waMsg += `Ноутбук зарезервирован на 20 минут. Оплата на сайте не списывается.`;
     }
 
     const waUrl = `https://wa.me/996707880857?text=${encodeURIComponent(waMsg)}`;
-    
-    orderForm.reset();
-    closeInfoModal(modal);
 
-    // Открываем чат WhatsApp
+    orderForm.reset();
+    closeModal();
     window.open(waUrl, '_blank');
   });
 
