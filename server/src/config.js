@@ -1,6 +1,7 @@
 const required = [
   'TELEGRAM_BOT_TOKEN',
   'RENTOP_ADMIN_USER_IDS',
+  'RENTOP_ADMIN_CHAT_ID',
   'SUPABASE_URL',
   'SUPABASE_SERVICE_ROLE_KEY',
   'MBANK_PAYMENT_DETAILS',
@@ -28,6 +29,7 @@ export function loadConfig(env = process.env) {
     port: Number(env.PORT || 3000),
     telegramBotToken: env.TELEGRAM_BOT_TOKEN,
     adminUserIds,
+    adminChatId: env.RENTOP_ADMIN_CHAT_ID,
     supabaseUrl: env.SUPABASE_URL.replace(/\/$/, ''),
     supabaseServiceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
     mbankPaymentDetails: env.MBANK_PAYMENT_DETAILS,
