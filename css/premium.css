@@ -708,8 +708,6 @@ body {
 
 .locker-locations summary::-webkit-details-marker { display: none; }
 .locker-locations summary span { color: var(--accent); font-size: 12px; }
-.locker-locations[open] summary span { font-size: 0; }
-.locker-locations[open] summary span::after { content: "Скрыть"; font-size: 12px; }
 
 .locker-location-list {
   display: grid;
@@ -747,4 +745,157 @@ body {
   .hero-points li:first-child { border-top: 0; }
   .hero-visual { min-height: 360px; padding: 24px; }
   .locker-card { padding: 24px 20px; border-radius: 22px; }
+}
+
+/* Unified turquoise palette for the customer-facing sections. */
+.hero-layout {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.hero-copy {
+  max-width: 820px;
+}
+
+.hero-kicker,
+.hero h1,
+.hero-lead strong,
+.section-kicker,
+.section-title,
+.section-heading h2,
+.rental-summary h2,
+.locker-copy h2,
+.b2b-content h2,
+#faq .section-title {
+  color: var(--accent);
+}
+
+.hero h1 {
+  max-width: 780px;
+  font-size: clamp(42px, 7vw, 72px);
+  text-shadow: 0 0 34px rgba(143, 223, 255, 0.12);
+}
+
+.hero-lead {
+  max-width: 700px;
+}
+
+.hero-points li {
+  color: #c8efff;
+}
+
+.rental-summary-grid,
+.locker-card,
+#tariffs .tariff-card,
+.b2b-content,
+.condition-card,
+.faq-item {
+  border-color: rgba(143, 223, 255, 0.22);
+  background: linear-gradient(135deg, rgba(15, 50, 78, 0.78), rgba(9, 18, 30, 0.92));
+}
+
+.locker-card {
+  background: linear-gradient(125deg, rgba(27, 91, 126, 0.7), rgba(10, 27, 43, 0.96) 58%);
+}
+
+.rental-summary-grid {
+  padding: 32px;
+  border: 1px solid rgba(143, 223, 255, 0.18);
+  border-radius: 26px;
+}
+
+.rental-summary-points strong,
+.condition-title,
+.b2b-list li {
+  color: #d7f5ff;
+}
+
+#tariffs .tariff-card,
+.condition-card,
+.faq-item {
+  transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease, background 0.22s ease;
+}
+
+#tariffs .tariff-card:hover,
+#tariffs .tariff-card:focus-within,
+.condition-card:hover,
+.faq-item:hover {
+  transform: translateY(-5px);
+  border-color: rgba(143, 223, 255, 0.65);
+  background: linear-gradient(135deg, rgba(21, 80, 117, 0.9), rgba(10, 27, 43, 0.98));
+  box-shadow: 0 22px 46px rgba(0, 0, 0, 0.25), 0 0 26px rgba(82, 199, 255, 0.1);
+}
+
+.tariff-card {
+  cursor: default;
+}
+
+.tariff-card.popular {
+  border-color: var(--accent);
+  background: linear-gradient(145deg, rgba(27, 109, 151, 0.88), rgba(10, 30, 48, 0.98));
+}
+
+.conditions-section {
+  padding-top: 46px;
+}
+
+.compact-conditions .condition-card {
+  min-height: 190px;
+}
+
+.b2b-card {
+  border-color: rgba(143, 223, 255, 0.3);
+  background: linear-gradient(135deg, rgba(16, 68, 101, 0.64), rgba(9, 17, 29, 0.92));
+}
+
+.b2b-content {
+  padding: 34px;
+}
+
+.b2b-list li {
+  padding: 11px 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid rgba(143, 223, 255, 0.12);
+  border-radius: 0;
+}
+
+.btn-instagram {
+  background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+  border-color: transparent;
+  color: #fff !important;
+}
+
+.btn-instagram:hover {
+  background: linear-gradient(45deg, #f5a84a 0%, #eb7550 25%, #e43953 50%, #d33b76 75%, #c92b98 100%);
+}
+
+#order-modal .modal-card,
+.modal-legal-card {
+  scrollbar-color: var(--accent) #0b1725;
+  scrollbar-width: thin;
+}
+
+#order-modal .modal-card::-webkit-scrollbar,
+.modal-legal-card::-webkit-scrollbar,
+.modal-legal-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+#order-modal .modal-card::-webkit-scrollbar-track,
+.modal-legal-card::-webkit-scrollbar-track,
+.modal-legal-body::-webkit-scrollbar-track {
+  background: #0b1725;
+}
+
+#order-modal .modal-card::-webkit-scrollbar-thumb,
+.modal-legal-card::-webkit-scrollbar-thumb,
+.modal-legal-body::-webkit-scrollbar-thumb {
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+@media (max-width: 719px) {
+  .rental-summary-grid { padding: 24px 20px; border-radius: 22px; }
+  .b2b-content { padding: 24px 20px; }
+  .hero h1 { font-size: clamp(38px, 12vw, 52px); }
 }
