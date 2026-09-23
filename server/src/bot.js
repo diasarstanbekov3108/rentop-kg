@@ -31,13 +31,18 @@ export function createRentopBot({ config, telegram, database }) {
 
     await database.updateOrder(order.id, { telegram_user_id: message.from.id, telegram_chat_id: message.chat.id });
     const existing = await database.getSession(order.id);
+    const initialStep = order.customer_name && order.customer_phone ? 'awaiting_id' : 'awaiting_name';
     const session = existing || await database.saveSession({
       order_id: order.id,
       telegram_user_id: message.from.id,
       telegram_chat_id: message.chat.id,
-      step: 'awaiting_name'
+      step: initialStep
     });
 
+    if (session.step === 'awaiting_id') {
+      await telegram.sendMessage(message.chat.id, `Заявка ${orderRef(order)} принята. Отправьте фото ID-карты или паспорта. Если сторон две — отправьте обе фотографии.`);
+      return;
+    }
     if (session.step !== 'awaiting_name') {
       await telegram.sendMessage(message.chat.id, 'Ваша заявка уже в обработке. Мы напишем вам здесь, когда потребуется следующий шаг.');
       return;

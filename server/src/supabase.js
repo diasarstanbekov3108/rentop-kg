@@ -20,6 +20,8 @@ export function createSupabaseApi(config) {
   }
 
   return {
+    getLaptop: (id) => getOne(`laptops?id=eq.${encodeURIComponent(id)}&select=*`),
+    createOrder: (order) => request('rental_orders', { method: 'POST', body: JSON.stringify(order) }).then((rows) => rows?.[0] || null),
     getOrderByToken: (token) => getOne(`rental_orders?client_token=eq.${encodeURIComponent(token)}&select=*`),
     getOrder: (id) => getOne(`rental_orders?id=eq.${encodeURIComponent(id)}&select=*`),
     updateOrder: (id, patch) => request(`rental_orders?id=eq.${encodeURIComponent(id)}`, {

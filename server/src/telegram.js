@@ -30,6 +30,7 @@ export function createTelegramApi(token) {
 
   return {
     getUpdates: (offset) => call('getUpdates', { offset, timeout: 30, allowed_updates: ['message', 'callback_query'] }),
+    getMe: () => call('getMe', {}),
     sendMessage: (chatId, text, extra = {}) => call('sendMessage', { chat_id: chatId, text, ...extra }),
     sendPhoto,
     forwardMessage: (chatId, fromChatId, messageId) => call('forwardMessage', {

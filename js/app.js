@@ -1,5 +1,5 @@
-import { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } from './config.js';
-import { fetchLaptops, fetchBlockingRentals, createRentalOrder } from './supabase.js';
+import { RENTOP_BACKEND_URL } from './config.js';
+import { fetchLaptops, fetchBlockingRentals } from './supabase.js';
 import {
   todayIso,
   addDays,
@@ -306,7 +306,7 @@ function resetOrderSubmit() {
   updateDeliveryNote();
   if (!submitBtn) return;
   submitBtn.disabled = false;
-  submitBtn.textContent = 'Отправить заявку в WhatsApp';
+  submitBtn.textContent = 'Продолжить в Telegram';
 }
 
 function updateDeliveryNote() {
@@ -625,55 +625,43 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (hasDateConflict(blockingRentals, currentLaptop.id, draft.startDate, draft.endDate)) {
           updateCatalogView(false);
           submitInFlight = false;
-          if (submitBtn) submitBtn.textContent = 'Отправить заявку в WhatsApp';
+          if (submitBtn) submitBtn.textContent = 'Продолжить в Telegram';
           updateCalculator();
           return;
         }
       }
 
-      const holdExpiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString();
-      const { order, error } = await createRentalOrder({
-        id: createOrderId(),
-        laptop_id: currentLaptop.id,
-        customer_name: name,
-        customer_phone: phone,
-        rental_start_date: draft.startDate,
-        rental_end_date: draft.endDate,
-        rental_days: draft.quote.days,
-        daily_rate: draft.quote.dailyRate,
-        discount_percent: draft.quote.discountPercent,
-        total_amount: draft.quote.total,
-        status: 'awaiting_payment',
-        delivery_type: deliveryType,
-        ...(archaLocation ? { locker_address: archaLocation } : {}),
-        hold_expires_at: holdExpiresAt
-      });
-
-      if (error || !order?.id) {
+      if (!RENTOP_BACKEND_URL) {
         submitInFlight = false;
-        if (submitBtn) submitBtn.textContent = 'Отправить заявку в WhatsApp';
-        updateCalculator({ text: rentalErrorText(error), isError: true });
+        if (submitBtn) submitBtn.textContent = 'Продолжить в Telegram';
+        updateCalculator({ text: 'Оформление через Telegram временно настраивается. Попробуйте позже.', isError: true });
         return;
       }
 
-      rental = {
-        id: order.id,
-        startDate: draft.startDate,
-        endDate: draft.endDate,
-        days: draft.quote.days,
-        total: draft.quote.total,
-        discountPercent: draft.quote.discountPercent,
-        deliveryType,
-        archaLocation
-      };
-      blockingRentals.push({
-        laptop_id: currentLaptop.id,
-        rental_start_date: draft.startDate,
-        rental_end_date: draft.endDate,
-        status: 'awaiting_payment',
-        hold_expires_at: holdExpiresAt
-      });
-      updateCatalogView(false);
+      try {
+        const response = await fetch(`${RENTOP_BACKEND_URL.replace(/\/$/, '')}/api/bookings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            laptopId: currentLaptop.id,
+            customerName: name,
+            customerPhone: phone,
+            startDate: draft.startDate,
+            endDate: draft.endDate,
+            deliveryType,
+            lockerAddress: archaLocation
+          })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.telegramUrl) throw new Error(result.error || 'Не удалось создать заявку.');
+        window.location.assign(result.telegramUrl);
+        return;
+      } catch (error) {
+        submitInFlight = false;
+        if (submitBtn) submitBtn.textContent = 'Продолжить в Telegram';
+        updateCalculator({ text: error.message || 'Не удалось создать заявку.', isError: true });
+        return;
+      }
     }
 
     const totalText = rental
@@ -700,20 +688,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       tgText += `⏳ Резерв на 20 минут, оплата на сайте не списывается\n`;
     } else {
       tgText += `🏷 *Тип:* Покупка / Предзаказ\n`;
-    }
-
-    try {
-      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: TELEGRAM_CHAT_ID,
-          text: tgText,
-          parse_mode: 'Markdown'
-        })
-      });
-    } catch (err) {
-      console.error('Ошибка отправки в Telegram:', err);
     }
 
     let waMsg = `Здравствуйте! Я оставил(а) заявку на сайте:\n`;
