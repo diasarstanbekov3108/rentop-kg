@@ -517,6 +517,68 @@ body {
   }
 }
 
+/* Catalog: a short value proposition before the technical details. */
+#catalog .card h3 {
+  color: #e7f8ff;
+  letter-spacing: -0.02em;
+}
+
+#catalog .laptop-brand {
+  color: var(--archa);
+}
+
+.laptop-fit {
+  min-height: 68px;
+  margin: -2px 0 15px;
+  padding: 10px 12px;
+  border: 1px solid rgba(103, 197, 230, 0.18);
+  border-radius: 10px;
+  background: rgba(11, 47, 68, 0.28);
+}
+
+.laptop-fit-label {
+  display: block;
+  margin-bottom: 4px;
+  color: #8fdaef;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.laptop-fit p {
+  margin: 0;
+  color: #b8ced8;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+#catalog .specs-list {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 13px;
+}
+
+#catalog .specs-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+  color: #d1e2e8;
+}
+
+#catalog .specs-list li span {
+  color: #7192a0;
+}
+
+.rental-includes {
+  min-height: 35px;
+  margin: 0 0 18px;
+  color: #87aab7;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 /* Minimal main-page composition: product first, details second. */
 .hero {
   padding: 68px 0 34px;

@@ -86,6 +86,30 @@ function getLaptopUse(laptop) {
   return gamingKeywords.test(`${laptop.title || ''} ${laptop.badge || ''}`) ? 'gaming' : 'work';
 }
 
+function getCatalogProfile(laptop) {
+  const details = `${laptop.title || ''} ${laptop.cpu || ''} ${laptop.ram || ''}`.toLowerCase();
+
+  if (/rog|razer|legion|tuf|gaming|msi|gf\d|g15/.test(details)) {
+    return { label: 'Игры и графика', description: 'CS2, современные игры, монтаж и ресурсоёмкие задачи.' };
+  }
+
+  if (/macbook|apple m/.test(details)) {
+    return { label: 'Работа в дороге', description: 'Учёба, созвоны, дизайн и повседневные рабочие задачи.' };
+  }
+
+  if (/i3|8 gb|8gb/.test(details)) {
+    return { label: 'Учёба и офис', description: 'Документы, браузер, онлайн-встречи и учёба.' };
+  }
+
+  return { label: 'Работа и разработка', description: 'Офисные задачи, браузер, созвоны и рабочие программы.' };
+}
+
+function formatLaptopTitle(title = '') {
+  const [brand, ...model] = title.trim().split(/\s+/);
+  if (!brand) return 'Ноутбук';
+  return `<span class="laptop-brand">${brand}</span>${model.length ? ` ${model.join(' ')}` : ''}`;
+}
+
 function loadSavedLaptops() {
   try {
     const saved = JSON.parse(localStorage.getItem('rentop-saved-laptops') || '[]');
@@ -119,6 +143,7 @@ function renderLaptops(items, append = false) {
   items.forEach(laptop => {
     const isRent = laptop.category === 'rent';
     const badge = laptop.badge || (isRent ? 'Аренда' : 'Продажа');
+    const profile = getCatalogProfile(laptop);
     const availability = cardAvailability(blockingRentals, laptop.id, todayIso());
     const isSaved = savedLaptopIds.has(String(laptop.id));
     const statusClass = availability.state === 'busy'
@@ -147,12 +172,17 @@ function renderLaptops(items, append = false) {
       >
       <div>
         <span class="card-tag">${badge}</span>
-        <h3>${laptop.title}</h3>
+        <h3>${formatLaptopTitle(laptop.title)}</h3>
+        <div class="laptop-fit">
+          <span class="laptop-fit-label">${profile.label}</span>
+          <p>${profile.description}</p>
+        </div>
         <ul class="specs-list">
-          <li>💻 ${laptop.cpu || '—'}</li>
-          <li>⚡ ${laptop.ram || '—'}</li>
-          <li>💾 ${laptop.storage || '—'}</li>
+          <li><span>Процессор</span>${laptop.cpu || '—'}</li>
+          <li><span>Память</span>${laptop.ram || '—'}</li>
+          <li><span>Накопитель</span>${laptop.storage || '—'}</li>
         </ul>
+        <p class="rental-includes">${isRent ? 'В аренду входит: подготовка, зарядка и сумка.' : 'Проверка устройства и консультация перед покупкой.'}</p>
       </div>
       <div>
         <div class="price-block">
