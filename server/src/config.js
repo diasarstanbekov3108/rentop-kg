@@ -34,6 +34,7 @@ export function loadConfig(env = process.env) {
     supabaseServiceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
     mbankPaymentDetails: env.MBANK_PAYMENT_DETAILS,
     synbankPaymentDetails: env.SYNBANK_PAYMENT_DETAILS,
+    mbankQrImagePath: env.MBANK_QR_IMAGE_PATH || '',
     publicAppUrl: env.PUBLIC_APP_URL || 'https://rentop.com.kg',
     backendPublicUrl: env.BACKEND_PUBLIC_URL || ''
   });

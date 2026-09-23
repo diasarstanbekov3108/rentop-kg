@@ -3,3 +3,4 @@ server/.env
 server/.env.*
 !server/.env.example
 server/*.log
+server/assets/

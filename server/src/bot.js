@@ -174,6 +174,13 @@ export function createRentopBot({ config, telegram, database }) {
       await database.updateOrder(order.id, { payment_channel: value });
       await saveStep(session, { step: 'awaiting_receipt' });
       await telegram.sendMessage(session.telegram_chat_id, `Оплатите аренду и залог одной суммой через ${value === 'mbank' ? 'MBANK' : 'Синьбанк'}:\n\n${details}\n\nПосле оплаты отправьте сюда чек.`);
+      if (value === 'mbank' && config.mbankQrImagePath) {
+        try {
+          await telegram.sendPhoto(session.telegram_chat_id, config.mbankQrImagePath, 'QR-код для оплаты через MBANK. После оплаты отправьте сюда чек.');
+        } catch (error) {
+          console.error('Could not send MBANK QR image:', error.message);
+        }
+      }
     } else if (action === 'paid') {
       await database.updateOrder(order.id, { status: 'awaiting_pickup', payment_confirmed_at: new Date().toISOString() });
       await telegram.sendMessage(session.telegram_chat_id, 'Оплата подтверждена. Rentop готовит ноутбук к выдаче. PIN/QR придёт сюда после загрузки в постамат.');
