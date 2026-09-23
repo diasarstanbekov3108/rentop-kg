@@ -3,8 +3,7 @@ export function createSupabaseApi(config) {
     const response = await fetch(`${config.supabaseUrl}/rest/v1/${path}`, {
       ...options,
       headers: {
-        apikey: config.supabaseServiceRoleKey,
-        Authorization: `Bearer ${config.supabaseServiceRoleKey}`,
+        apikey: config.supabaseServerKey,
         'content-type': 'application/json',
         Prefer: 'return=representation',
         ...(options.headers || {})

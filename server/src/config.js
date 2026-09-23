@@ -3,13 +3,14 @@ const required = [
   'RENTOP_ADMIN_USER_IDS',
   'RENTOP_ADMIN_CHAT_ID',
   'SUPABASE_URL',
-  'SUPABASE_SERVICE_ROLE_KEY',
   'MBANK_PAYMENT_DETAILS',
   'SYNBANK_PAYMENT_DETAILS'
 ];
 
 export function loadConfig(env = process.env) {
   const missing = required.filter((key) => !env[key] || env[key].startsWith('replace_with'));
+  const supabaseServerKey = env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseServerKey || supabaseServerKey.startsWith('replace_with')) missing.push('SUPABASE_SECRET_KEY');
   if (missing.length) {
     throw new Error(`Missing private server configuration: ${missing.join(', ')}`);
   }
@@ -31,7 +32,7 @@ export function loadConfig(env = process.env) {
     adminUserIds,
     adminChatId: env.RENTOP_ADMIN_CHAT_ID,
     supabaseUrl: env.SUPABASE_URL.replace(/\/$/, ''),
-    supabaseServiceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+    supabaseServerKey,
     mbankPaymentDetails: env.MBANK_PAYMENT_DETAILS,
     synbankPaymentDetails: env.SYNBANK_PAYMENT_DETAILS,
     mbankQrImagePath: env.MBANK_QR_IMAGE_PATH || '',
