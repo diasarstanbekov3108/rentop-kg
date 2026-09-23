@@ -948,6 +948,17 @@ body {
   justify-content: center;
 }
 
+.hero-buttons .btn-primary {
+  background: linear-gradient(135deg, #176f91, #2095b8);
+  color: #f4fcff;
+  border: 1px solid rgba(143, 223, 255, 0.46);
+}
+
+.hero-buttons .btn-primary:hover {
+  background: linear-gradient(135deg, #1d85aa, #2aa9cb);
+  color: #fff;
+}
+
 .locker-action {
   display: grid;
   justify-items: center;
@@ -964,6 +975,19 @@ body {
   margin: 0;
   color: #b5d9e8;
   font-size: 12px;
+}
+
+.locker-partner-link {
+  display: inline-flex;
+  margin-top: 14px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.locker-partner-link:hover {
+  color: #fff;
 }
 
 .archa-selection-notice {
