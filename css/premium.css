@@ -519,7 +519,7 @@ body {
 
 /* Catalog: a short value proposition before the technical details. */
 #catalog .card h3 {
-  color: var(--archa);
+  color: var(--accent);
   letter-spacing: -0.02em;
 }
 
