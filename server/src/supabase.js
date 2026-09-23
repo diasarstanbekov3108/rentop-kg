@@ -1,9 +1,11 @@
 export function createSupabaseApi(config) {
   async function request(path, options = {}) {
+    const isLegacyJwtKey = config.supabaseServerKey.startsWith('eyJ');
     const response = await fetch(`${config.supabaseUrl}/rest/v1/${path}`, {
       ...options,
       headers: {
         apikey: config.supabaseServerKey,
+        ...(isLegacyJwtKey ? { Authorization: `Bearer ${config.supabaseServerKey}` } : {}),
         'content-type': 'application/json',
         Prefer: 'return=representation',
         ...(options.headers || {})
