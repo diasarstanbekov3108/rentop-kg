@@ -1,0 +1,5 @@
+# Private server configuration and operational logs
+server/.env
+server/.env.*
+!server/.env.example
+server/*.log

@@ -38,8 +38,8 @@ BEGIN
     CREATE TABLE public.rental_orders (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       laptop_id %s NOT NULL REFERENCES public.laptops (id) ON DELETE RESTRICT,
-      customer_name text NOT NULL,
-      customer_phone text NOT NULL,
+      customer_name text,
+      customer_phone text,
       rental_start_date date NOT NULL,
       rental_end_date date NOT NULL,
       rental_days integer NOT NULL,
@@ -53,10 +53,23 @@ BEGIN
       locker_address text,
       locker_status text NOT NULL DEFAULT 'none',
       hold_expires_at timestamptz,
+      client_token text UNIQUE,
+      telegram_user_id bigint,
+      telegram_chat_id bigint,
+      documents_received_at timestamptz,
+      deposit_amount numeric(12, 2),
+      payment_channel text,
+      payment_receipt_received_at timestamptz,
+      payment_confirmed_at timestamptz,
+      pickup_pin text,
+      pickup_qr_payload text,
+      pickup_ready_at timestamptz,
+      returned_at timestamptz,
+      admin_note text,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now(),
-      CONSTRAINT rental_orders_customer_name_len CHECK (char_length(btrim(customer_name)) BETWEEN 2 AND 120),
-      CONSTRAINT rental_orders_customer_phone_len CHECK (char_length(btrim(customer_phone)) BETWEEN 6 AND 32),
+      CONSTRAINT rental_orders_customer_name_len CHECK (customer_name IS NULL OR char_length(btrim(customer_name)) BETWEEN 2 AND 120),
+      CONSTRAINT rental_orders_customer_phone_len CHECK (customer_phone IS NULL OR char_length(btrim(customer_phone)) BETWEEN 6 AND 32),
       CONSTRAINT rental_orders_end_after_start CHECK (rental_end_date > rental_start_date),
       CONSTRAINT rental_orders_days_match CHECK (rental_days = (rental_end_date - rental_start_date)),
       CONSTRAINT rental_orders_minimum_days CHECK (rental_days >= 2),
@@ -66,10 +79,17 @@ BEGIN
       CONSTRAINT rental_orders_status_allowed CHECK (
         status IN (
           'draft',
+          'pending_review',
           'awaiting_payment',
+          'payment_review',
           'confirmed',
+          'awaiting_pickup',
           'issued',
+          'in_use',
+          'return_requested',
           'returned',
+          'completed',
+          'rejected',
           'cancelled',
           'expired'
         )
@@ -80,13 +100,19 @@ BEGIN
       ),
       CONSTRAINT rental_orders_hold_for_payment CHECK (
         status <> 'awaiting_payment' OR hold_expires_at IS NOT NULL
+      ),
+      CONSTRAINT rental_orders_deposit_nonnegative CHECK (
+        deposit_amount IS NULL OR deposit_amount >= 0
+      ),
+      CONSTRAINT rental_orders_payment_channel_allowed CHECK (
+        payment_channel IS NULL OR payment_channel IN ('mbank', 'synbank')
       )
     )
   $sql$, laptop_id_type);
 END $$;
 
 COMMENT ON TABLE public.rental_orders IS
-  'Заявки на аренду. Оплату сайт не принимает: awaiting_payment только резервирует ноутбук на 20 минут.';
+  'Заявки на аренду. В MVP документы и чеки передаются через Telegram-бот; PIN/QR вводит менеджер Rentop вручную.';
 
 COMMENT ON COLUMN public.rental_orders.rental_end_date IS
   'День возврата. В пересечение не входит: новый старт может совпадать с этой датой.';
@@ -150,8 +176,8 @@ BEGIN
   END IF;
 
   NEW.updated_at := now();
-  NEW.customer_name := btrim(NEW.customer_name);
-  NEW.customer_phone := btrim(NEW.customer_phone);
+  NEW.customer_name := nullif(btrim(NEW.customer_name), '');
+  NEW.customer_phone := nullif(btrim(NEW.customer_phone), '');
 
   expected_days := NEW.rental_end_date - NEW.rental_start_date;
   IF expected_days < 2 THEN
@@ -216,7 +242,7 @@ BEGIN
       USING ERRCODE = 'P0001';
   END IF;
 
-  IF NEW.status IN ('confirmed', 'issued')
+  IF NEW.status IN ('confirmed', 'awaiting_pickup', 'issued', 'in_use')
      OR (NEW.status = 'awaiting_payment' AND NEW.hold_expires_at > now()) THEN
     -- Сериализуем заявки по одному ноутбуку, чтобы два запроса не заняли одни даты.
     PERFORM 1
@@ -264,7 +290,7 @@ SELECT
   status,
   hold_expires_at
 FROM public.rental_orders
-WHERE status IN ('confirmed', 'issued')
+WHERE status IN ('confirmed', 'awaiting_pickup', 'issued', 'in_use')
    OR (
      status = 'awaiting_payment'
      AND hold_expires_at IS NOT NULL
