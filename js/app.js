@@ -631,15 +631,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
 
-      if (!RENTOP_BACKEND_URL) {
-        submitInFlight = false;
-        if (submitBtn) submitBtn.textContent = 'Продолжить в Telegram';
-        updateCalculator({ text: 'Оформление через Telegram временно настраивается. Попробуйте позже.', isError: true });
-        return;
-      }
-
       try {
-        const response = await fetch(`${RENTOP_BACKEND_URL.replace(/\/$/, '')}/api/bookings`, {
+        const backendUrl = RENTOP_BACKEND_URL || window.location.origin;
+        const response = await fetch(`${backendUrl.replace(/\/$/, '')}/api/bookings`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

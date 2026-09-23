@@ -16,6 +16,9 @@ export function createTelegramApi(token) {
   }
 
   async function sendPhoto(chatId, imagePath, caption) {
+    if (/^https:\/\//i.test(imagePath)) {
+      return call('sendPhoto', { chat_id: chatId, photo: imagePath, caption });
+    }
     const image = await readFile(imagePath);
     const form = new FormData();
     form.set('chat_id', String(chatId));

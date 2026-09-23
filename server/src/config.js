@@ -29,13 +29,14 @@ export function loadConfig(env = process.env) {
   return Object.freeze({
     port: Number(env.PORT || 3000),
     telegramBotToken: env.TELEGRAM_BOT_TOKEN,
+    telegramWebhookSecret: env.TELEGRAM_WEBHOOK_SECRET || '',
     adminUserIds,
     adminChatId: env.RENTOP_ADMIN_CHAT_ID,
     supabaseUrl: env.SUPABASE_URL.replace(/\/$/, ''),
     supabaseServerKey,
     mbankPaymentDetails: env.MBANK_PAYMENT_DETAILS,
     simbankPaymentDetails: env.SIMBANK_PAYMENT_DETAILS,
-    mbankQrImagePath: env.MBANK_QR_IMAGE_PATH || '',
+    mbankQrImageSource: env.MBANK_QR_IMAGE_URL || env.MBANK_QR_IMAGE_PATH || '',
     publicAppUrl: env.PUBLIC_APP_URL || 'https://rentop.com.kg',
     backendPublicUrl: env.BACKEND_PUBLIC_URL || ''
   });
