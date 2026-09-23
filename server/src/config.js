@@ -4,7 +4,7 @@ const required = [
   'RENTOP_ADMIN_CHAT_ID',
   'SUPABASE_URL',
   'MBANK_PAYMENT_DETAILS',
-  'SYNBANK_PAYMENT_DETAILS'
+  'SIMBANK_PAYMENT_DETAILS'
 ];
 
 export function loadConfig(env = process.env) {
@@ -34,7 +34,7 @@ export function loadConfig(env = process.env) {
     supabaseUrl: env.SUPABASE_URL.replace(/\/$/, ''),
     supabaseServerKey,
     mbankPaymentDetails: env.MBANK_PAYMENT_DETAILS,
-    synbankPaymentDetails: env.SYNBANK_PAYMENT_DETAILS,
+    simbankPaymentDetails: env.SIMBANK_PAYMENT_DETAILS,
     mbankQrImagePath: env.MBANK_QR_IMAGE_PATH || '',
     publicAppUrl: env.PUBLIC_APP_URL || 'https://rentop.com.kg',
     backendPublicUrl: env.BACKEND_PUBLIC_URL || ''

@@ -132,7 +132,7 @@ export function createRentopBot({ config, telegram, database }) {
         `Заявка одобрена. Аренда: ${order.total_amount} сом. Залог: ${amount} сом.\nВыберите банк для оплаты общей суммы:`,
         adminKeyboard([
           { text: 'Оплатить через MBANK', callback_data: `bank:${order.id}:mbank` },
-          { text: 'Оплатить через Синьбанк', callback_data: `bank:${order.id}:synbank` }
+          { text: 'Оплатить через SIMBANK', callback_data: `bank:${order.id}:simbank` }
         ])
       );
     }
@@ -170,10 +170,10 @@ export function createRentopBot({ config, telegram, database }) {
       await telegram.sendMessage(session.telegram_chat_id, 'К сожалению, заявку не удалось одобрить. По вопросам напишите в поддержку Rentop KG.');
     } else if (action === 'bank') {
       if (String(callback.from.id) !== String(session.telegram_user_id)) return telegram.answerCallback(callback.id, 'Эта кнопка не для вашей заявки.');
-      const details = value === 'mbank' ? config.mbankPaymentDetails : config.synbankPaymentDetails;
+      const details = value === 'mbank' ? config.mbankPaymentDetails : config.simbankPaymentDetails;
       await database.updateOrder(order.id, { payment_channel: value });
       await saveStep(session, { step: 'awaiting_receipt' });
-      await telegram.sendMessage(session.telegram_chat_id, `Оплатите аренду и залог одной суммой через ${value === 'mbank' ? 'MBANK' : 'Синьбанк'}:\n\n${details}\n\nПосле оплаты отправьте сюда чек.`);
+      await telegram.sendMessage(session.telegram_chat_id, `Оплатите аренду и залог одной суммой через ${value === 'mbank' ? 'MBANK' : 'SIMBANK'}:\n\n${details}\n\nПосле оплаты отправьте сюда чек.`);
       if (value === 'mbank' && config.mbankQrImagePath) {
         try {
           await telegram.sendPhoto(session.telegram_chat_id, config.mbankQrImagePath, 'QR-код для оплаты через MBANK. После оплаты отправьте сюда чек.');
