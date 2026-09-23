@@ -899,3 +899,84 @@ body {
   .b2b-content { padding: 24px 20px; }
   .hero h1 { font-size: clamp(38px, 12vw, 52px); }
 }
+
+/* Softer night-blue background and focused conversion actions. */
+body {
+  background:
+    radial-gradient(900px 560px at 6% 24%, rgba(22, 87, 126, 0.18), transparent 62%),
+    radial-gradient(760px 500px at 96% 48%, rgba(38, 109, 155, 0.15), transparent 65%),
+    linear-gradient(160deg, #08111d 0%, #0a1725 48%, #07111c 100%);
+}
+
+.hero {
+  background: radial-gradient(600px 280px at 48% 35%, rgba(72, 180, 230, 0.08), transparent 72%);
+}
+
+.hero-kicker {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 8px 12px;
+  border: 1px solid rgba(143, 223, 255, 0.25);
+  border-radius: 999px;
+  background: rgba(18, 69, 96, 0.28);
+  box-shadow: inset 0 0 18px rgba(143, 223, 255, 0.05);
+}
+
+.hero-kicker::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+}
+
+.hero-buttons {
+  width: 100%;
+  justify-content: center;
+}
+
+.locker-action {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 6px 0 2px;
+  text-align: center;
+}
+
+.locker-action .btn-primary {
+  min-width: min(100%, 330px);
+}
+
+.locker-action p {
+  margin: 0;
+  color: #b5d9e8;
+  font-size: 12px;
+}
+
+button.condition-card {
+  width: 100%;
+  color: var(--text-main);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.condition-card .condition-icon,
+button.condition-card .condition-title,
+button.condition-card .condition-text,
+button.condition-card .card-more {
+  display: block;
+}
+
+button.condition-card:focus-visible,
+#open-archa-order:focus-visible {
+  outline: 3px solid rgba(143, 223, 255, 0.7);
+  outline-offset: 3px;
+}
+
+@media (min-width: 720px) {
+  .locker-action { grid-column: 1 / -1; }
+}

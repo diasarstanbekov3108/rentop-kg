@@ -50,6 +50,7 @@ const archaLocationField = document.getElementById('archa-location-field');
 const archaLocationInput = document.getElementById('archa-location');
 const rentalAvailabilityMessage = document.getElementById('rental-availability-message');
 const submitBtn = document.getElementById('submitBtn');
+const archaOrderBtn = document.getElementById('open-archa-order');
 
 // Burger
 const burger = document.getElementById('burger');
@@ -342,6 +343,24 @@ function openOrderModal(id) {
   modal.classList.add('active');
   document.body.style.overflow = 'hidden';
 }
+
+function openArchaOrder() {
+  const availableRental = laptops.find((laptop) => (
+    laptop.category === 'rent' && cardAvailability(blockingRentals, laptop.id, todayIso()).state !== 'busy'
+  )) || laptops.find((laptop) => laptop.category === 'rent');
+
+  if (!availableRental) {
+    document.getElementById('catalog')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+
+  openOrderModal(availableRental.id);
+  if (deliveryTypeInput) deliveryTypeInput.value = 'arca_locker';
+  updateDeliveryNote();
+  updateCalculator();
+}
+
+archaOrderBtn?.addEventListener('click', openArchaOrder);
 
 function updateCalculator(forcedMessage) {
   if (!currentLaptop || currentLaptop.category !== 'rent') return;

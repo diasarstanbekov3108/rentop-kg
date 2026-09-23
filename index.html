@@ -207,6 +207,10 @@
         <li><strong>02</strong><span>Подтвердите заявку с менеджером Rentop.</span></li>
         <li><strong>03</strong><span>Получите PIN или QR и заберите технику 24/7.</span></li>
       </ol>
+      <div class="locker-action">
+        <button type="button" class="btn-primary" id="open-archa-order">Забрать ноутбук через постамат</button>
+        <p>Откроем заявку сразу с выбранным способом получения ARCHA POINT.</p>
+      </div>
       <details id="archa-locations" class="locker-locations" open>
         <summary>5 локаций ARCHA POINT в Бишкеке <span>Скрыть</span></summary>
         <div class="locker-location-list">
@@ -287,9 +291,9 @@
         <h2>Всё просто и прозрачно.</h2>
       </div>
       <div class="conditions-grid compact-conditions">
-        <article class="condition-card"><div class="condition-icon">📄</div><div class="condition-title">Понятное оформление</div><div class="condition-text">Проверяем документы и заранее подтверждаем условия аренды.</div></article>
-        <article class="condition-card"><div class="condition-icon">✨</div><div class="condition-title">Техника готова</div><div class="condition-text">Ноутбук проверен, очищен и подготовлен к рабочим задачам.</div></article>
-        <article class="condition-card"><div class="condition-icon">🚚</div><div class="condition-title">Выбирайте получение</div><div class="condition-text">Доставка, самовывоз или постамат ARCHA POINT 24/7.</div></article>
+        <button type="button" class="condition-card clickable" id="btn-cond-docs"><span class="condition-icon">📄</span><span class="condition-title">Понятное оформление</span><span class="condition-text">Документы, договор и залог — без скрытых условий.</span><span class="card-more">Подробнее →</span></button>
+        <button type="button" class="condition-card clickable" id="btn-cond-ready"><span class="condition-icon">✨</span><span class="condition-title">Техника готова</span><span class="condition-text">Проверка, защита и комплект под ваши задачи.</span><span class="card-more">Подробнее →</span></button>
+        <button type="button" class="condition-card clickable" id="btn-cond-delivery"><span class="condition-icon">🚚</span><span class="condition-title">Выбирайте получение</span><span class="condition-text">Доставка, самовывоз или ARCHA POINT 24/7.</span><span class="card-more">Подробнее →</span></button>
       </div>
     </div>
   </section>
@@ -372,7 +376,7 @@
         <a href="#" id="open-privacy">Политика конфиденциальности</a>
       </div>
       <p>Бишкек, Кыргызстан</p>
-      <p>© 2026 Rentop KG</p>
+      <p>© 2026 Rentop KG · Part of DS Ecosystem</p>
     </div>
   </div>
 </footer>
@@ -605,12 +609,12 @@
       <button class="modal-close close-info-modal">&times;</button>
       <div class="modal-title">📄 Условия оформления</div>
       <div class="modal-info-body">
-        <p>Для оформления аренды вам понадобятся:</p>
+        <p>Перед выдачей менеджер подтверждает условия аренды и подписывает с вами договор.</p>
         <ul>
-          <li><strong>Паспорт / ID-карта</strong> гражданина КР (для проверки и заключения договора).</li>
-          <li><strong>Подписание официального договора</strong> аренды на месте за 3 минуты.</li>
-          <li><strong>Видеоверификация</strong> (при первой аренде курьер делает короткую фото/видео-фиксацию передачи).</li>
-          <li>Для некоторых категорий техники возможен депозит (залог) без оригинала документов.</li>
+          <li><strong>Паспорт или ID-карта</strong> — для проверки и оформления договора.</li>
+          <li><strong>Справка с места жительства или работы</strong> может потребоваться для отдельных заявок и моделей.</li>
+          <li><strong>Денежный залог</strong> зависит от модели: для офисных ноутбуков он может быть ниже или не требоваться постоянным клиентам; для дорогих моделей залог обязателен.</li>
+          <li><strong>Договор аренды</strong> фиксирует устройство, срок, условия выдачи и возврата.</li>
         </ul>
       </div>
       <button class="btn-primary close-info-btn">Понятно</button>
@@ -621,14 +625,15 @@
   <div class="modal-overlay" id="modal-ready">
     <div class="modal-card">
       <button class="modal-close close-info-modal">&times;</button>
-      <div class="modal-title">🚀 Полный чек-лист подготовки</div>
+      <div class="modal-title">✨ Как мы готовим технику</div>
       <div class="modal-info-body">
-        <p>Каждый ноутбук перед отправкой проходит 4 этапа проверки:</p>
+        <p>Перед каждой выдачей ноутбук проходит подготовку и проверку.</p>
         <ul>
-          <li>🧼 <strong>Дезинфекция и чистка:</strong> идеальный внешний вид и обработка антисептиком.</li>
-          <li>⚙️ <strong>Лицензионный софт:</strong> установлены Windows 11, MS Office, браузеры, Telegram, архиваторы.</li>
-          <li>🎮 <strong>Игровые ноутбуки:</strong> предустановлены стим-клиенты и драйверы для максимального FPS.</li>
-          <li>🔋 <strong>Тест батареи и стресс-тесты:</strong> мы гарантируем, что устройство не выключится под нагрузкой.</li>
+          <li>🧼 <strong>Чистка и обработка антисептиком</strong> перед выдачей.</li>
+          <li>🔒 <strong>Контрольная пломба и защита устройства:</strong> на каждом ноутбуке установлена индивидуальная защита.</li>
+          <li>⚙️ <strong>Рабочая среда:</strong> создаём отдельного пользователя и устанавливаем необходимые программы по согласованию.</li>
+          <li>🎒 <strong>Комплект:</strong> зарядка и сумка; мышь и периферия — по запросу и при наличии.</li>
+          <li>🤝 <strong>Для постоянных клиентов:</strong> возможны более лояльные условия аренды.</li>
         </ul>
       </div>
       <button class="btn-primary close-info-btn">Понятно</button>
@@ -639,14 +644,13 @@
   <div class="modal-overlay" id="modal-delivery">
     <div class="modal-card">
       <button class="modal-close close-info-modal">&times;</button>
-      <div class="modal-title">🚚 Как работает доставка</div>
+      <div class="modal-title">🚚 Варианты получения</div>
       <div class="modal-info-body">
-        <p>Мы доставляем технику по всему Бишкеку за 45 минут:</p>
+        <p>Выберите удобный способ — менеджер подтвердит время выдачи в заявке.</p>
         <ol>
-          <li>Вы выбираете ноутбук и отправляете заявку.</li>
-          <li>Менеджер уточняет адрес и высылает курьера.</li>
-          <li>Курьер привозит ноутбук, проверяет его вместе с вами и подписывает договор.</li>
-          <li>По окончании срока аренды курьер сам приезжает и забирает устройство!</li>
+          <li><strong>Доставка:</strong> выполняется в рабочие часы, преимущественно в вечернее время по согласованию.</li>
+          <li><strong>Самовывоз:</strong> возможен утром или вечером со склада — время согласовывается с менеджером.</li>
+          <li><strong>ARCHA POINT 24/7:</strong> после подтверждения Rentop закладывает ноутбук в постамат; вы получаете PIN/QR и забираете технику в любое удобное время.</li>
         </ol>
       </div>
       <button class="btn-primary close-info-btn">Понятно</button>
