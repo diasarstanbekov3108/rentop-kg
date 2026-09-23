@@ -129,6 +129,39 @@ CREATE INDEX rental_orders_status_idx
 CREATE INDEX rental_orders_date_range_idx
   ON public.rental_orders (rental_start_date, rental_end_date);
 
+-- Служебная память Telegram-бота. Файлы документов здесь не хранятся:
+-- бот пересылает их только в закрытый чат менеджеров Rentop.
+CREATE TABLE public.rental_order_bot_sessions (
+  order_id uuid PRIMARY KEY REFERENCES public.rental_orders (id) ON DELETE CASCADE,
+  telegram_user_id bigint NOT NULL,
+  telegram_chat_id bigint NOT NULL,
+  step text NOT NULL DEFAULT 'awaiting_name',
+  id_document_received_at timestamptz,
+  selfie_received_at timestamptz,
+  supporting_document_received_at timestamptz,
+  payment_receipt_received_at timestamptz,
+  admin_action text,
+  admin_action_user_id bigint,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT rental_order_bot_sessions_step_allowed CHECK (
+    step IN ('awaiting_name', 'awaiting_phone', 'awaiting_id', 'awaiting_selfie',
+             'awaiting_supporting_document', 'under_review', 'awaiting_payment_method',
+             'awaiting_receipt', 'payment_review', 'awaiting_pickup', 'completed')
+  )
+);
+
+CREATE TABLE public.rental_order_admin_actions (
+  order_id uuid PRIMARY KEY REFERENCES public.rental_orders (id) ON DELETE CASCADE,
+  action text NOT NULL,
+  admin_user_id bigint NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT rental_order_admin_actions_allowed CHECK (action IN ('deposit', 'pickup_pin'))
+);
+
+CREATE INDEX rental_order_bot_sessions_user_idx
+  ON public.rental_order_bot_sessions (telegram_user_id);
+
 CREATE OR REPLACE FUNCTION public.touch_rental_order_updated_at()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -301,8 +334,12 @@ COMMENT ON VIEW public.laptop_availability IS
   'Активные блокирующие периоды без персональных данных. Просроченный резерв сюда не попадает.';
 
 ALTER TABLE public.rental_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rental_order_bot_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rental_order_admin_actions ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON TABLE public.rental_orders FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE public.rental_order_bot_sessions FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE public.rental_order_admin_actions FROM PUBLIC, anon, authenticated;
 GRANT INSERT ON TABLE public.rental_orders TO anon, authenticated;
 GRANT SELECT (id) ON TABLE public.rental_orders TO anon, authenticated;
 
