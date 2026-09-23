@@ -519,9 +519,13 @@ body {
 
 /* Catalog: a short value proposition before the technical details. */
 #catalog .card {
-  background: linear-gradient(180deg, rgba(16, 23, 34, 0.96), rgba(10, 15, 24, 0.96));
-  border-color: var(--line);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+  background: linear-gradient(135deg, rgba(15, 50, 78, 0.78), rgba(9, 18, 30, 0.92));
+  border-color: rgba(143, 223, 255, 0.22);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(143, 223, 255, 0.06);
+}
+
+#catalog .card:hover {
+  background: linear-gradient(135deg, rgba(21, 80, 117, 0.9), rgba(10, 27, 43, 0.98));
 }
 
 #catalog .card h3 {
