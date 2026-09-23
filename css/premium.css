@@ -1065,3 +1065,45 @@ button.condition-card:focus-visible,
 @media (min-width: 720px) {
   .locker-action { grid-column: 1 / -1; }
 }
+
+/* Compact, tap-friendly catalog controls on narrow mobile screens. */
+@media (max-width: 380px) {
+  #catalog .filters:not(.filters-secondary) {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) repeat(2, minmax(0, 1fr));
+    gap: 7px;
+    overflow: visible;
+    padding-bottom: 0;
+  }
+
+  #catalog .filters:not(.filters-secondary) .filter-btn {
+    width: 100%;
+    min-width: 0;
+    padding: 10px 5px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  #catalog .filters-secondary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+    overflow: visible;
+    padding-bottom: 0;
+  }
+
+  #catalog .filters-secondary .filters-label {
+    grid-column: 1 / -1;
+    margin: 0;
+    text-align: left;
+  }
+
+  #catalog .filters-secondary .filter-btn {
+    width: 100%;
+    min-width: 0;
+    padding: 10px 4px;
+    font-size: 11px;
+    line-height: 1.15;
+    white-space: normal;
+  }
+}
