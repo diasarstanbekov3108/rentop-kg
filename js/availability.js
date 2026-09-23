@@ -149,9 +149,17 @@ export function cardAvailability(orders, laptopId, today, now = new Date()) {
   };
 }
 
+export const ARCHA_LOCATIONS = [
+  'Bishkek Park — Киевская улица, 148, этаж B2',
+  'Гипермаркет «Азия» — ул. Максима Горького, 1/2а',
+  'ТЦ DK — ул. Нуркамала Жетикашкаевой, 29',
+  'ТРЦ Tommi Mall — ул. Аалы Токомбаева, 17/2',
+  'Супермаркет «Азия» — ул. Садырбаева, 107'
+];
+
 export function deliveryLabel(deliveryType) {
   if (deliveryType === 'pickup') return 'Самовывоз';
-  if (deliveryType === 'delivery') return 'Доставка по Бишкеку';
+  if (deliveryType === 'delivery') return 'Доставка';
   if (deliveryType === 'arca_locker') return 'ARCHA POINT — получение 24/7';
   return 'Не указан';
 }

@@ -9,7 +9,8 @@ import {
   hasDateConflict,
   cardAvailability,
   deliveryLabel,
-  rentalErrorText
+  rentalErrorText,
+  ARCHA_LOCATIONS
 } from './availability.js';
 
 let laptops = [];
@@ -45,6 +46,8 @@ const rentalStartInput = document.getElementById('rental-start-date');
 const rentalEndInput = document.getElementById('rental-end-date');
 const deliveryTypeInput = document.getElementById('delivery-type');
 const archaLockerNote = document.getElementById('archa-locker-note');
+const archaLocationField = document.getElementById('archa-location-field');
+const archaLocationInput = document.getElementById('archa-location');
 const rentalAvailabilityMessage = document.getElementById('rental-availability-message');
 const submitBtn = document.getElementById('submitBtn');
 
@@ -252,14 +255,23 @@ function createOrderId() {
 
 function resetOrderSubmit() {
   submitInFlight = false;
+  if (deliveryTypeInput) deliveryTypeInput.value = 'delivery';
+  if (archaLocationInput) archaLocationInput.value = '';
+  updateDeliveryNote();
   if (!submitBtn) return;
   submitBtn.disabled = false;
   submitBtn.textContent = 'Отправить заявку в WhatsApp';
 }
 
 function updateDeliveryNote() {
-  if (!archaLockerNote) return;
-  archaLockerNote.hidden = deliveryTypeInput?.value !== 'arca_locker';
+  const isLocker = deliveryTypeInput?.value === 'arca_locker';
+  if (archaLockerNote) archaLockerNote.hidden = !isLocker;
+  if (archaLocationField) archaLocationField.hidden = !isLocker;
+}
+
+function selectedArchaLocation() {
+  const location = archaLocationInput?.value || '';
+  return ARCHA_LOCATIONS.includes(location) ? location : '';
 }
 
 function showRentalMessage(text, tone = 'neutral') {
@@ -432,6 +444,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   rentalEndInput?.addEventListener('input', () => updateCalculator());
   rentalEndInput?.addEventListener('change', () => updateCalculator());
   deliveryTypeInput?.addEventListener('change', updateDeliveryNote);
+  updateDeliveryNote();
 
   // Закрытие модалки заказа
   closeModalBtn?.addEventListener('click', closeModal);
@@ -523,6 +536,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const selectedDelivery = deliveryTypeInput?.value;
       const deliveryType = ['pickup', 'arca_locker'].includes(selectedDelivery) ? selectedDelivery : 'delivery';
+      const archaLocation = deliveryType === 'arca_locker' ? selectedArchaLocation() : '';
+      if (deliveryType === 'arca_locker' && !archaLocation) {
+        showRentalMessage('Выберите локацию ARCHA POINT.', 'error');
+        return;
+      }
       submitInFlight = true;
       if (submitBtn) {
         submitBtn.disabled = true;
@@ -556,6 +574,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         total_amount: draft.quote.total,
         status: 'awaiting_payment',
         delivery_type: deliveryType,
+        ...(archaLocation ? { locker_address: archaLocation } : {}),
         hold_expires_at: holdExpiresAt
       });
 
@@ -573,7 +592,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         days: draft.quote.days,
         total: draft.quote.total,
         discountPercent: draft.quote.discountPercent,
-        deliveryType
+        deliveryType,
+        archaLocation
       };
       blockingRentals.push({
         laptop_id: currentLaptop.id,
@@ -605,6 +625,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       tgText += `💸 *Скидка:* ${rental.discountPercent}%\n`;
       tgText += `💰 *Сумма:* ${totalText} сом\n`;
       tgText += `🚚 *Способ получения:* ${clean(deliveryLabel(rental.deliveryType))}\n`;
+      if (rental.archaLocation) tgText += `📍 *Локация ARCHA POINT:* ${clean(rental.archaLocation)}\n`;
       tgText += `⏳ Резерв на 20 минут, оплата на сайте не списывается\n`;
     } else {
       tgText += `🏷 *Тип:* Покупка / Предзаказ\n`;
@@ -636,6 +657,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       waMsg += `💸 Скидка: ${rental.discountPercent}%\n`;
       waMsg += `💰 Итоговая сумма: ${totalText} сом\n`;
       waMsg += `🚚 Способ получения: ${deliveryLabel(rental.deliveryType)}\n`;
+      if (rental.archaLocation) waMsg += `📍 Локация ARCHA POINT: ${rental.archaLocation}\n`;
       waMsg += `Ноутбук зарезервирован на 20 минут. Оплата на сайте не списывается.`;
     }
 
