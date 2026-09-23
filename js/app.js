@@ -22,6 +22,10 @@ let activeCategoryFilter = 'all';
 let activeUseFilter = 'all';
 let savedLaptopIds = new Set();
 let submitInFlight = false;
+let catalogReady = false;
+let catalogRenderVersion = 0;
+let pendingFilterFrame = null;
+let archaSelectionMode = false;
 
 // Настройки пагинации
 const ITEMS_PER_PAGE = 6;
@@ -51,6 +55,8 @@ const archaLocationInput = document.getElementById('archa-location');
 const rentalAvailabilityMessage = document.getElementById('rental-availability-message');
 const submitBtn = document.getElementById('submitBtn');
 const archaOrderBtn = document.getElementById('open-archa-order');
+const archaSelectionNotice = document.getElementById('archa-selection-notice');
+const closeArchaSelectionBtn = document.getElementById('close-archa-selection');
 
 // Burger
 const burger = document.getElementById('burger');
@@ -151,10 +157,10 @@ function renderLaptops(items, append = false) {
       <div>
         <div class="price-block">
           <div class="price-main">${laptop.priceText || '—'}</div>
-          <div class="price-sub">${isRent ? 'при аренде от 3-х дней' : 'в наличии / под заказ'}</div>
+          <div class="price-sub">${isRent ? 'при аренде от 2-х дней' : 'в наличии / под заказ'}</div>
         </div>
         <button class="btn-card" data-id="${laptop.id}">
-          ${isRent ? 'Забронировать' : 'Купить / Предзаказ'}
+          ${isRent ? (archaSelectionMode ? 'Выбрать для ARCHA POINT' : 'Забронировать') : 'Купить / Предзаказ'}
         </button>
       </div>
     `;
@@ -166,7 +172,7 @@ function renderLaptops(items, append = false) {
   document.querySelectorAll('.btn-card').forEach(btn => {
     btn.onclick = (e) => {
       const id = Number(e.currentTarget.dataset.id);
-      openOrderModal(id);
+      openOrderModal(id, { deliveryType: archaSelectionMode ? 'arca_locker' : 'delivery' });
     };
   });
 
@@ -230,13 +236,22 @@ function loadMoreLaptops() {
 
 // ========== FILTER ==========
 function filterAndSearch() {
-  filteredLaptops = laptops.filter(laptop => {
-    const categoryMatches = activeCategoryFilter === 'all' || laptop.category === activeCategoryFilter;
-    const useMatches = activeUseFilter === 'all' || getLaptopUse(laptop) === activeUseFilter;
-    return categoryMatches && useMatches;
-  });
+  const version = ++catalogRenderVersion;
+  if (pendingFilterFrame) cancelAnimationFrame(pendingFilterFrame);
 
-  updateCatalogView(true);
+  pendingFilterFrame = requestAnimationFrame(() => {
+    if (!catalogReady || version !== catalogRenderVersion) return;
+
+    const nextItems = laptops.filter(laptop => {
+      const categoryMatches = activeCategoryFilter === 'all' || laptop.category === activeCategoryFilter;
+      const useMatches = activeUseFilter === 'all' || getLaptopUse(laptop) === activeUseFilter;
+      return categoryMatches && useMatches;
+    });
+
+    if (version !== catalogRenderVersion) return;
+    filteredLaptops = nextItems;
+    updateCatalogView(true);
+  });
 }
 
 function getDailyRate(laptop) {
@@ -289,12 +304,13 @@ function clampRentalDates() {
     rentalStartInput.value = today;
   }
 
-  const earliestEnd = rentalStartInput?.value && rentalStartInput.value > today
+  const startDate = rentalStartInput?.value && rentalStartInput.value >= today
     ? rentalStartInput.value
     : today;
+  const earliestEnd = addDays(startDate, 2);
   if (rentalEndInput) rentalEndInput.min = earliestEnd;
-  if (rentalEndInput?.value && rentalEndInput.value < today) {
-    rentalEndInput.value = today;
+  if (rentalEndInput?.value && rentalEndInput.value < earliestEnd) {
+    rentalEndInput.value = earliestEnd;
   }
 }
 
@@ -316,7 +332,7 @@ function currentRentalDraft(today = todayIso()) {
 }
 
 // ========== MODAL + CALCULATOR ==========
-function openOrderModal(id) {
+function openOrderModal(id, { deliveryType = 'delivery' } = {}) {
   currentLaptop = laptops.find(item => item.id === id);
   if (!currentLaptop) return;
 
@@ -328,10 +344,11 @@ function openOrderModal(id) {
     if (rentalStartInput) rentalStartInput.value = today;
     if (rentalEndInput) rentalEndInput.value = addDays(today, 2);
     if (daysSlider) {
-      daysSlider.min = '1';
+      daysSlider.min = '2';
       daysSlider.max = '30';
       daysSlider.value = '2';
     }
+    if (deliveryTypeInput) deliveryTypeInput.value = deliveryType;
     updateDeliveryNote();
     updateCalculator();
   } else {
@@ -345,22 +362,22 @@ function openOrderModal(id) {
 }
 
 function openArchaOrder() {
-  const availableRental = laptops.find((laptop) => (
-    laptop.category === 'rent' && cardAvailability(blockingRentals, laptop.id, todayIso()).state !== 'busy'
-  )) || laptops.find((laptop) => laptop.category === 'rent');
-
-  if (!availableRental) {
-    document.getElementById('catalog')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    return;
-  }
-
-  openOrderModal(availableRental.id);
-  if (deliveryTypeInput) deliveryTypeInput.value = 'arca_locker';
-  updateDeliveryNote();
-  updateCalculator();
+  archaSelectionMode = true;
+  activeCategoryFilter = 'rent';
+  activeUseFilter = 'all';
+  categoryFilterButtons.forEach((button) => button.classList.toggle('active', button.dataset.filter === 'rent'));
+  useFilterButtons.forEach((button) => button.classList.toggle('active', button.dataset.use === 'all'));
+  if (archaSelectionNotice) archaSelectionNotice.hidden = false;
+  filterAndSearch();
+  document.getElementById('catalog')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 archaOrderBtn?.addEventListener('click', openArchaOrder);
+closeArchaSelectionBtn?.addEventListener('click', () => {
+  archaSelectionMode = false;
+  if (archaSelectionNotice) archaSelectionNotice.hidden = true;
+  filterAndSearch();
+});
 
 function updateCalculator(forcedMessage) {
   if (!currentLaptop || currentLaptop.category !== 'rent') return;
@@ -370,7 +387,7 @@ function updateCalculator(forcedMessage) {
 
   if (daysCount) daysCount.textContent = String(draft.quote.days);
   if (totalPriceEl) totalPriceEl.textContent = draft.quote.total.toLocaleString('ru-RU');
-  if (daysSlider && draft.quote.days >= 1) {
+  if (daysSlider && draft.quote.days >= 2) {
     daysSlider.max = String(Math.max(30, draft.quote.days));
     daysSlider.value = String(draft.quote.days);
   }
@@ -402,7 +419,7 @@ function syncEndDateFromSlider() {
     ? rentalStartInput.value
     : today;
   if (rentalStartInput) rentalStartInput.value = startDate;
-  const days = Math.max(1, parseInt(daysSlider?.value, 10) || 1);
+  const days = Math.max(2, parseInt(daysSlider?.value, 10) || 2);
   if (rentalEndInput) rentalEndInput.value = addDays(startDate, days);
   updateCalculator();
 }
@@ -432,7 +449,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   blockingRentals = availability.rows;
   availabilityLoaded = availability.ok;
   filteredLaptops = [...laptops];
-  updateCatalogView(true);
+  catalogReady = true;
+  filterAndSearch();
 
   // Кнопка "Показать ещё"
   btnLoadMore?.addEventListener('click', loadMoreLaptops);
@@ -443,6 +461,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       categoryFilterButtons.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       activeCategoryFilter = btn.dataset.filter || 'all';
+      if (activeCategoryFilter === 'all') {
+        activeUseFilter = 'all';
+        useFilterButtons.forEach((button) => button.classList.toggle('active', button.dataset.use === 'all'));
+      }
       filterAndSearch();
     });
   });

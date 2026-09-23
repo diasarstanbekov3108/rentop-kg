@@ -138,6 +138,10 @@
   <section id="catalog">
     <div class="container">
       <h2 class="section-title">Каталог устройств</h2>
+      <div class="archa-selection-notice" id="archa-selection-notice" hidden role="status">
+        <div><strong>Получение через ARCHA POINT 24/7</strong><span>Шаг 1 из 2: выберите ноутбук — в заявке уже будет выбран постамат.</span></div>
+        <button type="button" id="close-archa-selection" aria-label="Закрыть режим выбора через постамат">×</button>
+      </div>
       
       <div class="filters">
         <button class="filter-btn active" data-filter="all">Все устройства</button>
@@ -232,7 +236,7 @@
       <div class="tariffs-grid">
         <div class="tariff-card">
           <div class="tariff-title">0%</div>
-          <div class="tariff-days">1–3 дня</div>
+          <div class="tariff-days">2–3 дня</div>
           <div class="tariff-desc">Идеально для срочных поездок, презентаций и мероприятий.</div>
           <ul class="tariff-features">
             <li>Базовая стоимость</li>
@@ -680,7 +684,7 @@
           <span>Срок аренды:</span>
           <span><strong id="days-count">2</strong> дн.</span>
         </div>
-        <input type="range" id="days-slider" class="calc-range" min="1" max="30" value="2" aria-label="Срок аренды в днях">
+        <input type="range" id="days-slider" class="calc-range" min="2" max="30" value="2" aria-label="Срок аренды в днях">
         <div class="calc-total">
           <span class="calc-total-text">Итого:</span>
           <span class="calc-total-price"><span id="total-price">0</span> сом</span>

@@ -59,7 +59,7 @@ BEGIN
       CONSTRAINT rental_orders_customer_phone_len CHECK (char_length(btrim(customer_phone)) BETWEEN 6 AND 32),
       CONSTRAINT rental_orders_end_after_start CHECK (rental_end_date > rental_start_date),
       CONSTRAINT rental_orders_days_match CHECK (rental_days = (rental_end_date - rental_start_date)),
-      CONSTRAINT rental_orders_days_positive CHECK (rental_days >= 1),
+      CONSTRAINT rental_orders_minimum_days CHECK (rental_days >= 2),
       CONSTRAINT rental_orders_daily_rate_nonnegative CHECK (daily_rate >= 0),
       CONSTRAINT rental_orders_total_nonnegative CHECK (total_amount >= 0),
       CONSTRAINT rental_orders_discount_allowed CHECK (discount_percent IN (0, 15, 30)),
@@ -154,8 +154,8 @@ BEGIN
   NEW.customer_phone := btrim(NEW.customer_phone);
 
   expected_days := NEW.rental_end_date - NEW.rental_start_date;
-  IF expected_days < 1 THEN
-    RAISE EXCEPTION 'INVALID_RENTAL_TERMS: дата окончания должна быть позже даты начала'
+  IF expected_days < 2 THEN
+    RAISE EXCEPTION 'INVALID_RENTAL_TERMS: минимальный срок аренды — 2 дня'
       USING ERRCODE = 'P0001';
   END IF;
 

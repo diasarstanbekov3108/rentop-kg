@@ -63,8 +63,8 @@ export function validateRentalPeriod(startDate, endDate, today) {
   if (endDate < startDate) {
     return 'Дата окончания не может быть раньше даты начала.';
   }
-  if (endDate === startDate || daysBetween(startDate, endDate) < 1) {
-    return 'Дата окончания должна быть позже даты начала. День возврата не входит в срок аренды.';
+  if (endDate === startDate || daysBetween(startDate, endDate) < 2) {
+    return 'Минимальный срок аренды — 2 дня. День возврата не входит в срок аренды.';
   }
   return '';
 }

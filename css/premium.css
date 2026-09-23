@@ -933,6 +933,16 @@ body {
   box-shadow: 0 0 12px var(--accent);
 }
 
+.hero-kicker::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-left: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+}
+
 .hero-buttons {
   width: 100%;
   justify-content: center;
@@ -954,6 +964,57 @@ body {
   margin: 0;
   color: #b5d9e8;
   font-size: 12px;
+}
+
+.archa-selection-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 760px;
+  margin: 0 auto 24px;
+  padding: 14px 16px;
+  border: 1px solid rgba(143, 223, 255, 0.45);
+  border-radius: 16px;
+  background: linear-gradient(120deg, rgba(19, 96, 133, 0.78), rgba(10, 31, 48, 0.92));
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.2);
+}
+
+.archa-selection-notice[hidden] {
+  display: none;
+}
+
+.archa-selection-notice div {
+  display: grid;
+  gap: 2px;
+}
+
+.archa-selection-notice strong {
+  color: var(--accent-strong);
+  font-size: 14px;
+}
+
+.archa-selection-notice span {
+  color: #c3e6f4;
+  font-size: 12px;
+}
+
+.archa-selection-notice button {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border: 1px solid rgba(143, 223, 255, 0.35);
+  border-radius: 50%;
+  background: rgba(7, 17, 28, 0.48);
+  color: var(--accent);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.archa-selection-notice button:hover {
+  border-color: var(--accent);
+  background: rgba(143, 223, 255, 0.1);
 }
 
 button.condition-card {
