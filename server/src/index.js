@@ -13,7 +13,9 @@ const bot = createRentopBot({ config, telegram, database });
 function sendJson(response, status, data) {
   response.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
-    'access-control-allow-origin': config.publicAppUrl,
+    // The public booking endpoint does not use cookies or expose private data.
+    // It must work both from the local preview and the production website.
+    'access-control-allow-origin': '*',
     'access-control-allow-methods': 'POST, OPTIONS',
     'access-control-allow-headers': 'content-type'
   });
