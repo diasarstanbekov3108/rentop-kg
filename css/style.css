@@ -192,6 +192,82 @@ header {
   background: radial-gradient(ellipse at top, rgba(0, 212, 255, 0.08) 0%, transparent 60%);
 }
 
+.hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 18px;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.hero-eyebrow span { color: var(--accent); }
+
+.archa-point-section {
+  padding-top: 8px;
+}
+
+.archa-point-card {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 40px;
+  align-items: center;
+  overflow: hidden;
+  padding: 42px;
+  border: 1px solid rgba(0, 212, 255, 0.25);
+  border-radius: 28px;
+  background: linear-gradient(120deg, rgba(0, 212, 255, 0.13), rgba(17, 24, 39, 0.88) 52%, rgba(17, 24, 39, 0.98));
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.22);
+}
+
+.partner-label {
+  display: inline-block;
+  margin-bottom: 14px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.archa-point-copy h2 {
+  margin-bottom: 12px;
+  font-size: clamp(28px, 4vw, 42px);
+  line-height: 1.1;
+}
+
+.archa-point-copy h2 span { color: var(--accent); }
+.archa-point-copy p { max-width: 590px; color: #b7c4d6; }
+
+.partner-trust {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 24px;
+}
+
+.partner-trust span {
+  padding: 7px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  color: #d7e1ef;
+  font-size: 12px;
+}
+
+.archa-steps { display: grid; gap: 12px; list-style: none; }
+.archa-steps li { display: flex; gap: 14px; align-items: center; padding: 14px; border: 1px solid rgba(148, 163, 184, 0.15); border-radius: 14px; background: rgba(8, 13, 22, 0.42); color: #d7e1ef; font-size: 13px; }
+.archa-steps strong { color: var(--accent); font-size: 12px; letter-spacing: 0.06em; }
+
+.delivery-note { margin-top: 10px; color: #a8dfee; font-size: 12px; line-height: 1.5; }
+
+@media (max-width: 768px) {
+  .archa-point-section { padding-top: 0; }
+  .archa-point-card { grid-template-columns: 1fr; gap: 24px; padding: 26px 22px; border-radius: 22px; }
+  .partner-trust { gap: 7px; }
+}
+
 .hero h1 {
   font-size: 42px;
   font-weight: 800;

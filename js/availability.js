@@ -152,6 +152,7 @@ export function cardAvailability(orders, laptopId, today, now = new Date()) {
 export function deliveryLabel(deliveryType) {
   if (deliveryType === 'pickup') return 'Самовывоз';
   if (deliveryType === 'delivery') return 'Доставка по Бишкеку';
+  if (deliveryType === 'arca_locker') return 'ARCHA POINT — получение 24/7';
   return 'Не указан';
 }
 

@@ -48,6 +48,10 @@ BEGIN
       total_amount numeric(12, 2) NOT NULL,
       status text NOT NULL DEFAULT 'draft',
       delivery_type text NOT NULL,
+      locker_provider_reference text,
+      locker_id text,
+      locker_address text,
+      locker_status text NOT NULL DEFAULT 'none',
       hold_expires_at timestamptz,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now(),
@@ -70,7 +74,10 @@ BEGIN
           'expired'
         )
       ),
-      CONSTRAINT rental_orders_delivery_allowed CHECK (delivery_type IN ('pickup', 'delivery')),
+      CONSTRAINT rental_orders_delivery_allowed CHECK (delivery_type IN ('pickup', 'delivery', 'arca_locker')),
+      CONSTRAINT rental_orders_locker_status_allowed CHECK (
+        locker_status IN ('none', 'pending', 'loaded', 'client_picked_up', 'return_pending', 'returned', 'failed')
+      ),
       CONSTRAINT rental_orders_hold_for_payment CHECK (
         status <> 'awaiting_payment' OR hold_expires_at IS NOT NULL
       )
@@ -131,6 +138,15 @@ BEGIN
     NEW.status := 'awaiting_payment';
     NEW.hold_expires_at := now() + interval '20 minutes';
     NEW.created_at := coalesce(NEW.created_at, now());
+    -- Клиент может выбрать только способ получения. Статус ячейки меняет
+    -- исключительно админка Rentop или серверная интеграция ARCHA POINT.
+    NEW.locker_status := CASE
+      WHEN NEW.delivery_type = 'arca_locker' THEN 'pending'
+      ELSE 'none'
+    END;
+    NEW.locker_provider_reference := NULL;
+    NEW.locker_id := NULL;
+    NEW.locker_address := NULL;
   END IF;
 
   NEW.updated_at := now();

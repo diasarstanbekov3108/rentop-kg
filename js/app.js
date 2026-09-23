@@ -44,6 +44,7 @@ const calcDiscountEl = document.getElementById('calc-discount');
 const rentalStartInput = document.getElementById('rental-start-date');
 const rentalEndInput = document.getElementById('rental-end-date');
 const deliveryTypeInput = document.getElementById('delivery-type');
+const archaLockerNote = document.getElementById('archa-locker-note');
 const rentalAvailabilityMessage = document.getElementById('rental-availability-message');
 const submitBtn = document.getElementById('submitBtn');
 
@@ -256,6 +257,11 @@ function resetOrderSubmit() {
   submitBtn.textContent = 'Отправить заявку в WhatsApp';
 }
 
+function updateDeliveryNote() {
+  if (!archaLockerNote) return;
+  archaLockerNote.hidden = deliveryTypeInput?.value !== 'arca_locker';
+}
+
 function showRentalMessage(text, tone = 'neutral') {
   if (!rentalAvailabilityMessage) return;
   rentalAvailabilityMessage.textContent = text || '';
@@ -313,6 +319,7 @@ function openOrderModal(id) {
       daysSlider.max = '30';
       daysSlider.value = '2';
     }
+    updateDeliveryNote();
     updateCalculator();
   } else {
     calcBox.style.display = 'none';
@@ -424,6 +431,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   rentalStartInput?.addEventListener('change', () => updateCalculator());
   rentalEndInput?.addEventListener('input', () => updateCalculator());
   rentalEndInput?.addEventListener('change', () => updateCalculator());
+  deliveryTypeInput?.addEventListener('change', updateDeliveryNote);
 
   // Закрытие модалки заказа
   closeModalBtn?.addEventListener('click', closeModal);
@@ -513,7 +521,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      const deliveryType = deliveryTypeInput?.value === 'pickup' ? 'pickup' : 'delivery';
+      const selectedDelivery = deliveryTypeInput?.value;
+      const deliveryType = ['pickup', 'arca_locker'].includes(selectedDelivery) ? selectedDelivery : 'delivery';
       submitInFlight = true;
       if (submitBtn) {
         submitBtn.disabled = true;
