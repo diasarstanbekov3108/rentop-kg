@@ -519,12 +519,12 @@ body {
 
 /* Catalog: a short value proposition before the technical details. */
 #catalog .card h3 {
-  color: #e7f8ff;
+  color: var(--archa);
   letter-spacing: -0.02em;
 }
 
 #catalog .laptop-brand {
-  color: var(--archa);
+  color: inherit;
 }
 
 .laptop-fit {
