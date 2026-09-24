@@ -1,6 +1,24 @@
 const adminKeyboard = (buttons) => ({ reply_markup: { inline_keyboard: [buttons] } });
-const isDocumentMessage = (message) => Boolean(message?.photo?.length || message?.document);
+const isOfficialFile = (message) => Boolean(message?.document);
+const isSelfiePhoto = (message) => Boolean(message?.photo?.length);
 const orderRef = (order) => String(order.id).slice(0, 8).toUpperCase();
+const laptopTitle = (laptop) => String(laptop?.title || laptop?.name || `Ноутбук #${laptop?.id || '—'}`);
+
+function orderDetails(order, laptop) {
+  const delivery = order.delivery_type === 'arca_locker'
+    ? 'ARCHA POINT 24/7'
+    : order.delivery_type === 'pickup'
+      ? 'Самовывоз'
+      : 'Доставка';
+  return [
+    `Заявка ${orderRef(order)}`,
+    `Ноутбук: ${laptopTitle(laptop)}`,
+    `Аренда: ${order.rental_start_date} — ${order.rental_end_date} (${order.rental_days} дн.)`,
+    `Стоимость: ${order.total_amount} сом · скидка ${order.discount_percent}%`,
+    `Получение: ${delivery}`,
+    order.locker_address ? `Локация: ${order.locker_address}` : null
+  ].filter(Boolean).join('\n');
+}
 
 export function createRentopBot({ config, telegram, database }) {
   const isAdmin = (userId) => config.adminUserIds.has(String(userId));
@@ -11,6 +29,11 @@ export function createRentopBot({ config, telegram, database }) {
 
   async function saveStep(session, patch) {
     return database.saveSession({ ...session, ...patch, updated_at: new Date().toISOString() });
+  }
+
+  async function forwardForReview(message, order, label) {
+    await sendAdmin(`Документ по заявке ${orderRef(order)}\n${label}`);
+    await telegram.forwardMessage(config.adminChatId, message.chat.id, message.message_id);
   }
 
   async function startClient(message, token) {
@@ -39,8 +62,27 @@ export function createRentopBot({ config, telegram, database }) {
       step: initialStep
     });
 
+    if (!existing) {
+      const laptop = await database.getLaptop(order.laptop_id);
+      await sendAdmin(
+        `Новая заявка — документы ожидаются\n\n${orderDetails(order, laptop)}\n` +
+        `Клиент: ${order.customer_name || '—'}\nТелефон: ${order.customer_phone || '—'}\n` +
+        `Залог: определить после проверки документов.`
+      );
+    }
+
     if (session.step === 'awaiting_id') {
-      await telegram.sendMessage(message.chat.id, `Заявка ${orderRef(order)} принята. Отправьте фото ID-карты или паспорта. Если сторон две — отправьте обе фотографии.`);
+      const awaitingSecondSide = Boolean(session.id_document_received_at);
+      await telegram.sendMessage(
+        message.chat.id,
+        awaitingSecondSide
+          ? 'Продолжим заявку. Отправьте вторую сторону ID-карты/паспорта как ФАЙЛ из Tunduk (скрепка → Файл).'
+          : `${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\n` +
+            `Залог определяется менеджером после проверки документов — с учётом выбранного ноутбука.\n\n` +
+            `Шаг 1 из 4. Пришлите первую сторону ID-карты или паспорта как ФАЙЛ из Tunduk ` +
+            `(скрепка → Файл). Скриншоты и обычные фотографии не принимаются.\n\n` +
+            `Для иностранного гражданина: официальный файл паспорта и документ, подтверждающий право проживания/регистрацию в Кыргызстане.`
+      );
       return;
     }
     if (session.step !== 'awaiting_name') {
@@ -55,11 +97,11 @@ export function createRentopBot({ config, telegram, database }) {
     await database.updateOrder(order.id, { status: 'pending_review', documents_received_at: new Date().toISOString() });
     await saveStep(session, { step: 'under_review' });
     await telegram.sendMessage(session.telegram_chat_id, 'Спасибо. Документы отправлены менеджеру Rentop на проверку. Мы сообщим решение в этом чате.');
+    const laptop = await database.getLaptop(order.laptop_id);
     await sendAdmin(
-      `Новая заявка ${orderRef(order)}\n` +
+      `Документы получены — заявка готова к проверке\n\n${orderDetails(order, laptop)}\n` +
       `Клиент: ${order.customer_name || '—'}\nТелефон: ${order.customer_phone || '—'}\n` +
-      `Получение: ${order.delivery_type === 'arca_locker' ? 'ARCHA POINT 24/7' : order.delivery_type}\n` +
-      `Проверьте пересланные материалы.`,
+      `Залог: определить после решения.\n\nПроверьте пересланные материалы.`,
       adminKeyboard([
         { text: '✅ Одобрить документы', callback_data: `approve:${order.id}` },
         { text: '❌ Отклонить', callback_data: `reject:${order.id}` }
@@ -87,23 +129,27 @@ export function createRentopBot({ config, telegram, database }) {
       return telegram.sendMessage(message.chat.id, 'Отправьте фото ID-карты или паспорта. Если сторон две — отправьте обе фотографии.');
     }
     if (session.step === 'awaiting_id') {
-      if (!isDocumentMessage(message)) return telegram.sendMessage(message.chat.id, 'Нужна фотография или файл документа.');
-      await telegram.forwardMessage(config.adminChatId, message.chat.id, message.message_id);
-      await saveStep(session, { step: 'awaiting_selfie', id_document_received_at: new Date().toISOString() });
-      return telegram.sendMessage(message.chat.id, 'Спасибо. Теперь отправьте, пожалуйста, селфи для проверки личности.');
+      if (!isOfficialFile(message)) {
+        return telegram.sendMessage(message.chat.id, 'Нужен официальный документ как ФАЙЛ из Tunduk (скрепка → Файл). Скриншот или обычное фото не подойдут.');
+      }
+      if (!session.id_document_received_at) {
+        await forwardForReview(message, order, 'ID/паспорт — первая сторона.');
+        await saveStep(session, { id_document_received_at: new Date().toISOString() });
+        return telegram.sendMessage(message.chat.id, 'Первая сторона получена. Шаг 2 из 4: отправьте вторую сторону ID-карты/паспорта также как ФАЙЛ из Tunduk.');
+      }
+      await forwardForReview(message, order, 'ID/паспорт — вторая сторона.');
+      await saveStep(session, { step: 'awaiting_selfie' });
+      return telegram.sendMessage(message.chat.id, 'Шаг 3 из 4: отправьте селфи как обычную ФОТОГРАФИЮ. На фото должно быть хорошо видно лицо.');
     }
     if (session.step === 'awaiting_selfie') {
-      if (!isDocumentMessage(message)) return telegram.sendMessage(message.chat.id, 'Отправьте селфи как фотографию.');
-      await telegram.forwardMessage(config.adminChatId, message.chat.id, message.message_id);
+      if (!isSelfiePhoto(message)) return telegram.sendMessage(message.chat.id, 'Нужно отправить селфи именно как фотографию, не файлом и не скриншотом.');
+      await forwardForReview(message, order, 'Селфи для сверки личности.');
       await saveStep(session, { step: 'awaiting_supporting_document', selfie_received_at: new Date().toISOString() });
-      return telegram.sendMessage(message.chat.id, 'Если есть справка с работы или места жительства — отправьте её. Если нет, напишите «Пропустить».');
+      return telegram.sendMessage(message.chat.id, 'Шаг 4 из 4: отправьте справку с места жительства как официальный ФАЙЛ из Tunduk. Этот документ обязателен для рассмотрения заявки.');
     }
     if (session.step === 'awaiting_supporting_document') {
-      if (text?.toLowerCase() === 'пропустить') {
-        return sendForReview(order, session);
-      }
-      if (!isDocumentMessage(message)) return telegram.sendMessage(message.chat.id, 'Отправьте справку файлом/фото или напишите «Пропустить».');
-      await telegram.forwardMessage(config.adminChatId, message.chat.id, message.message_id);
+      if (!isOfficialFile(message)) return telegram.sendMessage(message.chat.id, 'Справка с места жительства обязательна. Отправьте её как официальный ФАЙЛ из Tunduk (скрепка → Файл).');
+      await forwardForReview(message, order, 'Справка с места жительства из Tunduk.');
       await saveStep(session, { supporting_document_received_at: new Date().toISOString() });
       return sendForReview(order, session);
     }
@@ -157,7 +203,9 @@ export function createRentopBot({ config, telegram, database }) {
 
   async function handleCallback(callback) {
     const [action, orderId, value] = callback.data.split(':');
-    if (!isAdmin(callback.from.id) && action !== 'bank') return telegram.answerCallback(callback.id, 'Недостаточно прав.');
+    if (!isAdmin(callback.from.id) && action !== 'bank') {
+      return telegram.answerCallback(callback.id, 'Нет прав. Проверьте RENTOP_ADMIN_USER_IDS в настройках сервера.');
+    }
     const order = await database.getOrder(orderId);
     const session = order && await database.getSession(order.id);
     if (!order || !session) return telegram.answerCallback(callback.id, 'Заявка не найдена.');
