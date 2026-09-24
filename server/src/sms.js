@@ -30,6 +30,9 @@ export function createNikitaSmsClient(options) {
     if (!config.enabled) throw new Error('SMS-подтверждение пока не настроено на сервере.');
     if (!text || text.length > MAX_SMS_LENGTH) throw new Error(`SMS должно содержать от 1 до ${MAX_SMS_LENGTH} символов.`);
     const normalizedPhone = normalizeKyrgyzPhone(phone);
+    // Nikita's specification permits both variants. In production some routes
+    // reject the digits-only form, so send the explicit international format.
+    const providerPhone = `+${normalizedPhone}`;
     // Nikita limits message IDs to 12 Latin letters/numbers. It also protects
     // against accidental duplicate sends, so each request gets a fresh ID.
     const id = randomBytes(6).toString('hex').toUpperCase();
@@ -39,7 +42,7 @@ export function createNikitaSmsClient(options) {
       `  <id>${id}</id>\n` +
       `  <sender>${xmlEscape(config.sender)}</sender>\n` +
       `  <text>${xmlEscape(text)}</text>\n` +
-      `  <phones><phone>${normalizedPhone}</phone></phones>\n` +
+      `  <phones><phone>${providerPhone}</phone></phones>\n` +
       (test ? '  <test>1</test>\n' : '') +
       `</message>`;
 
@@ -56,7 +59,7 @@ export function createNikitaSmsClient(options) {
     if (status !== '0' && !(test && status === '11')) {
       throw new Error(`Nikita SMS отклонил запрос (код ${status || 'неизвестен'}): ${message || 'без описания'}`);
     }
-    return { id, phone: normalizedPhone, accepted: status === '0', test, smsCount: Number(getTag(body, 'smscnt') || 0) };
+    return { id, phone: providerPhone, accepted: status === '0', test, smsCount: Number(getTag(body, 'smscnt') || 0) };
   }
 
   return { send };
