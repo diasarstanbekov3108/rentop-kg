@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node --env-file=.env src/index.js",
     "check": "node --check src/index.js && node --check src/config.js && node --check src/supabase.js && node --check src/telegram.js && node --check src/bot.js && node --check scripts/get-telegram-context.js",
-    "telegram:context": "node --env-file=.env scripts/get-telegram-context.js"
+    "telegram:context": "node --env-file=.env scripts/get-telegram-context.js",
+    "telegram:webhook": "node --env-file=.env scripts/set-telegram-webhook.js"
   }
 }
