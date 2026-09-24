@@ -391,6 +391,11 @@ export function createRentopBot({ config, telegram, database }) {
         });
       } catch (error) {
         console.error('Could not send offer OTP:', error.message);
+        await sendAdmin(
+          `⚠️ Nikita SMS не принял OTP для заявки ${orderRef(order)}.\n` +
+          `Техническая причина: ${error.message}\n\n` +
+          'Проверьте номер клиента, Sender ID и IP-ограничения в кабинете Nikita. Секреты и код SMS не отображаются.'
+        );
         return telegram.answerCallback(callback.id, 'Не удалось отправить SMS. Проверьте номер и попробуйте позже.');
       }
       await database.updateOrder(order.id, {
