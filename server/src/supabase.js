@@ -42,7 +42,10 @@ export function createSupabaseApi(config) {
       body: JSON.stringify(action)
     }).then((rows) => rows?.[0] || null),
     getAdminAction: (orderId) => getOne(`rental_order_admin_actions?order_id=eq.${encodeURIComponent(orderId)}&select=*`),
-    clearAdminAction: (orderId) => request(`rental_order_admin_actions?order_id=eq.${encodeURIComponent(orderId)}`, { method: 'DELETE' })
+    clearAdminAction: (orderId) => request(`rental_order_admin_actions?order_id=eq.${encodeURIComponent(orderId)}`, { method: 'DELETE' }),
+    listRecentOrders: (limit = 12) => request(
+      `rental_orders?select=id,laptop_id,customer_name,customer_phone,rental_start_date,rental_end_date,status,total_amount,deposit_amount,delivery_type,locker_address,created_at,updated_at&order=created_at.desc&limit=${Math.min(Math.max(Number(limit) || 12, 1), 30)}`
+    )
     ,createEvent: (event) => request('rental_order_events', {
       method: 'POST', body: JSON.stringify(event)
     }).then((rows) => rows?.[0] || null)

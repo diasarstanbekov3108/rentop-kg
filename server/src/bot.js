@@ -9,7 +9,7 @@ const contactKeyboard = () => ({
     one_time_keyboard: true
   }
 });
-const isOfficialFile = (message) => Boolean(message?.document);
+const isOfficialDocument = (message) => Boolean(message?.document || message?.photo?.length);
 const isSelfiePhoto = (message) => Boolean(message?.photo?.length);
 const isDocumentMessage = (message) => Boolean(message?.document || message?.photo?.length);
 const orderRef = (order) => String(order.id).slice(0, 8).toUpperCase();
@@ -53,17 +53,34 @@ export function createRentopBot({ config, telegram, database }) {
     };
   }
 
+  const helpKeyboard = (orderId) => adminKeyboard([
+    { text: 'Нужна помощь менеджера', callback_data: `support:${orderId}` }
+  ]);
+
+  async function captureDocument(session, message, field) {
+    return saveStep(session, { [field]: message.message_id });
+  }
+
+  async function sendDocumentPacket(order, session) {
+    const packet = [
+      ['ID / паспорт · первая сторона', session.id_document_first_message_id],
+      ['ID / паспорт · вторая сторона', session.id_document_second_message_id],
+      ['Селфи для сверки личности', session.selfie_message_id],
+      ['Справка о месте жительства / работы', session.supporting_document_message_id]
+    ].filter(([, messageId]) => messageId);
+    await sendAdmin(`Документы по заявке ${orderRef(order)} · ${packet.length} из 4`);
+    for (const [label, messageId] of packet) {
+      await sendAdmin(`📎 ${label}`);
+      await telegram.forwardMessage(config.adminChatId, session.telegram_chat_id, messageId);
+    }
+  }
+
   async function sendAdmin(text, extra = {}) {
     return telegram.sendMessage(config.adminChatId, text, extra);
   }
 
   async function saveStep(session, patch) {
     return database.saveSession({ ...session, ...patch, updated_at: new Date().toISOString() });
-  }
-
-  async function forwardForReview(message, order, label) {
-    await sendAdmin(`Документ по заявке ${orderRef(order)}\n${label}`);
-    await telegram.forwardMessage(config.adminChatId, message.chat.id, message.message_id);
   }
 
   async function startClient(message, token) {
@@ -118,12 +135,12 @@ export function createRentopBot({ config, telegram, database }) {
       await telegram.sendMessage(
         message.chat.id,
         awaitingSecondSide
-          ? 'Продолжим заявку. Отправьте вторую сторону ID-карты/паспорта как ФАЙЛ из Tunduk (скрепка → Файл).'
+          ? 'Продолжим заявку. Отправьте вторую сторону ID-карты/паспорта файлом или качественным фото.'
           : `${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\n` +
             `Залог определяется менеджером после проверки документов — с учётом выбранного ноутбука.\n\n` +
-            `Шаг 1 из 4. Пришлите первую сторону ID-карты или паспорта как ФАЙЛ из Tunduk ` +
-            `(скрепка → Файл). Скриншоты и обычные фотографии не принимаются.\n\n` +
-            `Для иностранного гражданина: официальный файл паспорта и документ, подтверждающий право проживания/регистрацию в Кыргызстане.`
+            `Шаг 3 из 6. Пришлите первую сторону ID-карты или паспорта как файл либо обычное качественное фото.\n\n` +
+            `Для иностранного гражданина: паспорт и документ, подтверждающий право проживания/регистрацию в Кыргызстане.`,
+        helpKeyboard(order.id)
       );
       return;
     }
@@ -140,6 +157,7 @@ export function createRentopBot({ config, telegram, database }) {
     await saveStep(session, { step: 'under_review' });
     await telegram.sendMessage(session.telegram_chat_id, 'Спасибо. Документы и подтверждение оферты переданы менеджеру Rentop на проверку. Мы сообщим решение в этом чате.');
     const laptop = await database.getLaptop(order.laptop_id);
+    await sendDocumentPacket(order, session);
     await sendAdmin(
       `Документы получены — заявка готова к проверке\n\n${orderDetails(order, laptop)}\n` +
       `Клиент: ${order.customer_name || '—'}\nТелефон: ${order.customer_phone || '—'}\n` +
@@ -180,33 +198,39 @@ export function createRentopBot({ config, telegram, database }) {
       return telegram.sendMessage(message.chat.id, 'Номер подтверждён. Шаг 2 из 6: выберите тип документа.', documentOptions());
     }
     if (session.step === 'awaiting_id') {
-      if (!isOfficialFile(message)) {
-        return telegram.sendMessage(message.chat.id, 'Нужен официальный документ как ФАЙЛ из Tunduk (скрепка → Файл). Скриншот или обычное фото не подойдут.');
+      if (!isOfficialDocument(message)) {
+        return telegram.sendMessage(message.chat.id, 'Пришлите документ файлом или обычным качественным фото.');
       }
       if (!session.id_document_received_at) {
-        await forwardForReview(message, order, 'ID/паспорт — первая сторона.');
+        await captureDocument(session, message, 'id_document_first_message_id');
         await saveStep(session, { id_document_received_at: new Date().toISOString() });
-        return telegram.sendMessage(message.chat.id, 'Первая сторона получена. Шаг 2 из 4: отправьте вторую сторону ID-карты/паспорта также как ФАЙЛ из Tunduk.');
+        return telegram.sendMessage(message.chat.id, 'Первая сторона получена. Шаг 4 из 6: отправьте вторую сторону ID-карты/паспорта файлом или качественным фото.', helpKeyboard(order.id));
       }
-      await forwardForReview(message, order, 'ID/паспорт — вторая сторона.');
-      await saveStep(session, { step: 'awaiting_selfie' });
-      return telegram.sendMessage(message.chat.id, 'Шаг 3 из 4: отправьте селфи как обычную ФОТОГРАФИЮ. На фото должно быть хорошо видно лицо.');
+      const updatedSession = await captureDocument(session, message, 'id_document_second_message_id');
+      await saveStep(updatedSession, { step: 'awaiting_selfie' });
+      return telegram.sendMessage(message.chat.id, 'Шаг 5 из 6: отправьте селфи как обычную фотографию. Лицо должно быть хорошо видно.', helpKeyboard(order.id));
     }
     if (session.step === 'awaiting_selfie') {
       if (!isSelfiePhoto(message)) return telegram.sendMessage(message.chat.id, 'Нужно отправить селфи именно как фотографию, не файлом и не скриншотом.');
-      await forwardForReview(message, order, 'Селфи для сверки личности.');
-      await saveStep(session, { step: 'awaiting_supporting_document', selfie_received_at: new Date().toISOString() });
-      return telegram.sendMessage(message.chat.id, 'Шаг 4 из 4: отправьте справку с места жительства как официальный ФАЙЛ из Tunduk. Этот документ обязателен для рассмотрения заявки.');
+      const updatedSession = await captureDocument(session, message, 'selfie_message_id');
+      await saveStep(updatedSession, { step: 'awaiting_supporting_document', selfie_received_at: new Date().toISOString() });
+      return telegram.sendMessage(message.chat.id,
+        'Шаг 6 из 6: отправьте справку с места жительства или работы файлом либо качественным фото. Документ обязателен для рассмотрения заявки.\n\n' +
+        'Подделка, изменение или использование чужих документов недопустимы. При наличии оснований это может повлечь отказ в заявке и ответственность, установленную законодательством Кыргызской Республики.',
+        helpKeyboard(order.id)
+      );
     }
     if (session.step === 'awaiting_supporting_document') {
-      if (!isOfficialFile(message)) return telegram.sendMessage(message.chat.id, 'Справка с места жительства обязательна. Отправьте её как официальный ФАЙЛ из Tunduk (скрепка → Файл).');
-      await forwardForReview(message, order, 'Справка с места жительства из Tunduk.');
-      await saveStep(session, { supporting_document_received_at: new Date().toISOString() });
-      await saveStep(session, { step: 'awaiting_offer_acceptance' });
+      if (!isOfficialDocument(message)) return telegram.sendMessage(message.chat.id, 'Справка обязательна. Пришлите её файлом или качественным фото.', helpKeyboard(order.id));
+      const updatedSession = await captureDocument(session, message, 'supporting_document_message_id');
+      await saveStep(updatedSession, { supporting_document_received_at: new Date().toISOString(), step: 'awaiting_offer_acceptance' });
       const offerLink = config.offerUrl ? `\n\nОферта: ${config.offerUrl}` : '';
       return telegram.sendMessage(message.chat.id,
         `Документы получены. Шаг 5 из 6: ознакомьтесь с публичной офертой${offerLink}\n\nПосле ознакомления подтвердите согласие кнопкой ниже. Затем мы отправим одноразовый SMS-код на подтверждённый номер.`,
-        adminKeyboard([{ text: 'Я прочитал и принимаю оферту Rentop.KG', callback_data: `offer_accept:${order.id}` }])
+        { reply_markup: { inline_keyboard: [
+          [{ text: 'Я прочитал и принимаю оферту Rentop.KG', callback_data: `offer_accept:${order.id}` }],
+          [{ text: 'Нужна помощь менеджера', callback_data: `support:${order.id}` }]
+        ] } }
       );
     }
     if (session.step === 'awaiting_offer_otp') {
@@ -243,6 +267,19 @@ export function createRentopBot({ config, telegram, database }) {
   async function handleAdminCommand(message) {
     if (!isAdmin(message.from.id)) return;
     const [command, orderId, rawValue] = (message.text || '').trim().split(/\s+/, 3);
+    if (command === '/orders') {
+      const orders = await database.listRecentOrders();
+      if (!orders.length) return telegram.sendMessage(message.chat.id, 'Заявок пока нет.');
+      const lines = await Promise.all(orders.map(async (order, index) => {
+        const laptop = await database.getLaptop(order.laptop_id);
+        return `${index + 1}. ${orderRef(order)} · ${laptopTitle(laptop)}\n${order.status} · ${order.rental_start_date}—${order.rental_end_date} · ${order.total_amount} сом`;
+      }));
+      return telegram.sendMessage(message.chat.id, `Последние заявки (${orders.length})\n\n${lines.join('\n\n')}`, {
+        reply_markup: { inline_keyboard: orders.slice(0, 8).map((order) => ([
+          { text: `Открыть ${orderRef(order)}`, callback_data: `admin_order:${order.id}` }
+        ])) }
+      });
+    }
     if (command === '/deposit') {
       const amount = Number(rawValue?.replace(',', '.'));
       if (!orderId || !Number.isFinite(amount) || amount < 0) {
@@ -277,7 +314,7 @@ export function createRentopBot({ config, telegram, database }) {
 
   async function handleCallback(callback) {
     const [action, orderId, value] = callback.data.split(':');
-    const clientActions = new Set(['bank', 'document_type', 'offer_accept']);
+    const clientActions = new Set(['bank', 'document_type', 'offer_accept', 'support']);
     if (!isAdmin(callback.from.id) && !clientActions.has(action)) {
       return telegram.answerCallback(callback.id, 'Нет прав. Проверьте RENTOP_ADMIN_USER_IDS в настройках сервера.');
     }
@@ -297,12 +334,37 @@ export function createRentopBot({ config, telegram, database }) {
         return telegram.answerCallback(callback.id, 'Этот этап уже пройден.');
       }
       const instructions = documentType === 'foreign_passport' || documentType === 'foreign_resident'
-        ? 'Пришлите официальный файл загранпаспорта. Затем бот запросит документ о регистрации/ВНЖ в Кыргызстане.'
-        : 'Пришлите первую сторону ID-карты или паспорта как ФАЙЛ из Tunduk (скрепка → Файл). Скриншоты и обычные фотографии не принимаются.';
+        ? 'Пришлите загранпаспорт файлом или качественным фото. Затем бот запросит документ о регистрации/ВНЖ в Кыргызстане.'
+        : 'Пришлите первую сторону ID-карты или паспорта файлом либо качественным фото.';
       await saveStep(session, { step: 'awaiting_id', document_type: documentType });
       await recordEvent({ order_id: order.id, event_type: 'document_type_selected', actor_type: 'customer', actor_telegram_id: callback.from.id, metadata: { document_type: documentType } });
-      await telegram.sendMessage(session.telegram_chat_id, `Шаг 3 из 6. ${instructions}`);
+      await telegram.sendMessage(session.telegram_chat_id, `Шаг 3 из 6. ${instructions}`, helpKeyboard(order.id));
       return telegram.answerCallback(callback.id, 'Тип документа сохранён.');
+    }
+
+    if (action === 'support') {
+      await recordEvent({ order_id: order.id, event_type: 'customer_requested_help', actor_type: 'customer', actor_telegram_id: callback.from.id, metadata: {} });
+      await sendAdmin(
+        `🆘 Клиент запросил помощь\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n` +
+        `Клиент: ${order.customer_name || '—'}\nТелефон: ${order.customer_phone || '—'}\n` +
+        `Текущий этап: ${session.step}\n\nОтветьте клиенту через Telegram-диалог с ботом или свяжитесь по подтверждённому номеру.`
+      );
+      await telegram.sendMessage(session.telegram_chat_id, 'Запрос передан менеджеру Rentop. Мы свяжемся с вами в ближайшее рабочее время.');
+      return telegram.answerCallback(callback.id, 'Менеджер получил запрос.');
+    }
+
+    if (action === 'admin_order') {
+      const laptop = await database.getLaptop(order.laptop_id);
+      await telegram.sendMessage(callback.message.chat.id,
+        `${orderDetails(order, laptop)}\n\n` +
+        `Статус: ${order.status}\n` +
+        `Клиент: ${order.customer_name || '—'} · ${order.customer_phone || '—'}\n` +
+        `Залог: ${order.deposit_amount ?? 'не назначен'}\n` +
+        `Создана: ${order.created_at}\n` +
+        `Обновлена: ${order.updated_at}\n` +
+        `Полный ID: ${order.id}`
+      );
+      return telegram.answerCallback(callback.id, 'Карточка отправлена.');
     }
 
     if (action === 'offer_accept') {
@@ -310,8 +372,14 @@ export function createRentopBot({ config, telegram, database }) {
         return telegram.answerCallback(callback.id, 'Этот этап уже пройден.');
       }
       if (!config.nikitaSms.enabled || !config.offerOtpHmacSecret || !config.offerUrl) {
-        console.error('OTP is not configured: Nikita SMS credentials, OFFER_OTP_HMAC_SECRET and OFFER_URL are required.');
-        return telegram.answerCallback(callback.id, 'Подтверждение SMS временно недоступно. Менеджер уже уведомлён.');
+        const missing = [
+          !config.nikitaSms.enabled ? 'NIKITA_SMS_LOGIN / NIKITA_SMS_PASSWORD / NIKITA_SMS_SENDER' : null,
+          !config.offerOtpHmacSecret ? 'OFFER_OTP_HMAC_SECRET' : null,
+          !config.offerUrl ? 'OFFER_URL' : null
+        ].filter(Boolean);
+        console.error(`OTP is not configured: ${missing.join(', ')}`);
+        await sendAdmin(`⚠️ SMS-подписание недоступно для заявки ${orderRef(order)}. Добавьте в Vercel Preview: ${missing.join(', ')}.`);
+        return telegram.answerCallback(callback.id, 'SMS-подписание временно недоступно. Менеджер уведомлён.');
       }
       const code = String(randomInt(100000, 1_000_000));
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
