@@ -1,0 +1,11 @@
+:root { --bg: #08111d; --card: #0d1d2d; --ink: #edf6fa; --muted: #abc0cb; --accent: #8fdfff; --line: rgba(143,223,255,.18); }
+* { box-sizing: border-box; }
+body { margin: 0; color: var(--ink); font-family: Inter, Arial, sans-serif; background: radial-gradient(800px 500px at 90% -10%, rgba(40,141,190,.22), transparent 64%), linear-gradient(155deg,#07101a,#0a1b29 54%,#07111c); }
+.topbar { display:flex; align-items:center; justify-content:space-between; gap:20px; max-width:1120px; margin:auto; padding:22px 24px; border-bottom:1px solid var(--line); }
+.brand { color:#fff; text-decoration:none; font-size:20px; font-weight:800; letter-spacing:-.05em; }.brand span,.eyebrow,a { color:var(--accent); }.back { color:#c8d9e2; font-size:14px; text-decoration:none; }.back:hover { color:#fff; }
+.page { max-width:850px; margin:auto; padding:70px 24px 90px; }.eyebrow { margin-bottom:16px; font-size:12px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+h1 { max-width:660px; margin:0; font-size:clamp(38px,7vw,64px); line-height:.98; letter-spacing:-.055em; }.lead { max-width:620px; margin:23px 0 30px; color:var(--muted); font-size:17px; line-height:1.6; }
+.notice { margin:0 0 36px; padding:18px 20px; border:1px solid var(--line); border-radius:18px; background:linear-gradient(120deg,rgba(23,101,139,.56),rgba(10,28,45,.76)); color:#d9edf5; font-size:14px; line-height:1.55; }
+.agreement { padding:clamp(20px,5vw,48px); border:1px solid var(--line); border-radius:26px; background:rgba(8,19,31,.72); box-shadow:0 26px 70px rgba(0,0,0,.2); }.agreement section+section { margin-top:35px; padding-top:35px; border-top:1px solid var(--line); }
+h2 { margin:0 0 16px; font-size:20px; letter-spacing:-.025em; } p { margin:0 0 13px; color:#c4d5df; font-size:14px; line-height:1.68; }.revision { margin:26px 0 0; color:#89a5b3; font-size:12px; text-align:center; }
+@media(max-width:540px) { .topbar{padding:18px 16px}.page{padding:44px 16px 64px}.agreement{padding:22px 18px;border-radius:20px}.back{font-size:12px}.lead{font-size:15px} }
