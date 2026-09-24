@@ -43,5 +43,8 @@ export function createSupabaseApi(config) {
     }).then((rows) => rows?.[0] || null),
     getAdminAction: (orderId) => getOne(`rental_order_admin_actions?order_id=eq.${encodeURIComponent(orderId)}&select=*`),
     clearAdminAction: (orderId) => request(`rental_order_admin_actions?order_id=eq.${encodeURIComponent(orderId)}`, { method: 'DELETE' })
+    ,createEvent: (event) => request('rental_order_events', {
+      method: 'POST', body: JSON.stringify(event)
+    }).then((rows) => rows?.[0] || null)
   };
 }

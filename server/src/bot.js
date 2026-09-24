@@ -1,6 +1,17 @@
+import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
+import { createNikitaSmsClient, normalizeKyrgyzPhone } from './sms.js';
+
 const adminKeyboard = (buttons) => ({ reply_markup: { inline_keyboard: [buttons] } });
+const contactKeyboard = () => ({
+  reply_markup: {
+    keyboard: [[{ text: 'Отправить подтверждённый номер', request_contact: true }]],
+    resize_keyboard: true,
+    one_time_keyboard: true
+  }
+});
 const isOfficialFile = (message) => Boolean(message?.document);
 const isSelfiePhoto = (message) => Boolean(message?.photo?.length);
+const isDocumentMessage = (message) => Boolean(message?.document || message?.photo?.length);
 const orderRef = (order) => String(order.id).slice(0, 8).toUpperCase();
 const laptopTitle = (laptop) => String(laptop?.title || laptop?.name || `Ноутбук #${laptop?.id || '—'}`);
 
@@ -22,6 +33,25 @@ function orderDetails(order, laptop) {
 
 export function createRentopBot({ config, telegram, database }) {
   const isAdmin = (userId) => config.adminUserIds.has(String(userId));
+  const sms = createNikitaSmsClient(config.nikitaSms);
+
+  const recordEvent = (event) => database.createEvent?.(event).catch((error) => {
+    console.error('Could not write rental order audit event:', error.message);
+  });
+
+  const otpHash = (orderId, code) => createHmac('sha256', config.offerOtpHmacSecret)
+    .update(`${orderId}:${code}`).digest('hex');
+
+  function documentOptions() {
+    return {
+      reply_markup: { inline_keyboard: [
+        [{ text: 'ID-карта КР из Tunduk', callback_data: 'document_type:kr_id' }],
+        [{ text: 'Паспорт КР из Tunduk', callback_data: 'document_type:kr_passport' }],
+        [{ text: 'Загранпаспорт', callback_data: 'document_type:foreign_passport' }],
+        [{ text: 'Иностранный паспорт / ВНЖ', callback_data: 'document_type:foreign_resident' }]
+      ] }
+    };
+  }
 
   async function sendAdmin(text, extra = {}) {
     return telegram.sendMessage(config.adminChatId, text, extra);
@@ -54,7 +84,7 @@ export function createRentopBot({ config, telegram, database }) {
 
     await database.updateOrder(order.id, { telegram_user_id: message.from.id, telegram_chat_id: message.chat.id });
     const existing = await database.getSession(order.id);
-    const initialStep = order.customer_name && order.customer_phone ? 'awaiting_id' : 'awaiting_name';
+    const initialStep = order.customer_name ? 'awaiting_phone_contact' : 'awaiting_name';
     const session = existing || await database.saveSession({
       order_id: order.id,
       telegram_user_id: message.from.id,
@@ -71,6 +101,18 @@ export function createRentopBot({ config, telegram, database }) {
       );
     }
 
+    if (session.step === 'awaiting_phone_contact') {
+      await telegram.sendMessage(message.chat.id,
+        `${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\n` +
+        'Шаг 1 из 6. Подтвердите номер телефона системной кнопкой Telegram. Ручной ввод номера не принимается.',
+        contactKeyboard()
+      );
+      return;
+    }
+    if (session.step === 'awaiting_document_type') {
+      await telegram.sendMessage(message.chat.id, 'Шаг 2 из 6. Выберите тип документа:', documentOptions());
+      return;
+    }
     if (session.step === 'awaiting_id') {
       const awaitingSecondSide = Boolean(session.id_document_received_at);
       await telegram.sendMessage(
@@ -96,7 +138,7 @@ export function createRentopBot({ config, telegram, database }) {
   async function sendForReview(order, session) {
     await database.updateOrder(order.id, { status: 'pending_review', documents_received_at: new Date().toISOString() });
     await saveStep(session, { step: 'under_review' });
-    await telegram.sendMessage(session.telegram_chat_id, 'Спасибо. Документы отправлены менеджеру Rentop на проверку. Мы сообщим решение в этом чате.');
+    await telegram.sendMessage(session.telegram_chat_id, 'Спасибо. Документы и подтверждение оферты переданы менеджеру Rentop на проверку. Мы сообщим решение в этом чате.');
     const laptop = await database.getLaptop(order.laptop_id);
     await sendAdmin(
       `Документы получены — заявка готова к проверке\n\n${orderDetails(order, laptop)}\n` +
@@ -119,14 +161,23 @@ export function createRentopBot({ config, telegram, database }) {
     if (session.step === 'awaiting_name') {
       if (!text || text.length < 2) return telegram.sendMessage(message.chat.id, 'Напишите имя и фамилию текстом, как в документе.');
       await database.updateOrder(order.id, { customer_name: text });
-      await saveStep(session, { step: 'awaiting_phone' });
-      return telegram.sendMessage(message.chat.id, 'Теперь отправьте номер телефона для связи в формате +996…');
+      await saveStep(session, { step: 'awaiting_phone_contact' });
+      return telegram.sendMessage(message.chat.id, 'Теперь подтвердите номер системной кнопкой Telegram.', contactKeyboard());
     }
-    if (session.step === 'awaiting_phone') {
-      if (!text || text.replace(/\D/g, '').length < 8) return telegram.sendMessage(message.chat.id, 'Проверьте номер телефона и отправьте его ещё раз.');
-      await database.updateOrder(order.id, { customer_phone: text });
-      await saveStep(session, { step: 'awaiting_id' });
-      return telegram.sendMessage(message.chat.id, 'Отправьте фото ID-карты или паспорта. Если сторон две — отправьте обе фотографии.');
+    if (session.step === 'awaiting_phone_contact') {
+      const contact = message.contact;
+      if (!contact || String(contact.user_id) !== String(message.from.id)) {
+        return telegram.sendMessage(message.chat.id, 'Используйте кнопку «Отправить подтверждённый номер». Номер другого человека не принимается.', contactKeyboard());
+      }
+      let phone;
+      try { phone = normalizeKyrgyzPhone(contact.phone_number); } catch (error) {
+        return telegram.sendMessage(message.chat.id, error.message, contactKeyboard());
+      }
+      const previousPhone = order.customer_phone;
+      await database.updateOrder(order.id, { customer_phone: `+${phone}`, phone_verified_at: new Date().toISOString() });
+      await saveStep(session, { step: 'awaiting_document_type' });
+      await recordEvent({ order_id: order.id, event_type: 'phone_verified', actor_type: 'customer', actor_telegram_id: message.from.id, metadata: { mismatched_site_phone: Boolean(previousPhone && previousPhone.replace(/\D/g, '') !== phone) } });
+      return telegram.sendMessage(message.chat.id, 'Номер подтверждён. Шаг 2 из 6: выберите тип документа.', documentOptions());
     }
     if (session.step === 'awaiting_id') {
       if (!isOfficialFile(message)) {
@@ -151,7 +202,30 @@ export function createRentopBot({ config, telegram, database }) {
       if (!isOfficialFile(message)) return telegram.sendMessage(message.chat.id, 'Справка с места жительства обязательна. Отправьте её как официальный ФАЙЛ из Tunduk (скрепка → Файл).');
       await forwardForReview(message, order, 'Справка с места жительства из Tunduk.');
       await saveStep(session, { supporting_document_received_at: new Date().toISOString() });
-      return sendForReview(order, session);
+      await saveStep(session, { step: 'awaiting_offer_acceptance' });
+      const offerLink = config.offerUrl ? `\n\nОферта: ${config.offerUrl}` : '';
+      return telegram.sendMessage(message.chat.id,
+        `Документы получены. Шаг 5 из 6: ознакомьтесь с публичной офертой${offerLink}\n\nПосле ознакомления подтвердите согласие кнопкой ниже. Затем мы отправим одноразовый SMS-код на подтверждённый номер.`,
+        adminKeyboard([{ text: 'Я прочитал и принимаю оферту Rentop.KG', callback_data: `offer_accept:${order.id}` }])
+      );
+    }
+    if (session.step === 'awaiting_offer_otp') {
+      if (!/^\d{6}$/.test(text || '')) return telegram.sendMessage(message.chat.id, 'Введите 6 цифр из SMS одним сообщением.');
+      if (!order.offer_otp_hash || !order.offer_otp_expires_at || new Date(order.offer_otp_expires_at) < new Date()) {
+        return telegram.sendMessage(message.chat.id, 'Срок действия кода истёк. Нажмите кнопку принятия оферты ещё раз, чтобы запросить новый код.');
+      }
+      const attempts = Number(order.offer_otp_attempts || 0);
+      if (attempts >= 5) return telegram.sendMessage(message.chat.id, 'Лимит попыток исчерпан. Нажмите кнопку принятия оферты ещё раз, чтобы запросить новый код.');
+      const expected = Buffer.from(order.offer_otp_hash, 'hex');
+      const received = Buffer.from(otpHash(order.id, text), 'hex');
+      if (expected.length !== received.length || !timingSafeEqual(expected, received)) {
+        await database.updateOrder(order.id, { offer_otp_attempts: attempts + 1 });
+        return telegram.sendMessage(message.chat.id, `Код не совпал. Осталось попыток: ${4 - attempts}.`);
+      }
+      const now = new Date().toISOString();
+      await database.updateOrder(order.id, { offer_otp_verified_at: now, offer_otp_hash: null, offer_otp_expires_at: null });
+      await recordEvent({ order_id: order.id, event_type: 'offer_otp_verified', actor_type: 'customer', actor_telegram_id: message.from.id, metadata: { offer_version: order.offer_version } });
+      return sendForReview(await database.getOrder(order.id), session);
     }
     if (session.step === 'awaiting_receipt') {
       if (!isDocumentMessage(message)) return telegram.sendMessage(message.chat.id, 'Отправьте чек оплаты как фото или файл.');
@@ -203,12 +277,66 @@ export function createRentopBot({ config, telegram, database }) {
 
   async function handleCallback(callback) {
     const [action, orderId, value] = callback.data.split(':');
-    if (!isAdmin(callback.from.id) && action !== 'bank') {
+    const clientActions = new Set(['bank', 'document_type', 'offer_accept']);
+    if (!isAdmin(callback.from.id) && !clientActions.has(action)) {
       return telegram.answerCallback(callback.id, 'Нет прав. Проверьте RENTOP_ADMIN_USER_IDS в настройках сервера.');
     }
-    const order = await database.getOrder(orderId);
+    const order = action === 'document_type'
+      ? await database.getSessionByUser(callback.from.id).then(async (session) => session ? database.getOrder(session.order_id) : null)
+      : await database.getOrder(orderId);
     const session = order && await database.getSession(order.id);
     if (!order || !session) return telegram.answerCallback(callback.id, 'Заявка не найдена.');
+
+    if (clientActions.has(action) && String(callback.from.id) !== String(session.telegram_user_id)) {
+      return telegram.answerCallback(callback.id, 'Эта кнопка не для вашей заявки.');
+    }
+
+    if (action === 'document_type') {
+      const documentType = orderId;
+      if (session.step !== 'awaiting_document_type') {
+        return telegram.answerCallback(callback.id, 'Этот этап уже пройден.');
+      }
+      const instructions = documentType === 'foreign_passport' || documentType === 'foreign_resident'
+        ? 'Пришлите официальный файл загранпаспорта. Затем бот запросит документ о регистрации/ВНЖ в Кыргызстане.'
+        : 'Пришлите первую сторону ID-карты или паспорта как ФАЙЛ из Tunduk (скрепка → Файл). Скриншоты и обычные фотографии не принимаются.';
+      await saveStep(session, { step: 'awaiting_id', document_type: documentType });
+      await recordEvent({ order_id: order.id, event_type: 'document_type_selected', actor_type: 'customer', actor_telegram_id: callback.from.id, metadata: { document_type: documentType } });
+      await telegram.sendMessage(session.telegram_chat_id, `Шаг 3 из 6. ${instructions}`);
+      return telegram.answerCallback(callback.id, 'Тип документа сохранён.');
+    }
+
+    if (action === 'offer_accept') {
+      if (session.step !== 'awaiting_offer_acceptance') {
+        return telegram.answerCallback(callback.id, 'Этот этап уже пройден.');
+      }
+      if (!config.nikitaSms.enabled || !config.offerOtpHmacSecret || !config.offerUrl) {
+        console.error('OTP is not configured: Nikita SMS credentials, OFFER_OTP_HMAC_SECRET and OFFER_URL are required.');
+        return telegram.answerCallback(callback.id, 'Подтверждение SMS временно недоступно. Менеджер уже уведомлён.');
+      }
+      const code = String(randomInt(100000, 1_000_000));
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      const acceptedAt = new Date().toISOString();
+      try {
+        await sms.send({
+          phone: order.customer_phone,
+          text: `Rentop KG: код подтверждения ${code}. Действует 5 минут. Никому не сообщайте код.`
+        });
+      } catch (error) {
+        console.error('Could not send offer OTP:', error.message);
+        return telegram.answerCallback(callback.id, 'Не удалось отправить SMS. Проверьте номер и попробуйте позже.');
+      }
+      await database.updateOrder(order.id, {
+        offer_version: config.offerVersion,
+        offer_accepted_at: acceptedAt,
+        offer_otp_hash: otpHash(order.id, code),
+        offer_otp_expires_at: expiresAt,
+        offer_otp_attempts: 0
+      });
+      await saveStep(session, { step: 'awaiting_offer_otp' });
+      await recordEvent({ order_id: order.id, event_type: 'offer_accepted', actor_type: 'customer', actor_telegram_id: callback.from.id, metadata: { offer_version: config.offerVersion } });
+      await telegram.sendMessage(session.telegram_chat_id, 'SMS-код отправлен на подтверждённый номер. Введите 6 цифр одним сообщением. Код действует 5 минут.');
+      return telegram.answerCallback(callback.id, 'SMS-код отправлен.');
+    }
 
     if (action === 'approve') {
       await database.updateOrder(order.id, {

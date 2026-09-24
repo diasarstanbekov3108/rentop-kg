@@ -38,6 +38,16 @@ export function loadConfig(env = process.env) {
     simbankPaymentDetails: env.SIMBANK_PAYMENT_DETAILS,
     mbankQrImageSource: env.MBANK_QR_IMAGE_URL || env.MBANK_QR_IMAGE_PATH || '',
     publicAppUrl: env.PUBLIC_APP_URL || 'https://rentop.com.kg',
-    backendPublicUrl: env.BACKEND_PUBLIC_URL || ''
+    backendPublicUrl: env.BACKEND_PUBLIC_URL || '',
+    nikitaSms: {
+      endpoint: env.NIKITA_SMS_ENDPOINT || 'https://smspro.nikita.kg/api/message',
+      login: env.NIKITA_SMS_LOGIN || '',
+      password: env.NIKITA_SMS_PASSWORD || '',
+      sender: env.NIKITA_SMS_SENDER || '',
+      enabled: Boolean(env.NIKITA_SMS_LOGIN && env.NIKITA_SMS_PASSWORD && env.NIKITA_SMS_SENDER)
+    },
+    offerOtpHmacSecret: env.OFFER_OTP_HMAC_SECRET || '',
+    offerVersion: env.OFFER_VERSION || 'draft-2026-09-25',
+    offerUrl: env.OFFER_URL || ''
   });
 }
