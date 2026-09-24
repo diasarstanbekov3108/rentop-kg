@@ -1,10 +1,15 @@
 import { loadConfig } from '../src/config.js';
 
-const webhookUrl = process.argv[2];
+const rawWebhookUrl = process.argv[2];
 
-if (!webhookUrl || !/^https:\/\//i.test(webhookUrl)) {
-  throw new Error('Передайте HTTPS-адрес webhook, например: https://your-preview.vercel.app/api/telegram');
+if (!rawWebhookUrl || !/^https:\/\//i.test(rawWebhookUrl)) {
+  throw new Error('Передайте HTTPS-адрес Vercel Preview или полный адрес /api/telegram.');
 }
+
+const parsedUrl = new URL(rawWebhookUrl);
+const webhookUrl = parsedUrl.pathname === '/' || parsedUrl.pathname === ''
+  ? `${parsedUrl.origin}/api/telegram`
+  : parsedUrl.toString().replace(/\/$/, '');
 
 const config = loadConfig();
 
