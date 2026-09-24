@@ -15,10 +15,21 @@ async function readTelegramUpdate(request) {
 }
 
 export default async function handler(request, response) {
-  if (request.method !== 'POST') return response.status(405).end();
   const config = loadConfig();
   const secret = request.headers['x-telegram-bot-api-secret-token'];
   if (!config.telegramWebhookSecret || secret !== config.telegramWebhookSecret) return response.status(401).end();
+  if (request.method === 'GET') {
+    // Private deployment diagnostic: values are deliberately not exposed, only
+    // booleans so an operator can tell which Vercel environment is incomplete.
+    return response.status(200).json({
+      ok: true,
+      sms_configured: config.nikitaSms.enabled,
+      offer_otp_secret_configured: Boolean(config.offerOtpHmacSecret),
+      offer_url_configured: Boolean(config.offerUrl),
+      offer_version_configured: Boolean(config.offerVersion)
+    });
+  }
+  if (request.method !== 'POST') return response.status(405).end();
   try {
     const bot = createRentopBot({ config, telegram: createTelegramApi(config.telegramBotToken), database: createSupabaseApi(config) });
     await bot.handleUpdate(await readTelegramUpdate(request));
