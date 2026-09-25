@@ -8,9 +8,10 @@
   },
   "scripts": {
     "start": "node --env-file=.env src/index.js",
-    "check": "node --check src/index.js && node --check src/config.js && node --check src/supabase.js && node --check src/telegram.js && node --check src/sms.js && node --check src/bot.js && node --check scripts/get-telegram-context.js && node --check scripts/test-nikita-sms.js",
+    "check": "node --check src/index.js && node --check src/config.js && node --check src/supabase.js && node --check src/telegram.js && node --check src/sms.js && node --check src/bot.js && node --check scripts/get-telegram-context.js && node --check scripts/test-nikita-sms.js && node --check scripts/set-telegram-manager-menu.js",
     "telegram:context": "node --env-file=.env scripts/get-telegram-context.js",
     "telegram:webhook": "node --env-file=.env scripts/set-telegram-webhook.js",
+    "telegram:manager-menu": "node --env-file=.env scripts/set-telegram-manager-menu.js",
     "sms:test": "node --env-file=.env scripts/test-nikita-sms.js"
   }
 }

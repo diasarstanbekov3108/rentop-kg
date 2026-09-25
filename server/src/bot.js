@@ -45,8 +45,7 @@ export function createRentopBot({ config, telegram, database }) {
   function documentOptions() {
     return {
       reply_markup: { inline_keyboard: [
-        [{ text: 'ID-карта КР из Tunduk', callback_data: 'document_type:kr_id' }],
-        [{ text: 'Паспорт КР из Tunduk', callback_data: 'document_type:kr_passport' }],
+        [{ text: 'Паспорт КР / Tunduk', callback_data: 'document_type:kr_passport' }],
         [{ text: 'Загранпаспорт', callback_data: 'document_type:foreign_passport' }],
         [{ text: 'Иностранный паспорт / ВНЖ', callback_data: 'document_type:foreign_resident' }]
       ] }
@@ -105,8 +104,8 @@ export function createRentopBot({ config, telegram, database }) {
     await telegram.sendMessage(session.telegram_chat_id,
       `Заявка одобрена. Аренда: ${order.total_amount} сом. Залог: ${amount} сом.\nВыберите банк для оплаты общей суммы:`,
       adminKeyboard([
-        { text: 'Оплатить через MBANK', callback_data: `bank:${order.id}:mbank` },
-        { text: 'Оплатить через SIMBANK', callback_data: `bank:${order.id}:simbank` }
+        { text: 'MBANK', callback_data: `bank:${order.id}:mbank` },
+        { text: 'SIMBANK', callback_data: `bank:${order.id}:simbank` }
       ])
     );
     return telegram.sendMessage(chatId, `Залог ${amount} сом назначен по заявке ${orderRef(order)}. Клиенту отправлены способы оплаты.`);
@@ -349,6 +348,14 @@ export function createRentopBot({ config, telegram, database }) {
       await database.clearAdminAction(order.id);
       return applyDeposit(order, session, amount, message.chat.id);
     }
+    if (pendingAction?.action === 'pickup_pin' && (message.text || '').trim() && !message.text.trim().startsWith('/')) {
+      const order = await database.getOrder(pendingAction.order_id);
+      const session = order && await database.getSession(order.id);
+      const pickupCode = message.text.trim();
+      if (!order || !session || pickupCode.length > 200) return telegram.sendMessage(message.chat.id, 'Не удалось сохранить PIN/QR. Нажмите «Ввести PIN/QR» ещё раз.');
+      await database.clearAdminAction(order.id);
+      return sendPickupPin(order, session, pickupCode, message.chat.id);
+    }
     if (command === '/admin' || command === '/orders') {
       return sendManagerDashboard(message.chat.id);
     }
@@ -367,13 +374,18 @@ export function createRentopBot({ config, telegram, database }) {
       const order = await database.getOrder(orderId);
       const session = order && await database.getSession(order.id);
       if (!order || !session) return telegram.sendMessage(message.chat.id, 'Заказ не найден.');
-      await database.updateOrder(order.id, { status: 'awaiting_pickup', pickup_pin: rawValue, pickup_ready_at: new Date().toISOString(), locker_status: 'loaded' });
-      await saveStep(session, { step: 'awaiting_pickup' });
-      await telegram.sendMessage(session.telegram_chat_id,
-        `Ноутбук готов к получению.\nЛокация: ${order.locker_address || 'указанная при оформлении'}\nКод: ${rawValue}\nПолучите технику через ARCHA POINT в удобное время.`
-      );
-      return telegram.sendMessage(message.chat.id, `PIN/QR отправлен клиенту по заявке ${orderRef(order)}.`, adminKeyboard([{ text: '✅ Клиент получил ноутбук', callback_data: `issued:${order.id}` }]));
+      return sendPickupPin(order, session, rawValue, message.chat.id);
     }
+  }
+
+  async function sendPickupPin(order, session, pickupCode, chatId) {
+    await database.updateOrder(order.id, { status: 'awaiting_pickup', pickup_pin: pickupCode, pickup_ready_at: new Date().toISOString(), locker_status: 'loaded' });
+    await saveStep(session, { step: 'awaiting_pickup' });
+    await recordEvent({ order_id: order.id, event_type: 'pickup_code_sent', actor_type: 'manager', metadata: {} });
+    await telegram.sendMessage(session.telegram_chat_id,
+      `Ноутбук готов к получению.\nЛокация: ${order.locker_address || 'указанная при оформлении'}\nКод: ${pickupCode}\nПолучите технику через ARCHA POINT в удобное время.`
+    );
+    return telegram.sendMessage(chatId, `PIN/QR отправлен клиенту по заявке ${orderRef(order)}.`, adminKeyboard([{ text: '✅ Клиент получил ноутбук', callback_data: `issued:${order.id}` }]));
   }
 
   async function handleCallback(callback) {
@@ -456,6 +468,12 @@ export function createRentopBot({ config, telegram, database }) {
       return telegram.answerCallback(callback.id, 'Жду сумму одним сообщением.');
     }
 
+    if (action === 'pin_custom') {
+      await database.setAdminAction({ order_id: order.id, action: 'pickup_pin', admin_user_id: callback.from.id });
+      await telegram.sendMessage(callback.message.chat.id, `Отправьте PIN-код или QR-ссылку для заявки ${orderRef(order)} одним сообщением.`);
+      return telegram.answerCallback(callback.id, 'Жду PIN/QR.');
+    }
+
     if (action === 'offer_accept') {
       if (session.step !== 'awaiting_offer_acceptance') {
         return telegram.answerCallback(callback.id, 'Этот этап уже пройден.');
@@ -527,7 +545,9 @@ export function createRentopBot({ config, telegram, database }) {
     } else if (action === 'paid') {
       await database.updateOrder(order.id, { status: 'awaiting_pickup', payment_confirmed_at: new Date().toISOString() });
       await telegram.sendMessage(session.telegram_chat_id, 'Оплата подтверждена. Rentop готовит ноутбук к выдаче. PIN/QR придёт сюда после загрузки в постамат.');
-      await telegram.sendMessage(config.adminChatId, `Оплата подтверждена. После закладки отправьте PIN/QR:\n/pin ${order.id} <PIN_или_QR>`);
+      await telegram.sendMessage(callback.message.chat.id, `Оплата подтверждена по заявке ${orderRef(order)}. После закладки нажмите кнопку и отправьте PIN или QR-ссылку.`, adminKeyboard([
+        { text: '🔐 Ввести PIN / QR', callback_data: `pin_custom:${order.id}` }
+      ]));
     } else if (action === 'payment_reject') {
       await database.updateOrder(order.id, { status: 'awaiting_payment' });
       await saveStep(session, { step: 'awaiting_receipt' });
