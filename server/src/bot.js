@@ -65,7 +65,27 @@ export function createRentopBot({ config, telegram, database }) {
   });
 
   async function sendArchaPointRequest(order, chatId) {
+    if (!order.offer_otp_verified_at) {
+      return telegram.sendMessage(chatId, `Нельзя передать заявку ${orderRef(order)} в ARCHA POINT: клиент ещё не завершил подтверждение оферты.`);
+    }
     const laptop = await database.getLaptop(order.laptop_id);
+    const sharedFields = ['customer_name', 'customer_phone', 'locker_address', 'order_reference', 'laptop_model', 'rental_period'];
+    try {
+      await database.updateOrder(order.id, {
+        archa_data_shared_at: new Date().toISOString(),
+        archa_data_shared_fields: sharedFields
+      });
+    } catch (error) {
+      // Keeps Preview handoff usable until its SQL migration is installed.
+      // Production launch must apply the migration to retain this audit field.
+      console.error('Could not save ARCHA POINT handoff audit:', error.message);
+    }
+    await recordEvent({
+      order_id: order.id,
+      event_type: 'archa_point_handoff_prepared',
+      actor_type: 'manager',
+      metadata: { shared_fields: sharedFields }
+    });
     return telegram.sendMessage(chatId,
       `📦 ARCHA POINT — заявка на подготовку выдачи\n\n` +
       `Заказ Rentop: ${orderRef(order)}\n` +
