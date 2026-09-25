@@ -63,15 +63,19 @@ export function createRentopBot({ config, telegram, database }) {
 
   async function sendDocumentPacket(order, session) {
     const packet = [
-      ['ID / паспорт · первая сторона', session.id_document_first_message_id],
-      ['ID / паспорт · вторая сторона', session.id_document_second_message_id],
-      ['Селфи для сверки личности', session.selfie_message_id],
-      ['Справка о месте жительства / работы', session.supporting_document_message_id]
-    ].filter(([, messageId]) => messageId);
-    await sendAdmin(`Документы по заявке ${orderRef(order)} · ${packet.length} из 4`);
-    for (const [label, messageId] of packet) {
-      await sendAdmin(`📎 ${label}`);
-      await telegram.forwardMessage(config.adminChatId, session.telegram_chat_id, messageId);
+      session.id_document_first_message_id,
+      session.id_document_second_message_id,
+      session.selfie_message_id,
+      session.supporting_document_message_id
+    ].filter(Boolean);
+    if (!packet.length) return;
+    try {
+      await telegram.forwardMessages(config.adminChatId, session.telegram_chat_id, packet);
+    } catch (error) {
+      console.error('Could not forward document packet as a batch:', error.message);
+      for (const messageId of packet) {
+        await telegram.forwardMessage(config.adminChatId, session.telegram_chat_id, messageId);
+      }
     }
   }
 
@@ -225,16 +229,17 @@ export function createRentopBot({ config, telegram, database }) {
     await saveStep(session, { step: 'under_review' });
     await telegram.sendMessage(session.telegram_chat_id, 'Спасибо. Документы и подтверждение оферты переданы менеджеру Rentop на проверку. Мы сообщим решение в этом чате.');
     const laptop = await database.getLaptop(order.laptop_id);
-    await sendDocumentPacket(order, session);
     await sendAdmin(
-      `Документы получены — заявка готова к проверке\n\n${orderDetails(order, laptop)}\n` +
+      `📁 Заявка ${orderRef(order)} · документы готовы к проверке\n\n${orderDetails(order, laptop)}\n` +
       `Клиент: ${order.customer_name || '—'}\nТелефон: ${order.customer_phone || '—'}\n` +
-      `Залог: определить после решения.\n\nПроверьте пересланные материалы.`,
+      `Документы: ${[session.id_document_first_message_id, session.id_document_second_message_id, session.selfie_message_id, session.supporting_document_message_id].filter(Boolean).length} из 4\n` +
+      `Залог: определить после решения.\n\nНиже — оригиналы документов одним пакетом.`,
       adminKeyboard([
         { text: '✅ Одобрить документы', callback_data: `approve:${order.id}` },
         { text: '❌ Отклонить', callback_data: `reject:${order.id}` }
       ])
     );
+    await sendDocumentPacket(order, session);
   }
 
   async function handleClientMessage(message) {

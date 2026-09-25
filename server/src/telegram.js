@@ -39,6 +39,9 @@ export function createTelegramApi(token) {
     forwardMessage: (chatId, fromChatId, messageId) => call('forwardMessage', {
       chat_id: chatId, from_chat_id: fromChatId, message_id: messageId
     }),
+    forwardMessages: (chatId, fromChatId, messageIds) => call('forwardMessages', {
+      chat_id: chatId, from_chat_id: fromChatId, message_ids: messageIds
+    }),
     answerCallback: (callbackId, text = '') => call('answerCallbackQuery', { callback_query_id: callbackId, text })
   };
 }
