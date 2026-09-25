@@ -36,6 +36,9 @@ export default async function handler(request, response) {
     return response.status(200).json({ ok: true });
   } catch (error) {
     console.error('Telegram webhook failed:', error.message);
-    return response.status(500).json({ ok: false });
+    // Telegram retries a 5xx delivery before it proceeds to the next update.
+    // A malformed old manager command must never freeze every later customer
+    // message or manager button in that queue.
+    return response.status(200).json({ ok: false });
   }
 }
