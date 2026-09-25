@@ -37,6 +37,7 @@ export function loadConfig(env = process.env) {
     mbankPaymentDetails: env.MBANK_PAYMENT_DETAILS,
     simbankPaymentDetails: env.SIMBANK_PAYMENT_DETAILS,
     mbankQrImageSource: env.MBANK_QR_IMAGE_URL || env.MBANK_QR_IMAGE_PATH || '',
+    archaPointSupportContact: env.ARCHA_POINT_SUPPORT_CONTACT || '',
     publicAppUrl: env.PUBLIC_APP_URL || 'https://rentop.com.kg',
     backendPublicUrl: env.BACKEND_PUBLIC_URL || '',
     nikitaSms: {

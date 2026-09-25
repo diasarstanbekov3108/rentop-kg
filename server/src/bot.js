@@ -57,9 +57,27 @@ export function createRentopBot({ config, telegram, database }) {
     };
   }
 
-  const helpKeyboard = (orderId) => adminKeyboard([
-    { text: 'Нужна помощь менеджера', callback_data: `support:${orderId}` }
-  ]);
+  const helpKeyboard = (orderId) => ({
+    reply_markup: { inline_keyboard: [
+      [{ text: 'Поддержка Rentop', callback_data: `support:${orderId}` }],
+      [{ text: 'Проблема с ARCHA POINT', callback_data: `archa_support:${orderId}` }]
+    ] }
+  });
+
+  async function sendArchaPointRequest(order, chatId) {
+    const laptop = await database.getLaptop(order.laptop_id);
+    return telegram.sendMessage(chatId,
+      `📦 ARCHA POINT — заявка на подготовку выдачи\n\n` +
+      `Заказ Rentop: ${orderRef(order)}\n` +
+      `Клиент: ${order.customer_name || '—'}\n` +
+      `Телефон для SMS-кода: ${order.customer_phone || '—'}\n` +
+      `Ноутбук: ${laptopTitle(laptop)}\n` +
+      `Период: ${order.rental_start_date} — ${order.rental_end_date}\n` +
+      `Локация: ${order.locker_address || 'уточняется'}\n\n` +
+      `Просьба: подготовить ячейку и отправить клиенту код/PIN или QR для получения. После выдачи сообщите статус Rentop.\n\n` +
+      `Это готовый текст: перешлите его в рабочую группу ARCHA POINT.`
+    );
+  }
 
   async function captureDocument(session, message, field) {
     return saveStep(session, { [field]: message.message_id });
@@ -426,14 +444,15 @@ export function createRentopBot({ config, telegram, database }) {
     await saveStep(session, { step: 'awaiting_pickup' });
     await recordEvent({ order_id: order.id, event_type: 'pickup_code_sent', actor_type: 'manager', metadata: {} });
     await telegram.sendMessage(session.telegram_chat_id,
-      `Ноутбук готов к получению.\nЛокация: ${order.locker_address || 'указанная при оформлении'}\nКод: ${pickupCode}\nПолучите технику через ARCHA POINT в удобное время.`
+      `Ноутбук готов к получению.\nЛокация: ${order.locker_address || 'указанная при оформлении'}\nКод: ${pickupCode}\nПолучите технику через ARCHA POINT в удобное время.`,
+      helpKeyboard(order.id)
     );
     return telegram.sendMessage(chatId, `PIN/QR отправлен клиенту по заявке ${orderRef(order)}.`, adminKeyboard([{ text: '✅ Клиент получил ноутбук', callback_data: `issued:${order.id}` }]));
   }
 
   async function handleCallback(callback) {
     const [action, orderId, value] = callback.data.split(':');
-    const clientActions = new Set(['bank', 'document_type', 'offer_accept', 'support']);
+    const clientActions = new Set(['bank', 'document_type', 'offer_accept', 'support', 'archa_support']);
     if (!isAdmin(callback.from.id) && !clientActions.has(action)) {
       return telegram.answerCallback(callback.id, 'Нет прав. Проверьте RENTOP_ADMIN_USER_IDS в настройках сервера.');
     }
@@ -465,14 +484,18 @@ export function createRentopBot({ config, telegram, database }) {
       return telegram.answerCallback(callback.id, 'Тип документа сохранён.');
     }
 
-    if (action === 'support') {
-      await recordEvent({ order_id: order.id, event_type: 'customer_requested_help', actor_type: 'customer', actor_telegram_id: callback.from.id, metadata: {} });
+    if (action === 'support' || action === 'archa_support') {
+      const isArchaSupport = action === 'archa_support';
+      await recordEvent({ order_id: order.id, event_type: isArchaSupport ? 'customer_requested_archa_support' : 'customer_requested_rentop_support', actor_type: 'customer', actor_telegram_id: callback.from.id, metadata: {} });
       await sendAdmin(
-        `🆘 Клиент запросил помощь\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n` +
+        `${isArchaSupport ? '🆘 Клиент сообщил о проблеме с ARCHA POINT' : '🆘 Клиент запросил поддержку Rentop'}\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n` +
         `Клиент: ${order.customer_name || '—'}\nТелефон: ${order.customer_phone || '—'}\n` +
         `Текущий этап: ${session.step}\n\nОтветьте клиенту через Telegram-диалог с ботом или свяжитесь по подтверждённому номеру.`
       );
-      await telegram.sendMessage(session.telegram_chat_id, 'Запрос передан менеджеру Rentop. Мы свяжемся с вами в ближайшее рабочее время.');
+      const contact = isArchaSupport && config.archaPointSupportContact
+        ? `\nКонтакт поддержки ARCHA POINT: ${config.archaPointSupportContact}`
+        : '';
+      await telegram.sendMessage(session.telegram_chat_id, `${isArchaSupport ? 'Запрос по ARCHA POINT' : 'Запрос в Rentop'} передан менеджеру. Мы свяжемся с вами в ближайшее рабочее время.${contact}`);
       return telegram.answerCallback(callback.id, 'Менеджер получил запрос.');
     }
 
@@ -488,6 +511,9 @@ export function createRentopBot({ config, telegram, database }) {
           { text: '+3 дня', callback_data: `extend:${order.id}:3` },
           { text: '+7 дней', callback_data: `extend:${order.id}:7` }
         ]);
+      }
+      if (['awaiting_pickup', 'issued', 'in_use'].includes(order.status) && order.delivery_type === 'arca_locker') {
+        controlRows.push([{ text: '📦 Текст для ARCHA POINT', callback_data: `archa_request:${order.id}` }]);
       }
       await telegram.sendMessage(callback.message.chat.id,
         `${orderDetails(order, laptop)}\n\n` +
@@ -549,6 +575,12 @@ export function createRentopBot({ config, telegram, database }) {
       await database.setAdminAction({ order_id: order.id, action: 'pickup_pin', admin_user_id: callback.from.id });
       await telegram.sendMessage(callback.message.chat.id, `Отправьте PIN-код или QR-ссылку для заявки ${orderRef(order)} одним сообщением.`);
       return telegram.answerCallback(callback.id, 'Жду PIN/QR.');
+    }
+
+    if (action === 'archa_request') {
+      if (order.delivery_type !== 'arca_locker') return telegram.answerCallback(callback.id, 'Эта заявка не на выдачу через ARCHA POINT.');
+      await sendArchaPointRequest(order, callback.message.chat.id);
+      return telegram.answerCallback(callback.id, 'Готовый текст отправлен.');
     }
 
     if (action === 'offer_accept') {
@@ -622,9 +654,11 @@ export function createRentopBot({ config, telegram, database }) {
     } else if (action === 'paid') {
       await database.updateOrder(order.id, { status: 'awaiting_pickup', payment_confirmed_at: new Date().toISOString() });
       await telegram.sendMessage(session.telegram_chat_id, 'Оплата подтверждена. Rentop готовит ноутбук к выдаче. PIN/QR придёт сюда после загрузки в постамат.');
-      await telegram.sendMessage(callback.message.chat.id, `Оплата подтверждена по заявке ${orderRef(order)}. После закладки нажмите кнопку и отправьте PIN или QR-ссылку.`, adminKeyboard([
-        { text: '🔐 Ввести PIN / QR', callback_data: `pin_custom:${order.id}` }
-      ]));
+      const paidButtons = [[{ text: '🔐 Резервно отправить PIN / QR', callback_data: `pin_custom:${order.id}` }]];
+      if (order.delivery_type === 'arca_locker') paidButtons.unshift([{ text: '📦 Текст для ARCHA POINT', callback_data: `archa_request:${order.id}` }]);
+      await telegram.sendMessage(callback.message.chat.id, `Оплата подтверждена по заявке ${orderRef(order)}. Для ARCHA POINT используйте готовый текст ниже. Если их SMS с кодом не дойдёт клиенту, используйте резервную отправку PIN/QR.`, {
+        reply_markup: { inline_keyboard: paidButtons }
+      });
     } else if (action === 'payment_reject') {
       await database.updateOrder(order.id, { status: 'awaiting_payment' });
       await saveStep(session, { step: 'awaiting_receipt' });
