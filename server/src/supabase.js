@@ -50,6 +50,12 @@ export function createSupabaseApi(config) {
         `rental_orders?select=id,laptop_id,customer_name,customer_phone,rental_start_date,rental_end_date,status,total_amount,deposit_amount,delivery_type,locker_address,created_at,updated_at&order=created_at.desc&limit=${Math.min(Math.max(Number(limit) || 12, 1), 30)}${statusFilter}`
       );
     },
+    findOverlappingBlockingOrder: (orderId, laptopId, startDate, endDate) => request(
+      `rental_orders?select=id,status,rental_start_date,rental_end_date&laptop_id=eq.${encodeURIComponent(laptopId)}` +
+      `&id=neq.${encodeURIComponent(orderId)}&rental_start_date=lt.${encodeURIComponent(endDate)}` +
+      `&rental_end_date=gt.${encodeURIComponent(startDate)}` +
+      '&status=in.(confirmed,awaiting_payment,awaiting_pickup,issued,in_use)&limit=1'
+    ).then((rows) => rows?.[0] || null),
     getAdminActionByUser: (userId) => getOne(`rental_order_admin_actions?admin_user_id=eq.${encodeURIComponent(userId)}&select=*&order=created_at.desc`),
     createEvent: (event) => request('rental_order_events', {
       method: 'POST', body: JSON.stringify(event)

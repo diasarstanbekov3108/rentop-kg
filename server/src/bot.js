@@ -14,6 +14,11 @@ const isSelfiePhoto = (message) => Boolean(message?.photo?.length);
 const isDocumentMessage = (message) => Boolean(message?.document || message?.photo?.length);
 const orderRef = (order) => String(order.id).slice(0, 8).toUpperCase();
 const laptopTitle = (laptop) => String(laptop?.title || laptop?.name || `Ноутбук #${laptop?.id || '—'}`);
+const addDaysToIso = (isoDate, days) => {
+  const date = new Date(`${isoDate}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+};
 
 function orderDetails(order, laptop) {
   const delivery = order.delivery_type === 'arca_locker'
@@ -109,6 +114,44 @@ export function createRentopBot({ config, telegram, database }) {
       ])
     );
     return telegram.sendMessage(chatId, `Залог ${amount} сом назначен по заявке ${orderRef(order)}. Клиенту отправлены способы оплаты.`);
+  }
+
+  async function cancelOrder(order, session, chatId) {
+    const cancellable = new Set(['draft', 'pending_review', 'awaiting_payment', 'payment_review', 'confirmed', 'awaiting_pickup']);
+    if (!cancellable.has(order.status)) {
+      return telegram.sendMessage(chatId, 'Эту заявку уже нельзя отменить автоматически: техника может быть выдана. Используйте обработку возврата через менеджера.');
+    }
+    await database.updateOrder(order.id, { status: 'cancelled', hold_expires_at: new Date().toISOString() });
+    await recordEvent({ order_id: order.id, event_type: 'order_cancelled_by_manager', actor_type: 'manager', metadata: {} });
+    if (session?.telegram_chat_id) {
+      await telegram.sendMessage(session.telegram_chat_id, `Заявка ${orderRef(order)} отменена менеджером Rentop. Ноутбук снова доступен для бронирования.`);
+    }
+    return telegram.sendMessage(chatId, `Заявка ${orderRef(order)} отменена. Даты ноутбука сразу освобождены на сайте.`);
+  }
+
+  async function extendOrder(order, session, extraDays, chatId) {
+    const extendable = new Set(['awaiting_payment', 'payment_review', 'confirmed', 'awaiting_pickup', 'issued', 'in_use']);
+    if (!extendable.has(order.status)) return telegram.sendMessage(chatId, 'Продлить можно только активную или подтверждённую заявку.');
+    const newEndDate = addDaysToIso(order.rental_end_date, extraDays);
+    const conflict = await database.findOverlappingBlockingOrder(order.id, order.laptop_id, order.rental_end_date, newEndDate);
+    if (conflict) return telegram.sendMessage(chatId, `Продление недоступно: с ${conflict.rental_start_date} этот ноутбук уже забронирован в другой заявке.`);
+    const totalDays = Math.round((new Date(`${newEndDate}T00:00:00Z`) - new Date(`${order.rental_start_date}T00:00:00Z`)) / 86_400_000);
+    const discount = totalDays >= 15 ? 30 : totalDays >= 4 ? 15 : 0;
+    const newTotal = Math.round(totalDays * Number(order.daily_rate) * (100 - discount) / 100);
+    const extraAmount = Math.max(0, newTotal - Number(order.total_amount));
+    await database.updateOrder(order.id, {
+      rental_end_date: newEndDate,
+      rental_days: totalDays,
+      discount_percent: discount,
+      total_amount: newTotal
+    });
+    await recordEvent({ order_id: order.id, event_type: 'rental_extended_by_manager', actor_type: 'manager', metadata: { extra_days: extraDays, extra_amount: extraAmount, new_end_date: newEndDate } });
+    if (session?.telegram_chat_id) {
+      await telegram.sendMessage(session.telegram_chat_id,
+        `Аренда продлена до ${newEndDate}. Доплата за продление: ${extraAmount} сом. Менеджер сообщит способ оплаты.`
+      );
+    }
+    return telegram.sendMessage(chatId, `Заявка ${orderRef(order)} продлена на ${extraDays} дн. Новая дата возврата: ${newEndDate}. Доплата: ${extraAmount} сом.`);
   }
 
   const dashboardFilters = {
@@ -435,6 +478,17 @@ export function createRentopBot({ config, telegram, database }) {
 
     if (action === 'admin_order') {
       const laptop = await database.getLaptop(order.laptop_id);
+      const controlRows = [];
+      if (['draft', 'pending_review', 'awaiting_payment', 'payment_review', 'confirmed', 'awaiting_pickup'].includes(order.status)) {
+        controlRows.push([{ text: '🗑 Отменить заявку', callback_data: `cancel_confirm:${order.id}` }]);
+      }
+      if (['awaiting_payment', 'payment_review', 'confirmed', 'awaiting_pickup', 'issued', 'in_use'].includes(order.status)) {
+        controlRows.push([
+          { text: '+1 день', callback_data: `extend:${order.id}:1` },
+          { text: '+3 дня', callback_data: `extend:${order.id}:3` },
+          { text: '+7 дней', callback_data: `extend:${order.id}:7` }
+        ]);
+      }
       await telegram.sendMessage(callback.message.chat.id,
         `${orderDetails(order, laptop)}\n\n` +
         `Статус: ${order.status}\n` +
@@ -443,11 +497,34 @@ export function createRentopBot({ config, telegram, database }) {
         `Создана: ${order.created_at}\n` +
         `Обновлена: ${order.updated_at}\n` +
         `Полный ID: ${order.id}`,
-        order.status === 'awaiting_payment'
-          ? { reply_markup: { inline_keyboard: [[{ text: '💳 Назначить залог', callback_data: `deposit_menu:${order.id}` }]] } }
-          : undefined
+        { reply_markup: { inline_keyboard: [
+          ...(order.status === 'awaiting_payment' ? [[{ text: '💳 Назначить залог', callback_data: `deposit_menu:${order.id}` }]] : []),
+          ...controlRows
+        ] } }
       );
       return telegram.answerCallback(callback.id, 'Карточка отправлена.');
+    }
+
+    if (action === 'cancel_confirm') {
+      await telegram.sendMessage(callback.message.chat.id, `Отменить заявку ${orderRef(order)}? Даты ноутбука сразу станут свободными.`, {
+        reply_markup: { inline_keyboard: [[
+          { text: 'Да, отменить', callback_data: `cancel_apply:${order.id}` },
+          { text: 'Не отменять', callback_data: `admin_order:${order.id}` }
+        ]] }
+      });
+      return telegram.answerCallback(callback.id, 'Подтвердите отмену.');
+    }
+
+    if (action === 'cancel_apply') {
+      await cancelOrder(order, session, callback.message.chat.id);
+      return telegram.answerCallback(callback.id, 'Заявка отменена.');
+    }
+
+    if (action === 'extend') {
+      const extraDays = Number(value);
+      if (![1, 3, 7].includes(extraDays)) return telegram.answerCallback(callback.id, 'Некорректный срок продления.');
+      await extendOrder(order, session, extraDays, callback.message.chat.id);
+      return telegram.answerCallback(callback.id, 'Срок продлён.');
     }
 
     if (action === 'deposit_menu') {
