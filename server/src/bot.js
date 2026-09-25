@@ -75,6 +75,74 @@ export function createRentopBot({ config, telegram, database }) {
     }
   }
 
+  const depositKeyboard = (orderId) => ({
+    reply_markup: { inline_keyboard: [
+      [
+        { text: 'Без залога', callback_data: `deposit_pick:${orderId}:0` },
+        { text: '5 000 сом', callback_data: `deposit_pick:${orderId}:5000` },
+        { text: '10 000 сом', callback_data: `deposit_pick:${orderId}:10000` }
+      ],
+      [
+        { text: '15 000 сом', callback_data: `deposit_pick:${orderId}:15000` },
+        { text: '20 000 сом', callback_data: `deposit_pick:${orderId}:20000` }
+      ],
+      [{ text: 'Другая сумма', callback_data: `deposit_custom:${orderId}` }]
+    ] }
+  });
+
+  async function applyDeposit(order, session, amount, chatId) {
+    await database.updateOrder(order.id, {
+      status: 'awaiting_payment',
+      deposit_amount: amount,
+      hold_expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    });
+    await saveStep(session, { step: 'awaiting_payment_method' });
+    await recordEvent({ order_id: order.id, event_type: 'deposit_assigned', actor_type: 'manager', metadata: { amount } });
+    await telegram.sendMessage(session.telegram_chat_id,
+      `Заявка одобрена. Аренда: ${order.total_amount} сом. Залог: ${amount} сом.\nВыберите банк для оплаты общей суммы:`,
+      adminKeyboard([
+        { text: 'Оплатить через MBANK', callback_data: `bank:${order.id}:mbank` },
+        { text: 'Оплатить через SIMBANK', callback_data: `bank:${order.id}:simbank` }
+      ])
+    );
+    return telegram.sendMessage(chatId, `Залог ${amount} сом назначен по заявке ${orderRef(order)}. Клиенту отправлены способы оплаты.`);
+  }
+
+  const dashboardFilters = {
+    all: { title: 'Все последние заявки', statuses: [] },
+    review: { title: 'Ожидают проверки', statuses: ['pending_review'] },
+    payment: { title: 'Ожидают оплаты', statuses: ['awaiting_payment', 'payment_review'] },
+    active: { title: 'Активные аренды', statuses: ['awaiting_pickup', 'issued', 'in_use', 'return_requested'] },
+    closed: { title: 'Завершённые и отклонённые', statuses: ['returned', 'completed', 'rejected', 'cancelled', 'expired'] }
+  };
+
+  async function sendManagerDashboard(chatId, filterKey = 'all') {
+    const filter = dashboardFilters[filterKey] || dashboardFilters.all;
+    const orders = await database.listRecentOrders(12, filter.statuses);
+    const lines = await Promise.all(orders.map(async (order, index) => {
+      const laptop = await database.getLaptop(order.laptop_id);
+      return `${index + 1}. ${orderRef(order)} · ${laptopTitle(laptop)}\n${order.status} · ${order.rental_start_date}—${order.rental_end_date} · ${order.total_amount} сом`;
+    }));
+    const orderButtons = orders.slice(0, 8).map((order) => ([
+      { text: `Открыть ${orderRef(order)}`, callback_data: `admin_order:${order.id}` }
+    ]));
+    return telegram.sendMessage(chatId,
+      `⚙️ Меню менеджера\n${filter.title}\n\n${lines.length ? lines.join('\n\n') : 'Заявок в этом разделе нет.'}`,
+      { reply_markup: { inline_keyboard: [
+        [
+          { text: 'Все', callback_data: 'dashboard:all' },
+          { text: 'На проверке', callback_data: 'dashboard:review' },
+          { text: 'Оплата', callback_data: 'dashboard:payment' }
+        ],
+        [
+          { text: 'Активные', callback_data: 'dashboard:active' },
+          { text: 'Закрытые', callback_data: 'dashboard:closed' }
+        ],
+        ...orderButtons
+      ] } }
+    );
+  }
+
   async function sendAdmin(text, extra = {}) {
     return telegram.sendMessage(config.adminChatId, text, extra);
   }
@@ -249,7 +317,7 @@ export function createRentopBot({ config, telegram, database }) {
       const now = new Date().toISOString();
       await database.updateOrder(order.id, { offer_otp_verified_at: now, offer_otp_hash: null, offer_otp_expires_at: null });
       await recordEvent({ order_id: order.id, event_type: 'offer_otp_verified', actor_type: 'customer', actor_telegram_id: message.from.id, metadata: { offer_version: order.offer_version } });
-      return sendForReview(await database.getOrder(order.id), session);
+      return sendForReview(await database.getOrder(order.id), await database.getSession(order.id));
     }
     if (session.step === 'awaiting_receipt') {
       if (!isDocumentMessage(message)) return telegram.sendMessage(message.chat.id, 'Отправьте чек оплаты как фото или файл.');
@@ -267,18 +335,17 @@ export function createRentopBot({ config, telegram, database }) {
   async function handleAdminCommand(message) {
     if (!isAdmin(message.from.id)) return;
     const [command, orderId, rawValue] = (message.text || '').trim().split(/\s+/, 3);
-    if (command === '/orders') {
-      const orders = await database.listRecentOrders();
-      if (!orders.length) return telegram.sendMessage(message.chat.id, 'Заявок пока нет.');
-      const lines = await Promise.all(orders.map(async (order, index) => {
-        const laptop = await database.getLaptop(order.laptop_id);
-        return `${index + 1}. ${orderRef(order)} · ${laptopTitle(laptop)}\n${order.status} · ${order.rental_start_date}—${order.rental_end_date} · ${order.total_amount} сом`;
-      }));
-      return telegram.sendMessage(message.chat.id, `Последние заявки (${orders.length})\n\n${lines.join('\n\n')}`, {
-        reply_markup: { inline_keyboard: orders.slice(0, 8).map((order) => ([
-          { text: `Открыть ${orderRef(order)}`, callback_data: `admin_order:${order.id}` }
-        ])) }
-      });
+    const pendingAction = await database.getAdminActionByUser(message.from.id);
+    if (pendingAction?.action === 'deposit' && /^\d+(?:[.,]\d{1,2})?$/.test((message.text || '').trim())) {
+      const order = await database.getOrder(pendingAction.order_id);
+      const session = order && await database.getSession(order.id);
+      const amount = Number((message.text || '').trim().replace(',', '.'));
+      if (!order || !session || !Number.isFinite(amount) || amount < 0) return telegram.sendMessage(message.chat.id, 'Не удалось применить сумму. Нажмите «Другая сумма» ещё раз.');
+      await database.clearAdminAction(order.id);
+      return applyDeposit(order, session, amount, message.chat.id);
+    }
+    if (command === '/admin' || command === '/orders') {
+      return sendManagerDashboard(message.chat.id);
     }
     if (command === '/deposit') {
       const amount = Number(rawValue?.replace(',', '.'));
@@ -288,15 +355,7 @@ export function createRentopBot({ config, telegram, database }) {
       const order = await database.getOrder(orderId);
       const session = order && await database.getSession(order.id);
       if (!order || !session) return telegram.sendMessage(message.chat.id, 'Заказ не найден. Используйте полный ID из сообщения бота.');
-      await database.updateOrder(order.id, { status: 'awaiting_payment', deposit_amount: amount, hold_expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() });
-      await saveStep(session, { step: 'awaiting_payment_method' });
-      return telegram.sendMessage(session.telegram_chat_id,
-        `Заявка одобрена. Аренда: ${order.total_amount} сом. Залог: ${amount} сом.\nВыберите банк для оплаты общей суммы:`,
-        adminKeyboard([
-          { text: 'Оплатить через MBANK', callback_data: `bank:${order.id}:mbank` },
-          { text: 'Оплатить через SIMBANK', callback_data: `bank:${order.id}:simbank` }
-        ])
-      );
+      return applyDeposit(order, session, amount, message.chat.id);
     }
     if (command === '/pin') {
       if (!orderId || !rawValue) return telegram.sendMessage(message.chat.id, 'Формат: /pin <полный_ID_заказа> <PIN_или_QR>.');
@@ -317,6 +376,10 @@ export function createRentopBot({ config, telegram, database }) {
     const clientActions = new Set(['bank', 'document_type', 'offer_accept', 'support']);
     if (!isAdmin(callback.from.id) && !clientActions.has(action)) {
       return telegram.answerCallback(callback.id, 'Нет прав. Проверьте RENTOP_ADMIN_USER_IDS в настройках сервера.');
+    }
+    if (action === 'dashboard') {
+      await sendManagerDashboard(callback.message.chat.id, orderId);
+      return telegram.answerCallback(callback.id, 'Список обновлён.');
     }
     const order = action === 'document_type'
       ? await database.getSessionByUser(callback.from.id).then(async (session) => session ? database.getOrder(session.order_id) : null)
@@ -362,9 +425,30 @@ export function createRentopBot({ config, telegram, database }) {
         `Залог: ${order.deposit_amount ?? 'не назначен'}\n` +
         `Создана: ${order.created_at}\n` +
         `Обновлена: ${order.updated_at}\n` +
-        `Полный ID: ${order.id}`
+        `Полный ID: ${order.id}`,
+        order.status === 'awaiting_payment'
+          ? { reply_markup: { inline_keyboard: [[{ text: '💳 Назначить залог', callback_data: `deposit_menu:${order.id}` }]] } }
+          : undefined
       );
       return telegram.answerCallback(callback.id, 'Карточка отправлена.');
+    }
+
+    if (action === 'deposit_menu') {
+      await telegram.sendMessage(callback.message.chat.id, `Выберите сумму залога для заявки ${orderRef(order)}:`, depositKeyboard(order.id));
+      return telegram.answerCallback(callback.id, 'Выберите сумму.');
+    }
+
+    if (action === 'deposit_pick') {
+      const amount = Number(value);
+      if (!Number.isFinite(amount) || amount < 0) return telegram.answerCallback(callback.id, 'Некорректная сумма.');
+      await applyDeposit(order, session, amount, callback.message.chat.id);
+      return telegram.answerCallback(callback.id, 'Залог назначен.');
+    }
+
+    if (action === 'deposit_custom') {
+      await database.setAdminAction({ order_id: order.id, action: 'deposit', admin_user_id: callback.from.id });
+      await telegram.sendMessage(callback.message.chat.id, `Введите только сумму залога цифрами для заявки ${orderRef(order)}. Например: 7500`);
+      return telegram.answerCallback(callback.id, 'Жду сумму одним сообщением.');
     }
 
     if (action === 'offer_accept') {
@@ -417,7 +501,7 @@ export function createRentopBot({ config, telegram, database }) {
         hold_expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
       });
       await telegram.sendMessage(session.telegram_chat_id, 'Документы одобрены. Менеджер определяет сумму залога и пришлёт реквизиты для оплаты.');
-      await telegram.sendMessage(config.adminChatId, `Документы одобрены. Укажите залог командой:\n/deposit ${order.id} <сумма>`);
+      await telegram.sendMessage(callback.message.chat.id, `Документы одобрены. Выберите залог для заявки ${orderRef(order)}:`, depositKeyboard(order.id));
     } else if (action === 'reject') {
       await database.updateOrder(order.id, { status: 'rejected' });
       await saveStep(session, { step: 'completed' });
