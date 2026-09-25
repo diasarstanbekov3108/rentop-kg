@@ -56,6 +56,12 @@ export function createSupabaseApi(config) {
       `&rental_end_date=gt.${encodeURIComponent(startDate)}` +
       '&status=in.(confirmed,awaiting_payment,awaiting_pickup,issued,in_use)&limit=1'
     ).then((rows) => rows?.[0] || null),
+    claimWebhookUpdate: (updateId) => request('telegram_webhook_updates?on_conflict=update_id', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=ignore-duplicates,return=representation' },
+      body: JSON.stringify({ update_id: updateId })
+    }).then((rows) => Boolean(rows?.length)),
+    releaseWebhookUpdate: (updateId) => request(`telegram_webhook_updates?update_id=eq.${encodeURIComponent(updateId)}`, { method: 'DELETE' }),
     getAdminActionByUser: (userId) => getOne(`rental_order_admin_actions?admin_user_id=eq.${encodeURIComponent(userId)}&select=*&order=created_at.desc`),
     createEvent: (event) => request('rental_order_events', {
       method: 'POST', body: JSON.stringify(event)

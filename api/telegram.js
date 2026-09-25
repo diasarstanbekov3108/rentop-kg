@@ -30,15 +30,32 @@ export default async function handler(request, response) {
     });
   }
   if (request.method !== 'POST') return response.status(405).end();
+  let updateId = null;
+  let claimed = false;
+  const database = createSupabaseApi(config);
   try {
-    const bot = createRentopBot({ config, telegram: createTelegramApi(config.telegramBotToken), database: createSupabaseApi(config) });
-    await bot.handleUpdate(await readTelegramUpdate(request));
+    const update = await readTelegramUpdate(request);
+    updateId = Number.isInteger(update?.update_id) ? update.update_id : null;
+    if (updateId !== null) {
+      try {
+        claimed = await database.claimWebhookUpdate(updateId);
+        if (!claimed) return response.status(200).json({ ok: true, duplicate: true });
+      } catch (error) {
+        // The migration may not yet be installed on a Preview. The bot still
+        // works; production launch requires the table for duplicate protection.
+        console.error('Telegram idempotency store unavailable:', error.message);
+      }
+    }
+    const bot = createRentopBot({ config, telegram: createTelegramApi(config.telegramBotToken), database });
+    await bot.handleUpdate(update);
     return response.status(200).json({ ok: true });
   } catch (error) {
     console.error('Telegram webhook failed:', error.message);
-    // Telegram retries a 5xx delivery before it proceeds to the next update.
-    // A malformed old manager command must never freeze every later customer
-    // message or manager button in that queue.
-    return response.status(200).json({ ok: false });
+    if (claimed && updateId !== null) {
+      await database.releaseWebhookUpdate(updateId).catch((releaseError) => {
+        console.error('Could not release failed Telegram update:', releaseError.message);
+      });
+    }
+    return response.status(500).json({ ok: false });
   }
 }

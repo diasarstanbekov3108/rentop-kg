@@ -646,7 +646,12 @@ export function createRentopBot({ config, telegram, database }) {
         return startClient(message, payload?.replace(/^r_/, ''));
       }
       if (isAdmin(message.from.id) && String(message.chat.id) === String(config.adminChatId)) {
-        return handleAdminCommand(message);
+        try {
+          return await handleAdminCommand(message);
+        } catch (error) {
+          console.error('Manager command failed:', error.message);
+          return telegram.sendMessage(message.chat.id, 'Не удалось выполнить это действие. Откройте /admin и попробуйте ещё раз.');
+        }
       }
       return handleClientMessage(message);
     }
