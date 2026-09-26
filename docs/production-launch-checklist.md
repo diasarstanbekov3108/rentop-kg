@@ -2,7 +2,7 @@
 
 ## Перед переключением на Production
 
-1. В Supabase SQL Editor выполнить новую миграцию `20260926120000_add_telegram_webhook_idempotency.sql` один раз.
+1. В Supabase SQL Editor один раз выполнить новые миграции по порядку: `20260926120000_add_telegram_webhook_idempotency.sql`, `20260926130000_add_archa_handoff_audit.sql`, `20260926140000_add_rental_support_cases.sql`.
 2. Убедиться, что ранее применены базовая миграция заказов и миграции ПЭП/документов.
 3. В Vercel Production заполнить те же приватные переменные, что проверены в Preview: Telegram, Supabase, реквизиты банков, OTP/Nikita и URL оферты. Значения секретов не копировать в Git.
 4. В `PUBLIC_APP_URL`, `OFFER_URL` и `MBANK_QR_IMAGE_URL` указать основной HTTPS-домен, а не случайный Preview-домен. QR: `https://<домен>/assets/brand/mbank-qr.jpg`.

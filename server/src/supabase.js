@@ -62,6 +62,18 @@ export function createSupabaseApi(config) {
       body: JSON.stringify({ update_id: updateId })
     }).then((rows) => Boolean(rows?.length)),
     releaseWebhookUpdate: (updateId) => request(`telegram_webhook_updates?update_id=eq.${encodeURIComponent(updateId)}`, { method: 'DELETE' }),
+    openSupportCase: (supportCase) => request('rental_order_support_cases?on_conflict=order_id,kind', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+      body: JSON.stringify(supportCase)
+    }).then((rows) => rows?.[0] || null),
+    resolveSupportCase: (orderId, kind, resolvedBy) => request(
+      `rental_order_support_cases?order_id=eq.${encodeURIComponent(orderId)}&kind=eq.${encodeURIComponent(kind)}`,
+      { method: 'PATCH', body: JSON.stringify({ status: 'resolved', resolved_at: new Date().toISOString(), resolved_by: String(resolvedBy) }) }
+    ).then((rows) => rows?.[0] || null),
+    listOpenSupportCases: (limit = 12) => request(
+      `rental_order_support_cases?select=*&status=eq.open&order=opened_at.desc&limit=${Math.min(Math.max(Number(limit) || 12, 1), 30)}`
+    ),
     getAdminActionByUser: (userId) => getOne(`rental_order_admin_actions?admin_user_id=eq.${encodeURIComponent(userId)}&select=*&order=created_at.desc`),
     createEvent: (event) => request('rental_order_events', {
       method: 'POST', body: JSON.stringify(event)
