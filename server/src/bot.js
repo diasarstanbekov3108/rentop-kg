@@ -1,5 +1,6 @@
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
-import { createNikitaSmsClient, normalizeKyrgyzPhone } from './sms.js';
+import { normalizeKyrgyzPhone } from './sms.js';
+import { createOtpService } from './otp.js';
 
 const adminKeyboard = (buttons) => ({ reply_markup: { inline_keyboard: [buttons] } });
 const contactKeyboard = () => ({
@@ -38,7 +39,7 @@ function orderDetails(order, laptop) {
 
 export function createRentopBot({ config, telegram, database }) {
   const isAdmin = (userId) => config.adminUserIds.has(String(userId));
-  const sms = createNikitaSmsClient(config.nikitaSms);
+  const otp = createOtpService({ provider: config.otpProvider, nikitaSms: config.nikitaSms, telegram });
 
   const recordEvent = (event) => database.createEvent?.(event).catch((error) => {
     console.error('Could not write rental order audit event:', error.message);
@@ -379,7 +380,7 @@ export function createRentopBot({ config, telegram, database }) {
       await saveStep(updatedSession, { supporting_document_received_at: new Date().toISOString(), step: 'awaiting_offer_acceptance' });
       const offerLink = config.offerUrl ? `\n\nОферта: ${config.offerUrl}` : '';
       return telegram.sendMessage(message.chat.id,
-        `Документы получены. Шаг 5 из 6: ознакомьтесь с публичной офертой${offerLink}\n\nПосле ознакомления подтвердите согласие кнопкой ниже. Затем мы отправим одноразовый SMS-код на подтверждённый номер.`,
+        `Документы получены. Шаг 5 из 6: ознакомьтесь с публичной офертой${offerLink}\n\nПосле ознакомления подтвердите согласие кнопкой ниже. Затем мы отправим одноразовый код подтверждения.`,
         { reply_markup: { inline_keyboard: [
           [{ text: 'Я прочитал и принимаю оферту Rentop.KG', callback_data: `offer_accept:${order.id}` }],
           [{ text: 'Нужна помощь менеджера', callback_data: `support:${order.id}` }]
@@ -607,32 +608,33 @@ export function createRentopBot({ config, telegram, database }) {
       if (session.step !== 'awaiting_offer_acceptance') {
         return telegram.answerCallback(callback.id, 'Этот этап уже пройден.');
       }
-      if (!config.nikitaSms.enabled || !config.offerOtpHmacSecret || !config.offerUrl) {
+      if (!config.offerOtpHmacSecret || !config.offerUrl) {
         const missing = [
-          !config.nikitaSms.enabled ? 'NIKITA_SMS_LOGIN / NIKITA_SMS_PASSWORD / NIKITA_SMS_SENDER' : null,
           !config.offerOtpHmacSecret ? 'OFFER_OTP_HMAC_SECRET' : null,
           !config.offerUrl ? 'OFFER_URL' : null
         ].filter(Boolean);
         console.error(`OTP is not configured: ${missing.join(', ')}`);
-        await sendAdmin(`⚠️ SMS-подписание недоступно для заявки ${orderRef(order)}. Добавьте в Vercel Preview: ${missing.join(', ')}.`);
-        return telegram.answerCallback(callback.id, 'SMS-подписание временно недоступно. Менеджер уведомлён.');
+        await sendAdmin(`⚠️ OTP-подписание недоступно для заявки ${orderRef(order)}. Добавьте в Vercel Preview: ${missing.join(', ')}.`);
+        return telegram.answerCallback(callback.id, 'Подтверждение временно недоступно. Менеджер уведомлён.');
       }
       const code = String(randomInt(100000, 1_000_000));
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
       const acceptedAt = new Date().toISOString();
+      let delivery;
       try {
-        await sms.send({
+        delivery = await otp.sendOfferCode({
+          chatId: session.telegram_chat_id,
           phone: order.customer_phone,
-          text: `Rentop KG: код подтверждения ${code}. Действует 5 минут. Никому не сообщайте код.`
+          code
         });
       } catch (error) {
-        console.error('Could not send offer OTP:', error.message);
+        console.error('Could not deliver offer OTP:', error.message);
         await sendAdmin(
-          `⚠️ Nikita SMS не принял OTP для заявки ${orderRef(order)}.\n` +
+          `⚠️ Не удалось отправить OTP для заявки ${orderRef(order)}.\n` +
           `Техническая причина: ${error.message}\n\n` +
-          'Проверьте номер клиента, Sender ID и IP-ограничения в кабинете Nikita. Секреты и код SMS не отображаются.'
+          'Проверьте настройки OTP-провайдера. Секреты и код не отображаются.'
         );
-        return telegram.answerCallback(callback.id, 'Не удалось отправить SMS. Проверьте номер и попробуйте позже.');
+        return telegram.answerCallback(callback.id, 'Не удалось отправить код. Попробуйте позже.');
       }
       await database.updateOrder(order.id, {
         offer_version: config.offerVersion,
@@ -642,9 +644,11 @@ export function createRentopBot({ config, telegram, database }) {
         offer_otp_attempts: 0
       });
       await saveStep(session, { step: 'awaiting_offer_otp' });
-      await recordEvent({ order_id: order.id, event_type: 'offer_accepted', actor_type: 'customer', actor_telegram_id: callback.from.id, metadata: { offer_version: config.offerVersion } });
-      await telegram.sendMessage(session.telegram_chat_id, 'SMS-код отправлен на подтверждённый номер. Введите 6 цифр одним сообщением. Код действует 5 минут.');
-      return telegram.answerCallback(callback.id, 'SMS-код отправлен.');
+      await recordEvent({ order_id: order.id, event_type: 'offer_accepted', actor_type: 'customer', actor_telegram_id: callback.from.id, metadata: { offer_version: config.offerVersion, otp_provider: delivery.provider, telegram_fallback: delivery.fallback } });
+      if (delivery.provider === 'nikita') {
+        await telegram.sendMessage(session.telegram_chat_id, 'SMS-код отправлен на подтверждённый номер. Введите 6 цифр одним сообщением. Код действует 5 минут.');
+      }
+      return telegram.answerCallback(callback.id, delivery.provider === 'nikita' ? 'SMS-код отправлен.' : 'Код отправлен в Telegram.');
     }
 
     if (action === 'approve') {

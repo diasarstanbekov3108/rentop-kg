@@ -24,6 +24,8 @@ export default async function handler(request, response) {
     return response.status(200).json({
       ok: true,
       sms_configured: config.nikitaSms.enabled,
+      otp_provider: config.otpProvider,
+      otp_ready: config.otpProvider === 'telegram' || config.nikitaSms.enabled,
       offer_otp_secret_configured: Boolean(config.offerOtpHmacSecret),
       offer_url_configured: Boolean(config.offerUrl),
       offer_version_configured: Boolean(config.offerVersion)

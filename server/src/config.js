@@ -25,6 +25,13 @@ export function loadConfig(env = process.env) {
   if (!adminUserIds.size) {
     throw new Error('RENTOP_ADMIN_USER_IDS must contain at least one Telegram user ID.');
   }
+  const otpProvider = String(env.OTP_PROVIDER || 'telegram').trim().toLowerCase();
+  if (!['telegram', 'nikita'].includes(otpProvider)) {
+    throw new Error('OTP_PROVIDER должен быть telegram или nikita.');
+  }
+  const nikitaLogin = env.NIKITA_LOGIN || env.NIKITA_SMS_LOGIN || '';
+  const nikitaPassword = env.NIKITA_PASSWORD || env.NIKITA_SMS_PASSWORD || '';
+  const nikitaSender = env.NIKITA_SENDER_ID || env.NIKITA_SMS_SENDER || '';
 
   return Object.freeze({
     port: Number(env.PORT || 3000),
@@ -40,12 +47,13 @@ export function loadConfig(env = process.env) {
     archaPointSupportContact: env.ARCHA_POINT_SUPPORT_CONTACT || '',
     publicAppUrl: env.PUBLIC_APP_URL || 'https://rentop.com.kg',
     backendPublicUrl: env.BACKEND_PUBLIC_URL || '',
+    otpProvider,
     nikitaSms: {
       endpoint: env.NIKITA_SMS_ENDPOINT || 'https://smspro.nikita.kg/api/message',
-      login: env.NIKITA_SMS_LOGIN || '',
-      password: env.NIKITA_SMS_PASSWORD || '',
-      sender: env.NIKITA_SMS_SENDER || '',
-      enabled: Boolean(env.NIKITA_SMS_LOGIN && env.NIKITA_SMS_PASSWORD && env.NIKITA_SMS_SENDER)
+      login: nikitaLogin,
+      password: nikitaPassword,
+      sender: nikitaSender,
+      enabled: Boolean(nikitaLogin && nikitaPassword && nikitaSender)
     },
     offerOtpHmacSecret: env.OFFER_OTP_HMAC_SECRET || '',
     offerVersion: env.OFFER_VERSION || 'draft-2026-09-25',
