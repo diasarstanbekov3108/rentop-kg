@@ -187,7 +187,11 @@ export function createRentopBot({ config, telegram, database }) {
     return telegram.sendMessage(
       session.telegram_chat_id,
       `📦 Подготовка к возврату по заявке ${orderRef(order)}\n\n` +
-      'Пока не кладите ноутбук в ячейку. Сначала снимите и отправьте сюда одно непрерывное видео предварительного осмотра: корпус со всех сторон, экран во включённом состоянии, серийный номер, зарядку и всю комплектацию.\n\n' +
+      'Пока не кладите ноутбук в ячейку. Сначала снимите и отправьте сюда одно непрерывное видео предварительного осмотра:\n\n' +
+      '1. Ноутбук со всех сторон: корпус, углы, порты и экран во включённом состоянии.\n' +
+      '2. Серийный номер, зарядку и всю комплектацию.\n' +
+      '3. Если есть скол, дефект или некомплект — покажите это крупно.\n\n' +
+      'Отправьте видео как файл или обычное видео прямо в этот чат.\n\n' +
       'Rentop проверит видео и через бота подтвердит, когда можно будет помещать технику в ячейку.'
     );
   }
@@ -644,8 +648,8 @@ export function createRentopBot({ config, telegram, database }) {
       if (!isVideoEvidence(message)) {
         return telegram.sendMessage(message.chat.id, 'Для возврата отправьте видео как файл. Бот подскажет следующий шаг после проверки менеджером.');
       }
-      await telegram.forwardMessage(config.adminChatId, message.chat.id, message.message_id);
       if (session.step === 'awaiting_return_precheck') {
+        await telegram.forwardMessage(config.adminChatId, message.chat.id, message.message_id);
         await saveStep(session, { step: 'awaiting_return_approval', return_video_received_at: new Date().toISOString() });
         await recordEvent({ order_id: order.id, event_type: 'return_precheck_video_received', actor_type: 'customer', actor_telegram_id: message.from.id, metadata: { telegram_message_id: message.message_id } });
         await sendAdmin(`🎥 Получено предварительное видео возврата\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\nПроверьте состояние на видео. Только после согласования клиент получит инструкцию положить технику в ячейку.`, {
@@ -657,6 +661,7 @@ export function createRentopBot({ config, telegram, database }) {
         return telegram.sendMessage(message.chat.id, 'Видео получено. Пока не помещайте ноутбук в ячейку: Rentop проверит состояние и пришлёт дальнейшую инструкцию через бота.');
       }
       if (session.step === 'awaiting_return_dropoff') {
+        await telegram.forwardMessage(config.adminChatId, message.chat.id, message.message_id);
         await saveStep(session, { step: 'awaiting_return_retrieval', return_video_received_at: new Date().toISOString() });
         await recordEvent({ order_id: order.id, event_type: 'return_dropoff_video_received', actor_type: 'customer', actor_telegram_id: message.from.id, metadata: { telegram_message_id: message.message_id } });
         await sendAdmin(`🎥 Получено финальное видео помещения в ячейку\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\nПосле того как Rentop заберёт технику из ячейки и осмотрит её, нажмите подтверждение.`, {
@@ -667,7 +672,7 @@ export function createRentopBot({ config, telegram, database }) {
         });
         return telegram.sendMessage(message.chat.id, 'Финальное видео получено. Rentop заберёт технику из ячейки и проведёт осмотр; после этого бот сообщит о завершении возврата.');
       }
-      return telegram.sendMessage(message.chat.id, 'Видео уже находится на проверке. Дождитесь сообщения Rentop через бота.');
+      return telegram.sendMessage(message.chat.id, 'Сейчас бот не ожидает видео на этом этапе. Rentop повторно пришлёт понятную инструкцию; не пересылайте видео вручную в рабочую группу.');
     }
     if (session.step === 'awaiting_name') {
       if (!text || text.length < 2) return telegram.sendMessage(message.chat.id, 'Напишите имя и фамилию текстом, как в документе.');
@@ -1002,6 +1007,9 @@ export function createRentopBot({ config, telegram, database }) {
       if (order.status === 'in_use') {
         controlRows.push([{ text: '📦 Начать возврат: инструкция клиенту', callback_data: `return_start:${order.id}` }]);
       }
+      if (order.status === 'return_requested' && session.step !== 'awaiting_return_retrieval') {
+        controlRows.push([{ text: '🔄 Повторить этап видео возврата', callback_data: `return_start:${order.id}` }]);
+      }
       if (order.status === 'return_requested' && session.step === 'awaiting_return_retrieval') {
         controlRows.push([{ text: '✅ Технику получили и осмотрели', callback_data: `return_received:${order.id}` }]);
       }
@@ -1154,9 +1162,13 @@ export function createRentopBot({ config, telegram, database }) {
     }
 
     if (action === 'return_start') {
-      if (order.status !== 'in_use') return telegram.answerCallback(callback.id, 'Возврат можно начать только для активной аренды.');
-      await database.updateOrder(order.id, { status: 'return_requested', locker_status: 'return_pending' });
-      await recordEvent({ order_id: order.id, event_type: 'return_requested_by_manager', actor_type: 'manager', actor_telegram_id: callback.from.id, metadata: {} });
+      if (!['in_use', 'return_requested'].includes(order.status)) return telegram.answerCallback(callback.id, 'Возврат можно начать только для активной аренды.');
+      if (order.status === 'in_use') {
+        await database.updateOrder(order.id, { status: 'return_requested', locker_status: 'return_pending' });
+        await recordEvent({ order_id: order.id, event_type: 'return_requested_by_manager', actor_type: 'manager', actor_telegram_id: callback.from.id, metadata: {} });
+      } else {
+        await recordEvent({ order_id: order.id, event_type: 'return_video_stage_restarted_by_manager', actor_type: 'manager', actor_telegram_id: callback.from.id, metadata: {} });
+      }
       await saveStep(session, { step: 'awaiting_return_precheck', return_video_received_at: null });
       await sendReturnPrecheckInstructions(await database.getOrder(order.id), session);
       return telegram.answerCallback(callback.id, 'Сначала запросили видео предварительного осмотра.');
