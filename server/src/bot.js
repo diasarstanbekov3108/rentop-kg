@@ -124,7 +124,15 @@ export function createRentopBot({ config, telegram, database }) {
         { text: '+1 день', callback_data: `extend_choose:${orderId}:1` },
         { text: '+3 дня', callback_data: `extend_choose:${orderId}:3` },
         { text: '+7 дней', callback_data: `extend_choose:${orderId}:7` }
-      ]
+      ],
+      [{ text: '✍️ Другое количество дней', callback_data: `extend_custom:${orderId}` }]
+    ] }
+  });
+
+  const extensionBankKeyboard = (orderId) => ({
+    reply_markup: { inline_keyboard: [
+      [{ text: 'MBANK', callback_data: `extension_bank:${orderId}:mbank` }],
+      [{ text: 'SIMBANK', callback_data: `extension_bank:${orderId}:simbank` }]
     ] }
   });
 
@@ -373,7 +381,7 @@ export function createRentopBot({ config, telegram, database }) {
     return telegram.sendMessage(chatId, `Заявка ${orderRef(order)} отменена. Даты ноутбука сразу освобождены на сайте.`);
   }
 
-  async function extendOrder(order, session, extraDays, chatId) {
+  async function extendOrder(order, session, extraDays, chatId, paymentConfirmed = false) {
     const extendable = new Set(['awaiting_payment', 'payment_review', 'confirmed', 'awaiting_pickup', 'issued', 'in_use']);
     if (!extendable.has(order.status)) return telegram.sendMessage(chatId, 'Продлить можно только активную или подтверждённую заявку.');
     const newEndDate = addDaysToIso(order.rental_end_date, extraDays);
@@ -392,10 +400,30 @@ export function createRentopBot({ config, telegram, database }) {
     await recordEvent({ order_id: order.id, event_type: 'rental_extended_by_manager', actor_type: 'manager', metadata: { extra_days: extraDays, extra_amount: extraAmount, new_end_date: newEndDate } });
     if (session?.telegram_chat_id) {
       await telegram.sendMessage(session.telegram_chat_id,
-        `Аренда продлена до ${newEndDate}. Доплата за продление: ${extraAmount} сом. Менеджер сообщит способ оплаты.`
+        paymentConfirmed
+          ? `✅ Оплата подтверждена. Аренда продлена до ${newEndDate}. Спасибо!`
+          : `Аренда продлена до ${newEndDate}. Доплата за продление: ${extraAmount} сом. Менеджер сообщит способ оплаты.`
       );
     }
     return telegram.sendMessage(chatId, `Заявка ${orderRef(order)} продлена на ${extraDays} дн. Новая дата возврата: ${newEndDate}. Доплата: ${extraAmount} сом.`);
+  }
+
+  async function requestExtension(order, session, extraDays, actorTelegramId) {
+    if (order.status !== 'in_use') return telegram.sendMessage(session.telegram_chat_id, 'Продление доступно только для активной аренды.');
+    if (Number.isInteger(Number(session.extension_days)) && Number(session.extension_days) > 0) {
+      return telegram.sendMessage(session.telegram_chat_id, 'По этой аренде уже есть запрос на продление. Дождитесь реквизитов или решения по текущему запросу.');
+    }
+    if (!Number.isInteger(extraDays) || extraDays < 1 || extraDays > 30) return telegram.sendMessage(session.telegram_chat_id, 'Введите целое количество дней от 1 до 30.');
+    const newEndDate = addDaysToIso(order.rental_end_date, extraDays);
+    const conflict = await database.findOverlappingBlockingOrder(order.id, order.laptop_id, order.rental_end_date, newEndDate);
+    if (conflict) return telegram.sendMessage(session.telegram_chat_id, `Продление недоступно: ноутбук уже забронирован с ${conflict.rental_start_date}.`);
+    const totalDays = Math.round((new Date(`${newEndDate}T00:00:00Z`) - new Date(`${order.rental_start_date}T00:00:00Z`)) / 86_400_000);
+    const discount = totalDays >= 15 ? 30 : totalDays >= 4 ? 15 : 0;
+    const extraAmount = Math.max(0, Math.round(totalDays * Number(order.daily_rate) * (100 - discount) / 100) - Number(order.total_amount));
+    await saveStep(session, { step: 'in_use', extension_days: extraDays, extension_amount: extraAmount });
+    await recordEvent({ order_id: order.id, event_type: 'customer_requested_extension', actor_type: 'customer', actor_telegram_id: actorTelegramId, metadata: { extra_days: extraDays, estimated_extra_amount: extraAmount, proposed_end_date: newEndDate } });
+    await sendAdmin(`📅 Запрос на продление\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\nКлиент просит: +${extraDays} дн.\nНовая дата: ${newEndDate}\nДоплата: ${extraAmount} сом`, adminKeyboard([{ text: '💳 Отправить реквизиты клиенту', callback_data: `extension_bill:${order.id}` }]));
+    return telegram.sendMessage(session.telegram_chat_id, `Запрос на продление на ${extraDays} дн. принят. Предварительная доплата: ${extraAmount} сом. После решения менеджера бот пришлёт реквизиты для оплаты.`);
   }
 
   const dashboardFilters = {
@@ -542,6 +570,26 @@ export function createRentopBot({ config, telegram, database }) {
       await saveStep(session, { step: order.status === 'in_use' ? 'in_use' : 'under_review', support_kind_pending: null });
       await openCustomerSupportCase(order, session, message.from.id, kind, text.slice(0, 1500));
       return telegram.sendMessage(message.chat.id, 'Спасибо, описание передано в поддержку. Менеджер изучит обращение и свяжется с вами.');
+    }
+    if (session.step === 'awaiting_extension_days') {
+      if (!/^\d{1,2}$/.test(text || '')) {
+        return telegram.sendMessage(message.chat.id, 'Введите количество дней целым числом от 1 до 30. Например: 5');
+      }
+      return requestExtension(order, session, Number(text), message.from.id);
+    }
+    if (session.step === 'awaiting_extension_receipt') {
+      if (!isDocumentMessage(message)) return telegram.sendMessage(message.chat.id, 'Отправьте чек оплаты продления как фото или файл.');
+      await telegram.forwardMessage(config.adminChatId, message.chat.id, message.message_id);
+      await saveStep(session, { step: 'in_use' });
+      await recordEvent({ order_id: order.id, event_type: 'extension_receipt_received', actor_type: 'customer', actor_telegram_id: message.from.id, metadata: { telegram_message_id: message.message_id, extension_days: session.extension_days, extension_amount: session.extension_amount } });
+      await telegram.sendMessage(message.chat.id, 'Чек получен и передан менеджеру. Аренда будет продлена только после подтверждения оплаты.');
+      return sendAdmin(
+        `💳 Чек за продление получен\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\nПродление: +${session.extension_days} дн.\nДоплата: ${session.extension_amount} сом`,
+        { reply_markup: { inline_keyboard: [[
+          { text: '✅ Подтвердить оплату и продлить', callback_data: `extension_confirm:${order.id}` },
+          { text: '❌ Отклонить чек', callback_data: `extension_reject:${order.id}` }
+        ]] } }
+      );
     }
     if (order.status === 'awaiting_pickup' && isVideoEvidence(message)) {
       await telegram.forwardMessage(config.adminChatId, message.chat.id, message.message_id);
@@ -741,7 +789,7 @@ export function createRentopBot({ config, telegram, database }) {
 
   async function handleCallback(callback) {
     const [action, orderId, value] = callback.data.split(':');
-    const clientActions = new Set(['bank', 'document_type', 'offer_accept', 'support', 'archa_support', 'caseok', 'pickup_ready', 'pickup_received', 'extend_request', 'extend_choose']);
+    const clientActions = new Set(['bank', 'document_type', 'offer_accept', 'support', 'archa_support', 'caseok', 'pickup_ready', 'pickup_received', 'extend_request', 'extend_choose', 'extend_custom', 'extension_bank']);
     if (!isAdmin(callback.from.id) && !clientActions.has(action)) {
       return telegram.answerCallback(callback.id, 'Нет прав. Проверьте RENTOP_ADMIN_USER_IDS в настройках сервера.');
     }
@@ -838,27 +886,16 @@ export function createRentopBot({ config, telegram, database }) {
 
     if (action === 'extend_choose') {
       const extraDays = Number(value);
-      if (order.status !== 'in_use') return telegram.answerCallback(callback.id, 'Продление доступно только для активной аренды.');
       if (![1, 3, 7].includes(extraDays)) return telegram.answerCallback(callback.id, 'Некорректный срок продления.');
-      const newEndDate = addDaysToIso(order.rental_end_date, extraDays);
-      const conflict = await database.findOverlappingBlockingOrder(order.id, order.laptop_id, order.rental_end_date, newEndDate);
-      if (conflict) {
-        await telegram.sendMessage(session.telegram_chat_id, `К сожалению, +${extraDays} дн. недоступны: ноутбук уже забронирован с ${conflict.rental_start_date}. Выберите другой срок или обратитесь в поддержку.`);
-        return telegram.answerCallback(callback.id, 'На этот срок есть бронирование.');
-      }
-      const totalDays = Math.round((new Date(`${newEndDate}T00:00:00Z`) - new Date(`${order.rental_start_date}T00:00:00Z`)) / 86_400_000);
-      const discount = totalDays >= 15 ? 30 : totalDays >= 4 ? 15 : 0;
-      const newTotal = Math.round(totalDays * Number(order.daily_rate) * (100 - discount) / 100);
-      const extraAmount = Math.max(0, newTotal - Number(order.total_amount));
-      await recordEvent({ order_id: order.id, event_type: 'customer_requested_extension', actor_type: 'customer', actor_telegram_id: callback.from.id, metadata: { extra_days: extraDays, estimated_extra_amount: extraAmount, proposed_end_date: newEndDate } });
-      await sendAdmin(
-        `📅 Запрос на продление\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\n` +
-        `Клиент просит: +${extraDays} дн.\nНовая дата возврата: ${newEndDate}\nДоплата: ${extraAmount} сом\n\n` +
-        'Календарь свободен на момент запроса. Подтвердите продление только после согласования оплаты.',
-        adminKeyboard([{ text: `✅ Подтвердить +${extraDays} дн.`, callback_data: `extend:${order.id}:${extraDays}` }])
-      );
-      await telegram.sendMessage(session.telegram_chat_id, `Запрос на продление на ${extraDays} дн. принят. Предварительная доплата: ${extraAmount} сом. Менеджер подтвердит доступность и пришлёт способ оплаты.`);
+      await requestExtension(order, session, extraDays, callback.from.id);
       return telegram.answerCallback(callback.id, 'Запрос передан менеджеру.');
+    }
+
+    if (action === 'extend_custom') {
+      if (order.status !== 'in_use') return telegram.answerCallback(callback.id, 'Продление доступно только для активной аренды.');
+      await saveStep(session, { step: 'awaiting_extension_days', extension_days: null, extension_amount: null });
+      await telegram.sendMessage(session.telegram_chat_id, 'Введите, на сколько дней хотите продлить аренду: от 1 до 30. Например: 5');
+      return telegram.answerCallback(callback.id, 'Жду количество дней сообщением.');
     }
 
     if (action === 'admin_order') {
@@ -867,7 +904,7 @@ export function createRentopBot({ config, telegram, database }) {
       if (['draft', 'pending_review', 'awaiting_payment', 'payment_review', 'confirmed', 'awaiting_pickup'].includes(order.status)) {
         controlRows.push([{ text: '🗑 Отменить заявку', callback_data: `cancel_confirm:${order.id}` }]);
       }
-      if (['awaiting_payment', 'payment_review', 'confirmed', 'awaiting_pickup', 'issued', 'in_use'].includes(order.status)) {
+      if (['awaiting_payment', 'payment_review', 'confirmed', 'awaiting_pickup', 'issued'].includes(order.status)) {
         controlRows.push([
           { text: '+1 день', callback_data: `extend:${order.id}:1` },
           { text: '+3 дня', callback_data: `extend:${order.id}:3` },
@@ -932,6 +969,56 @@ export function createRentopBot({ config, telegram, database }) {
       if (![1, 3, 7].includes(extraDays)) return telegram.answerCallback(callback.id, 'Некорректный срок продления.');
       await extendOrder(order, session, extraDays, callback.message.chat.id);
       return telegram.answerCallback(callback.id, 'Срок продлён.');
+    }
+
+    if (action === 'extension_bill') {
+      if (order.status !== 'in_use' || !Number.isInteger(Number(session.extension_days)) || Number(session.extension_days) < 1) {
+        return telegram.answerCallback(callback.id, 'Нет актуального запроса на продление.');
+      }
+      await saveStep(session, { step: 'awaiting_extension_bank' });
+      await telegram.sendMessage(
+        session.telegram_chat_id,
+        `Продление на ${session.extension_days} дн. согласовано. Доплата: ${session.extension_amount} сом. Выберите банк для оплаты — бот сразу пришлёт реквизиты.`,
+        extensionBankKeyboard(order.id)
+      );
+      return telegram.answerCallback(callback.id, 'Клиенту предложен выбор банка.');
+    }
+
+    if (action === 'extension_bank') {
+      if (session.step !== 'awaiting_extension_bank') return telegram.answerCallback(callback.id, 'Реквизиты уже отправлены или запрос устарел.');
+      const details = value === 'mbank' ? config.mbankPaymentDetails : config.simbankPaymentDetails;
+      const bankName = value === 'mbank' ? 'MBANK' : 'SIMBANK';
+      await saveStep(session, { step: 'awaiting_extension_receipt' });
+      await telegram.sendMessage(
+        session.telegram_chat_id,
+        `Оплатите продление на ${session.extension_days} дн. через ${bankName}.\nСумма: ${session.extension_amount} сом.\n\n${details}\n\nПосле оплаты отправьте сюда чек как фото или файл. Дата возврата изменится только после проверки оплаты.`
+      );
+      if (value === 'mbank' && config.mbankQrImageSource) {
+        try {
+          await telegram.sendPhoto(session.telegram_chat_id, config.mbankQrImageSource, 'QR-код для оплаты через MBANK. После оплаты отправьте сюда чек.');
+        } catch (error) {
+          console.error('Could not send MBANK QR image for extension:', error.message);
+        }
+      }
+      return telegram.answerCallback(callback.id, 'Реквизиты отправлены.');
+    }
+
+    if (action === 'extension_confirm') {
+      const extraDays = Number(session.extension_days);
+      if (order.status !== 'in_use' || !Number.isInteger(extraDays) || extraDays < 1) {
+        return telegram.answerCallback(callback.id, 'Нет актуального продления для подтверждения.');
+      }
+      await extendOrder(order, session, extraDays, callback.message.chat.id, true);
+      await saveStep(session, { step: 'in_use', extension_days: null, extension_amount: null });
+      await recordEvent({ order_id: order.id, event_type: 'extension_payment_confirmed', actor_type: 'manager', actor_telegram_id: callback.from.id, metadata: { extra_days: extraDays } });
+      return telegram.answerCallback(callback.id, 'Оплата подтверждена, срок продлён.');
+    }
+
+    if (action === 'extension_reject') {
+      await saveStep(session, { step: 'in_use', extension_days: null, extension_amount: null });
+      await recordEvent({ order_id: order.id, event_type: 'extension_receipt_rejected', actor_type: 'manager', actor_telegram_id: callback.from.id, metadata: {} });
+      await telegram.sendMessage(session.telegram_chat_id, 'Чек за продление не удалось подтвердить. Аренда не продлена. Проверьте платёж и при необходимости создайте новый запрос на продление.');
+      return telegram.answerCallback(callback.id, 'Продление отменено, клиент уведомлён.');
     }
 
     if (action === 'deposit_menu') {
