@@ -250,14 +250,16 @@ export function createRentopBot({ config, telegram, database }) {
     }
   }
 
-  async function openCustomerSupportCase(order, session, userId, kind) {
+  async function openCustomerSupportCase(order, session, userId, kind, customerMessage = '') {
     const isArchaSupport = kind === 'archa';
-    await openSupportCaseSafely({ order_id: order.id, kind, status: 'open', opened_at: new Date().toISOString(), opened_by: String(userId), resolved_at: null, resolved_by: null });
+    await openSupportCaseSafely({ order_id: order.id, kind, status: 'open', opened_at: new Date().toISOString(), opened_by: String(userId), customer_message: customerMessage || null, resolved_at: null, resolved_by: null });
     await recordEvent({ order_id: order.id, event_type: isArchaSupport ? 'customer_requested_archa_support' : 'customer_requested_rentop_support', actor_type: 'customer', actor_telegram_id: userId, metadata: {} });
     await sendAdmin(
       `${isArchaSupport ? '🆘 Клиент сообщил о проблеме с ARCHA POINT' : '🆘 Клиент запросил поддержку Rentop'}\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n` +
       `Клиент: ${order.customer_name || '—'}\nТелефон: ${order.customer_phone || '—'}\n` +
-      `Текущий этап: ${session.step}\n\nОтветьте клиенту через Telegram-диалог с ботом или свяжитесь по подтверждённому номеру.`,
+      `Текущий этап: ${session.step}\n` +
+      (customerMessage ? `Сообщение клиента: ${customerMessage}\n` : '') +
+      '\nОтветьте клиенту через Telegram-диалог с ботом или свяжитесь по подтверждённому номеру.',
       { reply_markup: { inline_keyboard: [[{ text: '✅ Проблема решена', callback_data: `case_resolve:${order.id}:${kind}` }]] } }
     );
     const contact = isArchaSupport && config.archaPointSupportContact
@@ -534,6 +536,13 @@ export function createRentopBot({ config, telegram, database }) {
     if (!order) return;
 
     const text = message.text?.trim();
+    if (session.step === 'awaiting_support_message') {
+      if (!text || text.length < 5) return telegram.sendMessage(message.chat.id, 'Опишите, пожалуйста, что произошло: где, когда и в чём проблема.');
+      const kind = session.support_kind_pending === 'archa' ? 'archa' : 'rentop';
+      await saveStep(session, { step: order.status === 'in_use' ? 'in_use' : 'under_review', support_kind_pending: null });
+      await openCustomerSupportCase(order, session, message.from.id, kind, text.slice(0, 1500));
+      return telegram.sendMessage(message.chat.id, 'Спасибо, описание передано в поддержку. Менеджер изучит обращение и свяжется с вами.');
+    }
     if (order.status === 'awaiting_pickup' && isVideoEvidence(message)) {
       await telegram.forwardMessage(config.adminChatId, message.chat.id, message.message_id);
       await saveStep(session, { pickup_video_received_at: new Date().toISOString() });
@@ -588,12 +597,12 @@ export function createRentopBot({ config, telegram, database }) {
       return telegram.sendMessage(message.chat.id, `Выберите срок продления по заявке ${orderRef(order)}. Бот сначала проверит доступность ноутбука, затем передаст запрос менеджеру.`, extensionOptionsKeyboard(order.id));
     }
     if (text === '💬 У меня вопрос') {
-      await openCustomerSupportCase(order, session, message.from.id, 'rentop');
-      return;
+      await saveStep(session, { step: 'awaiting_support_message', support_kind_pending: 'rentop' });
+      return telegram.sendMessage(message.chat.id, 'Опишите, пожалуйста, ваш вопрос одним сообщением. Мы передадим его менеджеру Rentop.');
     }
     if (text === '🛠 Проблема с ARCHA POINT') {
-      await openCustomerSupportCase(order, session, message.from.id, 'archa');
-      return;
+      await saveStep(session, { step: 'awaiting_support_message', support_kind_pending: 'archa' });
+      return telegram.sendMessage(message.chat.id, 'Опишите, пожалуйста, проблему с ARCHA POINT: локация, ячейка, код или другое. Мы передадим сообщение менеджеру.');
     }
     if (text === '⭐ Оставить отзыв') {
       if (!['in_use', 'completed'].includes(order.status)) {
@@ -771,8 +780,13 @@ export function createRentopBot({ config, telegram, database }) {
     if (action === 'support' || action === 'archa_support') {
       const isArchaSupport = action === 'archa_support';
       const kind = isArchaSupport ? 'archa' : 'rentop';
-      await openCustomerSupportCase(order, session, callback.from.id, kind);
-      return telegram.answerCallback(callback.id, 'Менеджер получил запрос.');
+      await saveStep(session, { step: 'awaiting_support_message', support_kind_pending: kind });
+      await telegram.sendMessage(session.telegram_chat_id,
+        isArchaSupport
+          ? 'Опишите проблему с ARCHA POINT: локация, ячейка, код или другое. Мы передадим сообщение менеджеру.'
+          : 'Опишите, пожалуйста, ваш вопрос одним сообщением. Мы передадим его менеджеру Rentop.'
+      );
+      return telegram.answerCallback(callback.id, 'Жду описание проблемы.');
     }
 
     if (action === 'caseok') {
