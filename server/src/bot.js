@@ -21,6 +21,16 @@ const customerMenuKeyboard = () => ({
     is_persistent: true
   }
 });
+const activeRentalMenuKeyboard = () => ({
+  reply_markup: {
+    keyboard: [
+      [{ text: '📅 Продлить аренду' }, { text: '💬 У меня вопрос' }],
+      [{ text: '🛠 Проблема с ARCHA POINT' }, { text: '⭐ Оставить отзыв' }]
+    ],
+    resize_keyboard: true,
+    is_persistent: true
+  }
+});
 const isOfficialDocument = (message) => Boolean(message?.document || message?.photo?.length);
 const isSelfiePhoto = (message) => Boolean(message?.photo?.length);
 const isDocumentMessage = (message) => Boolean(message?.document || message?.photo?.length);
@@ -108,8 +118,22 @@ export function createRentopBot({ config, telegram, database }) {
     ] }
   });
 
+  const extensionOptionsKeyboard = (orderId) => ({
+    reply_markup: { inline_keyboard: [
+      [
+        { text: '+1 день', callback_data: `extend_choose:${orderId}:1` },
+        { text: '+3 дня', callback_data: `extend_choose:${orderId}:3` },
+        { text: '+7 дней', callback_data: `extend_choose:${orderId}:7` }
+      ]
+    ] }
+  });
+
   async function sendCustomerServiceMenu(chatId, text) {
     return telegram.sendMessage(chatId, text, customerMenuKeyboard());
+  }
+
+  async function sendActiveRentalMenu(chatId, text) {
+    return telegram.sendMessage(chatId, text, activeRentalMenuKeyboard());
   }
 
   async function sendPickupInspectionInstructions(order, session) {
@@ -141,7 +165,7 @@ export function createRentopBot({ config, telegram, database }) {
   async function confirmPickup(order, session, chatId, source) {
     if (order.status === 'in_use') {
       if (String(chatId) === String(session.telegram_chat_id)) {
-        return sendCustomerServiceMenu(chatId, '✅ Получение уже подтверждено. Аренда активна — хорошего пользования!');
+        return sendActiveRentalMenu(chatId, '✅ Получение уже подтверждено. Аренда активна — хорошего пользования!');
       }
       return telegram.sendMessage(chatId, `Выдача по заявке ${orderRef(order)} уже подтверждена. Аренда активна.`);
     }
@@ -159,7 +183,7 @@ export function createRentopBot({ config, telegram, database }) {
       '✅ Получение ноутбука подтверждено. Хорошего пользования! Если потребуется продление, поддержка Rentop или помощь с ARCHA POINT — используйте кнопки ниже.',
       activeRentalKeyboard(order.id)
     );
-    await sendCustomerServiceMenu(session.telegram_chat_id, 'Быстрое меню: здесь можно сообщить о получении, задать вопрос, обратиться по ARCHA POINT или оставить отзыв.');
+    await sendActiveRentalMenu(session.telegram_chat_id, 'Быстрое меню: продление аренды, вопросы, поддержка ARCHA POINT и отзыв доступны ниже.');
     return telegram.sendMessage(chatId, `Выдача по заявке ${orderRef(order)} подтверждена. Аренда теперь активна.`);
   }
 
@@ -535,6 +559,10 @@ export function createRentopBot({ config, telegram, database }) {
       }
       return confirmPickup(order, session, message.chat.id, 'customer');
     }
+    if (text === '📅 Продлить аренду') {
+      if (order.status !== 'in_use') return telegram.sendMessage(message.chat.id, 'Продление доступно после подтверждения получения ноутбука.');
+      return telegram.sendMessage(message.chat.id, `Выберите срок продления по заявке ${orderRef(order)}. Бот сначала проверит доступность ноутбука, затем передаст запрос менеджеру.`, extensionOptionsKeyboard(order.id));
+    }
     if (text === '💬 У меня вопрос') {
       await openCustomerSupportCase(order, session, message.from.id, 'rentop');
       return;
@@ -680,7 +708,7 @@ export function createRentopBot({ config, telegram, database }) {
 
   async function handleCallback(callback) {
     const [action, orderId, value] = callback.data.split(':');
-    const clientActions = new Set(['bank', 'document_type', 'offer_accept', 'support', 'archa_support', 'caseok', 'pickup_ready', 'pickup_received', 'extend_request']);
+    const clientActions = new Set(['bank', 'document_type', 'offer_accept', 'support', 'archa_support', 'caseok', 'pickup_ready', 'pickup_received', 'extend_request', 'extend_choose']);
     if (!isAdmin(callback.from.id) && !clientActions.has(action)) {
       return telegram.answerCallback(callback.id, 'Нет прав. Проверьте RENTOP_ADMIN_USER_IDS в настройках сервера.');
     }
@@ -727,14 +755,16 @@ export function createRentopBot({ config, telegram, database }) {
       await resolveSupportCaseSafely(order.id, value, callback.from.id);
       await recordEvent({ order_id: order.id, event_type: 'support_case_resolved_by_customer', actor_type: 'customer', actor_telegram_id: callback.from.id, metadata: { kind: value } });
       await sendAdmin(`✅ Клиент отметил обращение как решённое\nЗаявка ${orderRef(order)} · ${value === 'archa' ? 'ARCHA POINT' : 'Rentop'}.`);
-      await sendCustomerServiceMenu(session.telegram_chat_id, '✅ Вопрос решён. Спасибо! Быстрое меню остаётся ниже — оно пригодится, если понадобится помощь или вы захотите оставить отзыв.');
+      const sendMenu = order.status === 'in_use' ? sendActiveRentalMenu : sendCustomerServiceMenu;
+      await sendMenu(session.telegram_chat_id, '✅ Вопрос решён. Спасибо! Быстрое меню остаётся ниже — оно пригодится, если понадобится помощь или вы захотите оставить отзыв.');
       return telegram.answerCallback(callback.id, 'Спасибо, обращение закрыто.');
     }
 
     if (action === 'case_resolve') {
       await resolveSupportCaseSafely(order.id, value, callback.from.id);
       await recordEvent({ order_id: order.id, event_type: 'support_case_resolved_by_manager', actor_type: 'manager', actor_telegram_id: callback.from.id, metadata: { kind: value } });
-      await sendCustomerServiceMenu(
+      const sendMenu = order.status === 'in_use' ? sendActiveRentalMenu : sendCustomerServiceMenu;
+      await sendMenu(
         session.telegram_chat_id,
         `✅ ${value === 'archa' ? 'Вопрос с ARCHA POINT' : 'Обращение в Rentop'} решён. Спасибо! Если понадобится помощь, используйте понятное меню ниже.`
       );
@@ -743,7 +773,7 @@ export function createRentopBot({ config, telegram, database }) {
 
     if (action === 'pickup_ready') {
       if (order.status === 'in_use') {
-        await sendCustomerServiceMenu(session.telegram_chat_id, '✅ Получение уже подтверждено. Аренда активна — хорошего пользования!');
+        await sendActiveRentalMenu(session.telegram_chat_id, '✅ Получение уже подтверждено. Аренда активна — хорошего пользования!');
         return telegram.answerCallback(callback.id, 'Получение уже подтверждено.');
       }
       if (!['awaiting_pickup', 'issued'].includes(order.status)) {
@@ -763,9 +793,33 @@ export function createRentopBot({ config, telegram, database }) {
     }
 
     if (action === 'extend_request') {
-      await recordEvent({ order_id: order.id, event_type: 'customer_requested_extension', actor_type: 'customer', actor_telegram_id: callback.from.id, metadata: {} });
-      await sendAdmin(`📅 Клиент запросил продление аренды\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\nОткройте заявку через /admin и выберите срок продления.`);
-      await telegram.sendMessage(session.telegram_chat_id, 'Запрос на продление передан менеджеру Rentop. Мы проверим доступность ноутбука и сообщим решение.');
+      if (order.status !== 'in_use') return telegram.answerCallback(callback.id, 'Продление доступно после получения ноутбука.');
+      await telegram.sendMessage(session.telegram_chat_id, 'Выберите срок продления. Бот проверит календарь и передаст запрос менеджеру.', extensionOptionsKeyboard(order.id));
+      return telegram.answerCallback(callback.id, 'Выберите срок продления.');
+    }
+
+    if (action === 'extend_choose') {
+      const extraDays = Number(value);
+      if (order.status !== 'in_use') return telegram.answerCallback(callback.id, 'Продление доступно только для активной аренды.');
+      if (![1, 3, 7].includes(extraDays)) return telegram.answerCallback(callback.id, 'Некорректный срок продления.');
+      const newEndDate = addDaysToIso(order.rental_end_date, extraDays);
+      const conflict = await database.findOverlappingBlockingOrder(order.id, order.laptop_id, order.rental_end_date, newEndDate);
+      if (conflict) {
+        await telegram.sendMessage(session.telegram_chat_id, `К сожалению, +${extraDays} дн. недоступны: ноутбук уже забронирован с ${conflict.rental_start_date}. Выберите другой срок или обратитесь в поддержку.`);
+        return telegram.answerCallback(callback.id, 'На этот срок есть бронирование.');
+      }
+      const totalDays = Math.round((new Date(`${newEndDate}T00:00:00Z`) - new Date(`${order.rental_start_date}T00:00:00Z`)) / 86_400_000);
+      const discount = totalDays >= 15 ? 30 : totalDays >= 4 ? 15 : 0;
+      const newTotal = Math.round(totalDays * Number(order.daily_rate) * (100 - discount) / 100);
+      const extraAmount = Math.max(0, newTotal - Number(order.total_amount));
+      await recordEvent({ order_id: order.id, event_type: 'customer_requested_extension', actor_type: 'customer', actor_telegram_id: callback.from.id, metadata: { extra_days: extraDays, estimated_extra_amount: extraAmount, proposed_end_date: newEndDate } });
+      await sendAdmin(
+        `📅 Запрос на продление\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\n` +
+        `Клиент просит: +${extraDays} дн.\nНовая дата возврата: ${newEndDate}\nДоплата: ${extraAmount} сом\n\n` +
+        'Календарь свободен на момент запроса. Подтвердите продление только после согласования оплаты.',
+        adminKeyboard([{ text: `✅ Подтвердить +${extraDays} дн.`, callback_data: `extend:${order.id}:${extraDays}` }])
+      );
+      await telegram.sendMessage(session.telegram_chat_id, `Запрос на продление на ${extraDays} дн. принят. Предварительная доплата: ${extraAmount} сом. Менеджер подтвердит доступность и пришлёт способ оплаты.`);
       return telegram.answerCallback(callback.id, 'Запрос передан менеджеру.');
     }
 
