@@ -74,6 +74,9 @@ export function createSupabaseApi(config) {
     listOpenSupportCases: (limit = 12) => request(
       `rental_order_support_cases?select=*&status=eq.open&order=opened_at.desc&limit=${Math.min(Math.max(Number(limit) || 12, 1), 30)}`
     ),
+    createPromo: (promo) => request('rental_promo_codes', {
+      method: 'POST', body: JSON.stringify(promo)
+    }).then((rows) => rows?.[0] || null),
     getAdminActionByUser: (userId) => getOne(`rental_order_admin_actions?admin_user_id=eq.${encodeURIComponent(userId)}&select=*&order=created_at.desc`),
     createEvent: (event) => request('rental_order_events', {
       method: 'POST', body: JSON.stringify(event)

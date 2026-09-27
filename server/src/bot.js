@@ -1,4 +1,4 @@
-import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { normalizeKyrgyzPhone } from './sms.js';
 import { createOtpService } from './otp.js';
 
@@ -130,6 +130,30 @@ export function createRentopBot({ config, telegram, database }) {
 
   async function sendCustomerServiceMenu(chatId, text) {
     return telegram.sendMessage(chatId, text, customerMenuKeyboard());
+  }
+
+  async function issueLoyaltyPromo(order, session, percent, chatId) {
+    if (![5, 10, 15].includes(percent)) return telegram.sendMessage(chatId, 'Допустимы промокоды 5%, 10% или 15%.');
+    if (order.status !== 'completed') return telegram.sendMessage(chatId, 'Промокод можно отправить после завершения аренды и возврата залога.');
+    const code = `RENTOP${percent}-${randomBytes(3).toString('hex').toUpperCase()}`;
+    const expiresAt = new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString();
+    await database.createPromo({
+      code,
+      discount_percent: percent,
+      status: 'issued',
+      issued_from_order_id: order.id,
+      recipient_telegram_user_id: session.telegram_user_id,
+      recipient_phone: order.customer_phone || null,
+      expires_at: expiresAt
+    });
+    await recordEvent({ order_id: order.id, event_type: 'loyalty_promo_issued', actor_type: 'manager', metadata: { discount_percent: percent, expires_at: expiresAt } });
+    await telegram.sendMessage(
+      session.telegram_chat_id,
+      `Спасибо, что выбрали Rentop KG! Мы были рады предоставить вам технику и будем ждать вас снова.\n\n` +
+      `Ваш персональный промокод: ${code}\nСкидка: ${percent}% на следующую аренду.\nСрок действия: 45 дней.\n\n` +
+      'Промокод одноразовый, действует только на аренду и не уменьшает залог.'
+    );
+    return telegram.sendMessage(chatId, `Промокод ${percent}% отправлен клиенту. Он действует 45 дней.`);
   }
 
   async function sendActiveRentalMenu(chatId, text) {
@@ -845,6 +869,13 @@ export function createRentopBot({ config, telegram, database }) {
       if (order.status === 'returned') {
         controlRows.push([{ text: '✅ Завершить аренду после возврата залога', callback_data: `return_complete:${order.id}` }]);
       }
+      if (order.status === 'completed') {
+        controlRows.push([
+          { text: '🎁 Промокод 5%', callback_data: `promo_issue:${order.id}:5` },
+          { text: '🎁 Промокод 10%', callback_data: `promo_issue:${order.id}:10` },
+          { text: '🎁 Промокод 15%', callback_data: `promo_issue:${order.id}:15` }
+        ]);
+      }
       if (order.status === 'awaiting_pickup' && order.delivery_type === 'arca_locker') {
         controlRows.push([{ text: '📦 ARCHA подтвердил выдачу', callback_data: `archa_issued:${order.id}` }]);
       }
@@ -947,6 +978,11 @@ export function createRentopBot({ config, telegram, database }) {
       await recordEvent({ order_id: order.id, event_type: 'rental_completed_after_deposit_return', actor_type: 'manager', actor_telegram_id: callback.from.id, metadata: {} });
       await telegram.sendMessage(session.telegram_chat_id, '✅ Аренда завершена. Спасибо, что выбрали Rentop!');
       return telegram.answerCallback(callback.id, 'Аренда завершена.');
+    }
+
+    if (action === 'promo_issue') {
+      await issueLoyaltyPromo(order, session, Number(value), callback.message.chat.id);
+      return telegram.answerCallback(callback.id, 'Промокод отправлен.');
     }
 
     if (action === 'offer_accept') {
