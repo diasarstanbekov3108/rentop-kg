@@ -47,7 +47,7 @@ export function createSupabaseApi(config) {
       const allowedStatuses = Array.isArray(statuses) ? statuses.filter(Boolean) : [];
       const statusFilter = allowedStatuses.length ? `&status=in.(${allowedStatuses.map(encodeURIComponent).join(',')})` : '';
       return request(
-        `rental_orders?select=id,laptop_id,customer_name,customer_phone,rental_start_date,rental_end_date,status,total_amount,deposit_amount,delivery_type,locker_address,created_at,updated_at&order=created_at.desc&limit=${Math.min(Math.max(Number(limit) || 12, 1), 30)}${statusFilter}`
+        `rental_orders?select=id,laptop_id,customer_name,customer_phone,rental_start_date,rental_end_date,status,total_amount,deposit_amount,delivery_type,locker_address,created_at,updated_at&order=created_at.desc&limit=${Math.min(Math.max(Number(limit) || 12, 1), 100)}${statusFilter}`
       );
     },
     findOverlappingBlockingOrder: (orderId, laptopId, startDate, endDate) => request(

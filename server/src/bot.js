@@ -25,7 +25,8 @@ const activeRentalMenuKeyboard = () => ({
   reply_markup: {
     keyboard: [
       [{ text: '📅 Продлить аренду' }, { text: '💬 У меня вопрос' }],
-      [{ text: '🛠 Проблема с ARCHA POINT' }, { text: '⭐ Оставить отзыв' }]
+      [{ text: '🛠 Проблема с ARCHA POINT' }, { text: '↩️ Досрочно вернуть' }],
+      [{ text: '⭐ Оставить отзыв' }]
     ],
     resize_keyboard: true,
     is_persistent: true
@@ -114,7 +115,8 @@ export function createRentopBot({ config, telegram, database }) {
     reply_markup: { inline_keyboard: [
       [{ text: '📅 Хочу продлить аренду', callback_data: `extend_request:${orderId}` }],
       [{ text: 'Поддержка Rentop', callback_data: `support:${orderId}` }],
-      [{ text: 'Проблема с ARCHA POINT', callback_data: `archa_support:${orderId}` }]
+      [{ text: 'Проблема с ARCHA POINT', callback_data: `archa_support:${orderId}` }],
+      [{ text: '↩️ Досрочно вернуть ноутбук', callback_data: `early_return:${orderId}` }]
     ] }
   });
 
@@ -181,15 +183,24 @@ export function createRentopBot({ config, telegram, database }) {
     );
   }
 
-  async function sendReturnInstructions(order, session) {
+  async function sendReturnPrecheckInstructions(order, session) {
+    return telegram.sendMessage(
+      session.telegram_chat_id,
+      `📦 Подготовка к возврату по заявке ${orderRef(order)}\n\n` +
+      'Пока не кладите ноутбук в ячейку. Сначала снимите и отправьте сюда одно непрерывное видео предварительного осмотра: корпус со всех сторон, экран во включённом состоянии, серийный номер, зарядку и всю комплектацию.\n\n' +
+      'Rentop проверит видео и через бота подтвердит, когда можно будет помещать технику в ячейку.'
+    );
+  }
+
+  async function sendReturnDropoffInstructions(order, session) {
     const location = order.return_location_id || order.locker_address || 'локация, согласованная с менеджером Rentop';
     const box = order.return_box_id ? `\nЯчейка: ${order.return_box_id}` : '';
     return telegram.sendMessage(
       session.telegram_chat_id,
-      `📦 Возврат ноутбука по заявке ${orderRef(order)}\n\n` +
+      `✅ Предварительное видео согласовано. Возврат ноутбука по заявке ${orderRef(order)}\n\n` +
       `Место возврата: ${location}${box}\n\n` +
       'Перед закрытием ячейки снимите одно непрерывное видео: покажите ноутбук со всех сторон, включённый экран, серийный номер, зарядку и комплектацию; затем положите всё в ячейку и снимите её закрытие.\n\n' +
-      'После закрытия ячейки отправьте это видео в бот как файл. Аренда будет завершена только после осмотра Rentop.',
+      'После закрытия ячейки отправьте это финальное видео в бот как файл. Аренда будет завершена только после того, как Rentop физически получит и осмотрит технику.',
       helpKeyboard(order.id)
     );
   }
@@ -457,8 +468,25 @@ export function createRentopBot({ config, telegram, database }) {
           { text: 'Закрытые', callback_data: 'dashboard:closed' },
           { text: 'Проблемы', callback_data: 'cases:open' }
         ],
+        [{ text: '🔎 Найти заявку', callback_data: 'search:prompt' }],
         ...orderButtons
       ] } }
+    );
+  }
+
+  async function sendOrderSearchResults(chatId, rawQuery) {
+    const query = String(rawQuery || '').trim().toLowerCase();
+    if (query.length < 2) return telegram.sendMessage(chatId, 'Введите минимум 2 символа: код заявки, имя, телефон или модель.');
+    const orders = await database.listRecentOrders(100);
+    const matching = (await Promise.all(orders.map(async (order) => ({ order, laptop: await database.getLaptop(order.laptop_id) })))).filter(({ order, laptop }) => {
+      const searchable = [orderRef(order), order.id, order.customer_name, order.customer_phone, laptopTitle(laptop)].filter(Boolean).join(' ').toLowerCase();
+      return searchable.includes(query);
+    }).slice(0, 12);
+    if (!matching.length) return telegram.sendMessage(chatId, `По запросу «${rawQuery.trim()}» среди последних 100 заявок ничего не найдено.`);
+    const buttons = matching.map(({ order }) => ([{ text: `Открыть ${orderRef(order)}`, callback_data: `admin_order:${order.id}` }]));
+    return telegram.sendMessage(chatId,
+      `🔎 Найдено: ${matching.length}\n\n${matching.map(({ order, laptop }, index) => `${index + 1}. ${orderRef(order)} · ${laptopTitle(laptop)}\n${order.status} · ${order.rental_start_date}—${order.rental_end_date}`).join('\n\n')}`,
+      { reply_markup: { inline_keyboard: buttons } }
     );
   }
 
@@ -591,6 +619,19 @@ export function createRentopBot({ config, telegram, database }) {
         ]] } }
       );
     }
+    if (session.step === 'awaiting_early_return_reason') {
+      if (!text || text.length < 5) return telegram.sendMessage(message.chat.id, 'Коротко опишите причину и когда вам удобно вернуть ноутбук.');
+      await saveStep(session, { step: 'in_use' });
+      await recordEvent({ order_id: order.id, event_type: 'early_return_requested_by_customer', actor_type: 'customer', actor_telegram_id: message.from.id, metadata: { reason: text.slice(0, 1500) } });
+      await sendAdmin(
+        `↩️ Запрос на досрочный возврат\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\nСообщение клиента:\n${text.slice(0, 1500)}\n\nАренда и расчёт не меняются автоматически: менеджер отдельно оценивает фактический срок, технику и возможный перенос неиспользованных дней.`,
+        { reply_markup: { inline_keyboard: [[
+          { text: '📦 Начать возврат: запросить видео', callback_data: `return_start:${order.id}` },
+          { text: '💬 Написать клиенту', callback_data: `message_client:${order.id}` }
+        ]] } }
+      );
+      return telegram.sendMessage(message.chat.id, 'Запрос на досрочный возврат передан Rentop. Неиспользованные дни и залог не пересчитываются автоматически: менеджер сначала согласует возврат и напишет вам через бота.');
+    }
     if (order.status === 'awaiting_pickup' && isVideoEvidence(message)) {
       await telegram.forwardMessage(config.adminChatId, message.chat.id, message.message_id);
       await saveStep(session, { pickup_video_received_at: new Date().toISOString() });
@@ -601,15 +642,32 @@ export function createRentopBot({ config, telegram, database }) {
     }
     if (order.status === 'return_requested') {
       if (!isVideoEvidence(message)) {
-        return telegram.sendMessage(message.chat.id, 'Для завершения возврата отправьте видео как файл: состояние ноутбука, комплектация, помещение в ячейку и её закрытие.');
+        return telegram.sendMessage(message.chat.id, 'Для возврата отправьте видео как файл. Бот подскажет следующий шаг после проверки менеджером.');
       }
       await telegram.forwardMessage(config.adminChatId, message.chat.id, message.message_id);
-      await saveStep(session, { return_video_received_at: new Date().toISOString() });
-      await recordEvent({ order_id: order.id, event_type: 'return_video_received', actor_type: 'customer', actor_telegram_id: message.from.id, metadata: { telegram_message_id: message.message_id } });
-      await sendAdmin(`🎥 Получено видео возврата\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}`, {
-        reply_markup: { inline_keyboard: [[{ text: '✅ Технику получили и осмотрели', callback_data: `return_received:${order.id}` }]] }
-      });
-      return telegram.sendMessage(message.chat.id, 'Видео возврата получено. Rentop проверит технику и сообщит о завершении аренды и возврате остатка залога.');
+      if (session.step === 'awaiting_return_precheck') {
+        await saveStep(session, { step: 'awaiting_return_approval', return_video_received_at: new Date().toISOString() });
+        await recordEvent({ order_id: order.id, event_type: 'return_precheck_video_received', actor_type: 'customer', actor_telegram_id: message.from.id, metadata: { telegram_message_id: message.message_id } });
+        await sendAdmin(`🎥 Получено предварительное видео возврата\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\nПроверьте состояние на видео. Только после согласования клиент получит инструкцию положить технику в ячейку.`, {
+          reply_markup: { inline_keyboard: [[
+            { text: '✅ Видео согласовано: дать инструкцию', callback_data: `return_video_approve:${order.id}` },
+            { text: '💬 Написать клиенту', callback_data: `message_client:${order.id}` }
+          ]] }
+        });
+        return telegram.sendMessage(message.chat.id, 'Видео получено. Пока не помещайте ноутбук в ячейку: Rentop проверит состояние и пришлёт дальнейшую инструкцию через бота.');
+      }
+      if (session.step === 'awaiting_return_dropoff') {
+        await saveStep(session, { step: 'awaiting_return_retrieval', return_video_received_at: new Date().toISOString() });
+        await recordEvent({ order_id: order.id, event_type: 'return_dropoff_video_received', actor_type: 'customer', actor_telegram_id: message.from.id, metadata: { telegram_message_id: message.message_id } });
+        await sendAdmin(`🎥 Получено финальное видео помещения в ячейку\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\nПосле того как Rentop заберёт технику из ячейки и осмотрит её, нажмите подтверждение.`, {
+          reply_markup: { inline_keyboard: [[
+            { text: '✅ Забрали из ячейки и осмотрели', callback_data: `return_received:${order.id}` },
+            { text: '💬 Написать клиенту', callback_data: `message_client:${order.id}` }
+          ]] }
+        });
+        return telegram.sendMessage(message.chat.id, 'Финальное видео получено. Rentop заберёт технику из ячейки и проведёт осмотр; после этого бот сообщит о завершении возврата.');
+      }
+      return telegram.sendMessage(message.chat.id, 'Видео уже находится на проверке. Дождитесь сообщения Rentop через бота.');
     }
     if (session.step === 'awaiting_name') {
       if (!text || text.length < 2) return telegram.sendMessage(message.chat.id, 'Напишите имя и фамилию текстом, как в документе.');
@@ -643,6 +701,11 @@ export function createRentopBot({ config, telegram, database }) {
     if (text === '📅 Продлить аренду') {
       if (order.status !== 'in_use') return telegram.sendMessage(message.chat.id, 'Продление доступно после подтверждения получения ноутбука.');
       return telegram.sendMessage(message.chat.id, `Выберите срок продления по заявке ${orderRef(order)}. Бот сначала проверит доступность ноутбука, затем передаст запрос менеджеру.`, extensionOptionsKeyboard(order.id));
+    }
+    if (text === '↩️ Досрочно вернуть') {
+      if (order.status !== 'in_use') return telegram.sendMessage(message.chat.id, 'Досрочный возврат доступен только для активной аренды.');
+      await saveStep(session, { step: 'awaiting_early_return_reason' });
+      return telegram.sendMessage(message.chat.id, 'Напишите, пожалуйста, причину досрочного возврата и когда вы готовы передать ноутбук. Rentop согласует дальнейшие шаги через бота.');
     }
     if (text === '💬 У меня вопрос') {
       await saveStep(session, { step: 'awaiting_support_message', support_kind_pending: 'rentop' });
@@ -754,8 +817,22 @@ export function createRentopBot({ config, telegram, database }) {
       await database.clearAdminAction(order.id);
       return sendPickupPin(order, session, pickupCode, message.chat.id);
     }
+    if (pendingAction?.action === 'customer_message' && (message.text || '').trim() && !message.text.trim().startsWith('/')) {
+      const order = await database.getOrder(pendingAction.order_id);
+      const session = order && await database.getSession(order.id);
+      const customerMessage = message.text.trim();
+      if (!order || !session || customerMessage.length > 3500) return telegram.sendMessage(message.chat.id, 'Не удалось отправить сообщение. Повторите через кнопку «Написать клиенту».');
+      await database.clearAdminAction(order.id);
+      await telegram.sendMessage(session.telegram_chat_id, `💬 Сообщение от Rentop:\n\n${customerMessage}`);
+      await recordEvent({ order_id: order.id, event_type: 'manager_message_sent_to_customer', actor_type: 'manager', actor_telegram_id: message.from.id, metadata: { text_length: customerMessage.length } });
+      return telegram.sendMessage(message.chat.id, `Сообщение отправлено клиенту по заявке ${orderRef(order)}.`);
+    }
     if (command === '/admin' || command === '/orders') {
       return sendManagerDashboard(message.chat.id);
+    }
+    if (command === '/find') {
+      const query = (message.text || '').replace(/^\/find(?:@\w+)?\s*/i, '').trim();
+      return sendOrderSearchResults(message.chat.id, query);
     }
     if (command === '/deposit') {
       const amount = Number(rawValue?.replace(',', '.'));
@@ -789,7 +866,7 @@ export function createRentopBot({ config, telegram, database }) {
 
   async function handleCallback(callback) {
     const [action, orderId, value] = callback.data.split(':');
-    const clientActions = new Set(['bank', 'document_type', 'offer_accept', 'support', 'archa_support', 'caseok', 'pickup_ready', 'pickup_received', 'extend_request', 'extend_choose', 'extend_custom', 'extension_bank']);
+    const clientActions = new Set(['bank', 'document_type', 'offer_accept', 'support', 'archa_support', 'caseok', 'pickup_ready', 'pickup_received', 'extend_request', 'extend_choose', 'extend_custom', 'extension_bank', 'early_return']);
     if (!isAdmin(callback.from.id) && !clientActions.has(action)) {
       return telegram.answerCallback(callback.id, 'Нет прав. Проверьте RENTOP_ADMIN_USER_IDS в настройках сервера.');
     }
@@ -800,6 +877,10 @@ export function createRentopBot({ config, telegram, database }) {
     if (action === 'cases') {
       await sendOpenSupportCases(callback.message.chat.id);
       return telegram.answerCallback(callback.id, 'Список обращений отправлен.');
+    }
+    if (action === 'search') {
+      await telegram.sendMessage(callback.message.chat.id, '🔎 Напишите команду: /find <код, имя, телефон или модель>\nНапример: /find Dell G15 или /find 2E24A7CF');
+      return telegram.answerCallback(callback.id, 'Введите запрос командой /find.');
     }
     const order = action === 'document_type'
       ? await database.getSessionByUser(callback.from.id).then(async (session) => session ? database.getOrder(session.order_id) : null)
@@ -884,6 +965,13 @@ export function createRentopBot({ config, telegram, database }) {
       return telegram.answerCallback(callback.id, 'Выберите срок продления.');
     }
 
+    if (action === 'early_return') {
+      if (order.status !== 'in_use') return telegram.answerCallback(callback.id, 'Досрочный возврат доступен только для активной аренды.');
+      await saveStep(session, { step: 'awaiting_early_return_reason' });
+      await telegram.sendMessage(session.telegram_chat_id, 'Напишите, пожалуйста, причину досрочного возврата и когда вы готовы передать ноутбук. Rentop согласует дальнейшие шаги через бота.');
+      return telegram.answerCallback(callback.id, 'Жду описание ситуации.');
+    }
+
     if (action === 'extend_choose') {
       const extraDays = Number(value);
       if (![1, 3, 7].includes(extraDays)) return telegram.answerCallback(callback.id, 'Некорректный срок продления.');
@@ -914,7 +1002,7 @@ export function createRentopBot({ config, telegram, database }) {
       if (order.status === 'in_use') {
         controlRows.push([{ text: '📦 Начать возврат: инструкция клиенту', callback_data: `return_start:${order.id}` }]);
       }
-      if (order.status === 'return_requested') {
+      if (order.status === 'return_requested' && session.step === 'awaiting_return_retrieval') {
         controlRows.push([{ text: '✅ Технику получили и осмотрели', callback_data: `return_received:${order.id}` }]);
       }
       if (order.status === 'returned') {
@@ -932,6 +1020,9 @@ export function createRentopBot({ config, telegram, database }) {
       }
       if (['awaiting_pickup', 'issued', 'in_use'].includes(order.status) && order.delivery_type === 'arca_locker') {
         controlRows.push([{ text: '📦 Текст для ARCHA POINT', callback_data: `archa_request:${order.id}` }]);
+      }
+      if (!['completed', 'cancelled', 'rejected', 'expired'].includes(order.status)) {
+        controlRows.push([{ text: '💬 Написать клиенту через бота', callback_data: `message_client:${order.id}` }]);
       }
       await telegram.sendMessage(callback.message.chat.id,
         `${orderDetails(order, laptop)}\n\n` +
@@ -1045,6 +1136,12 @@ export function createRentopBot({ config, telegram, database }) {
       return telegram.answerCallback(callback.id, 'Жду PIN/QR.');
     }
 
+    if (action === 'message_client') {
+      await database.setAdminAction({ order_id: order.id, action: 'customer_message', admin_user_id: callback.from.id });
+      await telegram.sendMessage(callback.message.chat.id, `Напишите сообщение клиенту по заявке ${orderRef(order)} одним сообщением. Бот перешлёт его без передачи вашего личного контакта.`);
+      return telegram.answerCallback(callback.id, 'Жду текст для клиента.');
+    }
+
     if (action === 'archa_request') {
       if (order.delivery_type !== 'arca_locker') return telegram.answerCallback(callback.id, 'Эта заявка не на выдачу через ARCHA POINT.');
       await sendArchaPointRequest(order, callback.message.chat.id);
@@ -1060,12 +1157,25 @@ export function createRentopBot({ config, telegram, database }) {
       if (order.status !== 'in_use') return telegram.answerCallback(callback.id, 'Возврат можно начать только для активной аренды.');
       await database.updateOrder(order.id, { status: 'return_requested', locker_status: 'return_pending' });
       await recordEvent({ order_id: order.id, event_type: 'return_requested_by_manager', actor_type: 'manager', actor_telegram_id: callback.from.id, metadata: {} });
-      await sendReturnInstructions(await database.getOrder(order.id), session);
-      return telegram.answerCallback(callback.id, 'Инструкция возврата отправлена клиенту.');
+      await saveStep(session, { step: 'awaiting_return_precheck', return_video_received_at: null });
+      await sendReturnPrecheckInstructions(await database.getOrder(order.id), session);
+      return telegram.answerCallback(callback.id, 'Сначала запросили видео предварительного осмотра.');
+    }
+
+    if (action === 'return_video_approve') {
+      if (order.status !== 'return_requested' || session.step !== 'awaiting_return_approval') {
+        return telegram.answerCallback(callback.id, 'Предварительное видео сейчас не ожидает согласования.');
+      }
+      await saveStep(session, { step: 'awaiting_return_dropoff' });
+      await recordEvent({ order_id: order.id, event_type: 'return_precheck_video_approved', actor_type: 'manager', actor_telegram_id: callback.from.id, metadata: {} });
+      await sendReturnDropoffInstructions(order, session);
+      return telegram.answerCallback(callback.id, 'Клиенту отправлена инструкция помещения в ячейку.');
     }
 
     if (action === 'return_received') {
-      if (order.status !== 'return_requested') return telegram.answerCallback(callback.id, 'Заявка не ожидает возврат.');
+      if (order.status !== 'return_requested' || session.step !== 'awaiting_return_retrieval') {
+        return telegram.answerCallback(callback.id, 'Сначала получите финальное видео и физически заберите технику из ячейки.');
+      }
       await database.updateOrder(order.id, { status: 'returned', locker_status: 'returned' });
       await recordEvent({ order_id: order.id, event_type: 'return_received_and_inspected', actor_type: 'manager', actor_telegram_id: callback.from.id, metadata: {} });
       await telegram.sendMessage(session.telegram_chat_id, '✅ Rentop получил технику и начал итоговую проверку. Остаток залога возвращается в срок, указанный в оферте, если нет вопросов к состоянию и комплектации.');

@@ -6,7 +6,8 @@ const telegram = createTelegramApi(config.telegramBotToken);
 
 await telegram.setMyCommands([
   { command: 'admin', description: 'Панель менеджера' },
-  { command: 'orders', description: 'Последние заявки' }
+  { command: 'orders', description: 'Последние заявки' },
+  { command: 'find', description: 'Поиск по коду, клиенту или модели' }
 ], {
   scope: { type: 'chat_administrators', chat_id: config.adminChatId }
 });
