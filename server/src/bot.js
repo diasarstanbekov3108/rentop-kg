@@ -196,13 +196,15 @@ export function createRentopBot({ config, telegram, database }) {
     );
   }
 
-  async function sendReturnDropoffInstructions(order, session) {
+  async function sendReturnDropoffInstructions(order, session, returnAccessCode = '') {
     const location = order.return_location_id || order.locker_address || 'локация, согласованная с менеджером Rentop';
     const box = order.return_box_id ? `\nЯчейка: ${order.return_box_id}` : '';
     return telegram.sendMessage(
       session.telegram_chat_id,
       `✅ Предварительное видео согласовано. Возврат ноутбука по заявке ${orderRef(order)}\n\n` +
-      `Место возврата: ${location}${box}\n\n` +
+      `Место возврата: ${location}${box}\n` +
+      (returnAccessCode ? `Код/PIN для возврата: ${returnAccessCode}\n` : 'Новый код/PIN или QR для возврата отправлен ARCHA POINT на подтверждённый номер.\n') +
+      '\n' +
       'Перед закрытием ячейки снимите одно непрерывное видео: покажите ноутбук со всех сторон, включённый экран, серийный номер, зарядку и комплектацию; затем положите всё в ячейку и снимите её закрытие.\n\n' +
       'После закрытия ячейки отправьте это финальное видео в бот как файл. Аренда будет завершена только после того, как Rentop физически получит и осмотрит технику.',
       helpKeyboard(order.id)
@@ -325,6 +327,31 @@ export function createRentopBot({ config, telegram, database }) {
       `Локация: ${order.locker_address || 'уточняется'}\n\n` +
       `Просьба: подготовить ячейку и отправить клиенту код/PIN или QR для получения. После выдачи сообщите статус Rentop.\n\n` +
       `Это готовый текст: перешлите его в рабочую группу ARCHA POINT.`
+    );
+  }
+
+  async function sendArchaReturnRequest(order, session) {
+    const laptop = await database.getLaptop(order.laptop_id);
+    const sharedFields = ['customer_name', 'customer_phone', 'order_reference', 'laptop_model', 'return_location'];
+    await recordEvent({
+      order_id: order.id,
+      event_type: 'archa_point_return_handoff_prepared',
+      actor_type: 'manager',
+      metadata: { shared_fields: sharedFields }
+    });
+    return sendOrderAdmin(order, session,
+      `📦 ARCHA POINT — заявка на возврат\n\n` +
+      `Заказ Rentop: ${orderRef(order)}\n` +
+      `Клиент: ${order.customer_name || '—'}\n` +
+      `Телефон для нового SMS-кода: ${order.customer_phone || '—'}\n` +
+      `Ноутбук: ${laptopTitle(laptop)}\n` +
+      `Предпочтительная локация: ${order.return_location_id || order.locker_address || 'уточняется'}\n\n` +
+      `Просьба: выделить ячейку для возврата и отправить клиенту новый код/PIN или QR. После отправки кода сообщите Rentop.\n\n` +
+      `Это готовый текст: перешлите его в рабочую группу ARCHA POINT.`,
+      { reply_markup: { inline_keyboard: [[
+        { text: '✅ ARCHA отправил код клиенту', callback_data: `return_archa_ready:${order.id}` },
+        { text: '🔐 Ввести PIN/QR вручную', callback_data: `return_pin_custom:${order.id}` }
+      ]] } }
     );
   }
 
@@ -862,6 +889,18 @@ export function createRentopBot({ config, telegram, database }) {
       await database.clearAdminAction(order.id);
       return sendPickupPin(order, session, pickupCode, message.chat.id);
     }
+    if (pendingAction?.action === 'return_pin' && (message.text || '').trim() && !message.text.trim().startsWith('/')) {
+      const order = await database.getOrder(pendingAction.order_id);
+      const session = order && await database.getSession(order.id);
+      const returnCode = message.text.trim();
+      if (!order || !session || returnCode.length > 200) return telegram.sendMessage(message.chat.id, 'Не удалось сохранить PIN/QR. Нажмите «Ввести PIN/QR вручную» ещё раз.');
+      if (order.status !== 'return_requested' || session.step !== 'awaiting_return_approval') return telegram.sendMessage(message.chat.id, 'Этот возврат уже не ожидает кода ARCHA POINT.');
+      await database.clearAdminAction(order.id);
+      await saveStep(session, { step: 'awaiting_return_dropoff' });
+      await recordEvent({ order_id: order.id, event_type: 'return_access_code_sent_by_manager', actor_type: 'manager', actor_telegram_id: message.from.id, metadata: {} });
+      await sendReturnDropoffInstructions(order, session, returnCode);
+      return sendOrderAdmin(order, session, '✅ PIN/QR возврата отправлен клиенту. Теперь ожидается финальное видео помещения техники в ячейку.');
+    }
     if (pendingAction?.action === 'customer_message' && (message.text || '').trim() && !message.text.trim().startsWith('/')) {
       const order = await database.getOrder(pendingAction.order_id);
       const session = order && await database.getSession(order.id);
@@ -1224,10 +1263,42 @@ export function createRentopBot({ config, telegram, database }) {
       if (order.status !== 'return_requested' || session.step !== 'awaiting_return_approval') {
         return telegram.answerCallback(callback.id, 'Предварительное видео сейчас не ожидает согласования.');
       }
-      await saveStep(session, { step: 'awaiting_return_dropoff' });
       await recordEvent({ order_id: order.id, event_type: 'return_precheck_video_approved', actor_type: 'manager', actor_telegram_id: callback.from.id, metadata: {} });
+      await sendOrderAdmin(order, session,
+        `✅ Предварительное видео согласовано.\n\nСначала передайте заявку в ARCHA POINT и дождитесь нового кода для возврата. Только затем клиенту можно отправлять инструкцию помещения в ячейку.`,
+        { reply_markup: { inline_keyboard: [[
+          { text: '📦 Текст для ARCHA POINT', callback_data: `return_archa_request:${order.id}` },
+          { text: '🔐 Ввести PIN/QR вручную', callback_data: `return_pin_custom:${order.id}` }
+        ]] } }
+      );
+      return telegram.answerCallback(callback.id, 'Сначала подготовьте возврат через ARCHA POINT.');
+    }
+
+    if (action === 'return_archa_request') {
+      if (order.status !== 'return_requested' || session.step !== 'awaiting_return_approval') {
+        return telegram.answerCallback(callback.id, 'Сначала согласуйте предварительное видео возврата.');
+      }
+      await sendArchaReturnRequest(order, session);
+      return telegram.answerCallback(callback.id, 'Готовый текст для ARCHA POINT отправлен.');
+    }
+
+    if (action === 'return_archa_ready') {
+      if (order.status !== 'return_requested' || session.step !== 'awaiting_return_approval') {
+        return telegram.answerCallback(callback.id, 'Этот возврат уже не ожидает кода ARCHA POINT.');
+      }
+      await saveStep(session, { step: 'awaiting_return_dropoff' });
+      await recordEvent({ order_id: order.id, event_type: 'archa_point_return_access_confirmed', actor_type: 'manager', actor_telegram_id: callback.from.id, metadata: {} });
       await sendReturnDropoffInstructions(order, session);
-      return telegram.answerCallback(callback.id, 'Клиенту отправлена инструкция помещения в ячейку.');
+      return telegram.answerCallback(callback.id, 'Клиенту отправлена инструкция после кода ARCHA POINT.');
+    }
+
+    if (action === 'return_pin_custom') {
+      if (order.status !== 'return_requested' || session.step !== 'awaiting_return_approval') {
+        return telegram.answerCallback(callback.id, 'Этот возврат уже не ожидает кода ARCHA POINT.');
+      }
+      await database.setAdminAction({ order_id: order.id, action: 'return_pin', admin_user_id: callback.from.id });
+      await telegram.sendMessage(callback.message.chat.id, `Отправьте новый PIN-код или QR-ссылку для возврата по заявке ${orderRef(order)} одним сообщением.`);
+      return telegram.answerCallback(callback.id, 'Жду PIN/QR для возврата.');
     }
 
     if (action === 'return_received') {
