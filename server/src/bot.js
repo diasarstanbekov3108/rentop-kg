@@ -1013,6 +1013,12 @@ export function createRentopBot({ config, telegram, database }) {
     if (action === 'early_return') {
       if (order.status !== 'in_use') return telegram.answerCallback(callback.id, 'Досрочный возврат доступен только для активной аренды.');
       await saveStep(session, { step: 'awaiting_early_return_reason' });
+      await sendOrderAdmin(
+        order,
+        session,
+        `↩️ Клиент запросил досрочный возврат\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\nБот ожидает от клиента причину и удобное время возврата. После ответа подробности появятся в этой же теме.`,
+        { reply_markup: { inline_keyboard: [[{ text: '💬 Написать клиенту', callback_data: `message_client:${order.id}` }]] } }
+      );
       await telegram.sendMessage(session.telegram_chat_id, 'Напишите, пожалуйста, причину досрочного возврата и когда вы готовы передать ноутбук. Rentop согласует дальнейшие шаги через бота.');
       return telegram.answerCallback(callback.id, 'Жду описание ситуации.');
     }
