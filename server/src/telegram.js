@@ -37,11 +37,13 @@ export function createTelegramApi(token) {
     setMyCommands: (commands, extra = {}) => call('setMyCommands', { commands, ...extra }),
     sendMessage: (chatId, text, extra = {}) => call('sendMessage', { chat_id: chatId, text, ...extra }),
     sendPhoto,
-    forwardMessage: (chatId, fromChatId, messageId) => call('forwardMessage', {
-      chat_id: chatId, from_chat_id: fromChatId, message_id: messageId
+    createForumTopic: (chatId, name) => call('createForumTopic', { chat_id: chatId, name }),
+    closeForumTopic: (chatId, messageThreadId) => call('closeForumTopic', { chat_id: chatId, message_thread_id: messageThreadId }),
+    forwardMessage: (chatId, fromChatId, messageId, extra = {}) => call('forwardMessage', {
+      chat_id: chatId, from_chat_id: fromChatId, message_id: messageId, ...extra
     }),
-    forwardMessages: (chatId, fromChatId, messageIds) => call('forwardMessages', {
-      chat_id: chatId, from_chat_id: fromChatId, message_ids: messageIds
+    forwardMessages: (chatId, fromChatId, messageIds, extra = {}) => call('forwardMessages', {
+      chat_id: chatId, from_chat_id: fromChatId, message_ids: messageIds, ...extra
     }),
     answerCallback: (callbackId, text = '') => call('answerCallbackQuery', { callback_query_id: callbackId, text })
   };

@@ -277,7 +277,7 @@ export function createRentopBot({ config, telegram, database }) {
     const isArchaSupport = kind === 'archa';
     await openSupportCaseSafely({ order_id: order.id, kind, status: 'open', opened_at: new Date().toISOString(), opened_by: String(userId), customer_message: customerMessage || null, resolved_at: null, resolved_by: null });
     await recordEvent({ order_id: order.id, event_type: isArchaSupport ? 'customer_requested_archa_support' : 'customer_requested_rentop_support', actor_type: 'customer', actor_telegram_id: userId, metadata: {} });
-    await sendAdmin(
+    await sendOrderAdmin(order, session,
       `${isArchaSupport ? '🆘 Клиент сообщил о проблеме с ARCHA POINT' : '🆘 Клиент запросил поддержку Rentop'}\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n` +
       `Клиент: ${order.customer_name || '—'}\nТелефон: ${order.customer_phone || '—'}\n` +
       `Текущий этап: ${session.step}\n` +
@@ -340,12 +340,16 @@ export function createRentopBot({ config, telegram, database }) {
       session.supporting_document_message_id
     ].filter(Boolean);
     if (!packet.length) return;
+    const topicSession = await ensureOrderTopic(order, session);
+    const topicExtra = topicSession?.manager_thread_id
+      ? { message_thread_id: topicSession.manager_thread_id }
+      : {};
     try {
-      await telegram.forwardMessages(config.adminChatId, session.telegram_chat_id, packet);
+      await telegram.forwardMessages(config.adminChatId, session.telegram_chat_id, packet, topicExtra);
     } catch (error) {
       console.error('Could not forward document packet as a batch:', error.message);
       for (const messageId of packet) {
-        await telegram.forwardMessage(config.adminChatId, session.telegram_chat_id, messageId);
+        await telegram.forwardMessage(config.adminChatId, session.telegram_chat_id, messageId, topicExtra);
       }
     }
   }
@@ -390,6 +394,7 @@ export function createRentopBot({ config, telegram, database }) {
     }
     await database.updateOrder(order.id, { status: 'cancelled', hold_expires_at: new Date().toISOString() });
     await recordEvent({ order_id: order.id, event_type: 'order_cancelled_by_manager', actor_type: 'manager', metadata: {} });
+    await closeOrderTopic(session);
     if (session?.telegram_chat_id) {
       await telegram.sendMessage(session.telegram_chat_id, `Заявка ${orderRef(order)} отменена менеджером Rentop. Ноутбук снова доступен для бронирования.`);
     }
@@ -437,7 +442,7 @@ export function createRentopBot({ config, telegram, database }) {
     const extraAmount = Math.max(0, Math.round(totalDays * Number(order.daily_rate) * (100 - discount) / 100) - Number(order.total_amount));
     await saveStep(session, { step: 'in_use', extension_days: extraDays, extension_amount: extraAmount });
     await recordEvent({ order_id: order.id, event_type: 'customer_requested_extension', actor_type: 'customer', actor_telegram_id: actorTelegramId, metadata: { extra_days: extraDays, estimated_extra_amount: extraAmount, proposed_end_date: newEndDate } });
-    await sendAdmin(`📅 Запрос на продление\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\nКлиент просит: +${extraDays} дн.\nНовая дата: ${newEndDate}\nДоплата: ${extraAmount} сом`, adminKeyboard([{ text: '💳 Отправить реквизиты клиенту', callback_data: `extension_bill:${order.id}` }]));
+    await sendOrderAdmin(order, session, `📅 Запрос на продление\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\nКлиент просит: +${extraDays} дн.\nНовая дата: ${newEndDate}\nДоплата: ${extraAmount} сом`, adminKeyboard([{ text: '💳 Отправить реквизиты клиенту', callback_data: `extension_bill:${order.id}` }]));
     return telegram.sendMessage(session.telegram_chat_id, `Запрос на продление на ${extraDays} дн. принят. Предварительная доплата: ${extraAmount} сом. После решения менеджера бот пришлёт реквизиты для оплаты.`);
   }
 
@@ -498,6 +503,48 @@ export function createRentopBot({ config, telegram, database }) {
     return telegram.sendMessage(config.adminChatId, text, extra);
   }
 
+  async function ensureOrderTopic(order, session) {
+    if (session?.manager_thread_id) return session;
+    const storedSession = await database.getSession(order.id);
+    if (storedSession?.manager_thread_id) return storedSession;
+    const laptop = await database.getLaptop(order.laptop_id);
+    const rawTitle = `${orderRef(order)} · ${laptopTitle(laptop)} · заявка`;
+    const title = rawTitle.slice(0, 128);
+    try {
+      const topic = await telegram.createForumTopic(config.adminChatId, title);
+      return saveStep(session, { manager_thread_id: topic.message_thread_id });
+    } catch (error) {
+      console.error(`Could not create forum topic for ${orderRef(order)}:`, error.message);
+      return session;
+    }
+  }
+
+  async function sendOrderAdmin(order, session, text, extra = {}) {
+    const topicSession = await ensureOrderTopic(order, session);
+    const topicExtra = topicSession?.manager_thread_id
+      ? { ...extra, message_thread_id: topicSession.manager_thread_id }
+      : extra;
+    return telegram.sendMessage(config.adminChatId, text, topicExtra);
+  }
+
+  async function forwardOrderMedia(order, session, fromChatId, messageId) {
+    const topicSession = await ensureOrderTopic(order, session);
+    const topicExtra = topicSession?.manager_thread_id
+      ? { message_thread_id: topicSession.manager_thread_id }
+      : {};
+    return telegram.forwardMessage(config.adminChatId, fromChatId, messageId, topicExtra);
+  }
+
+  async function closeOrderTopic(session) {
+    if (!session?.manager_thread_id) return;
+    try {
+      await telegram.closeForumTopic(config.adminChatId, session.manager_thread_id);
+      await saveStep(session, { manager_thread_closed_at: new Date().toISOString() });
+    } catch (error) {
+      console.error('Could not close forum topic:', error.message);
+    }
+  }
+
   async function saveStep(session, patch) {
     return database.saveSession({ ...session, ...patch, updated_at: new Date().toISOString() });
   }
@@ -528,14 +575,7 @@ export function createRentopBot({ config, telegram, database }) {
       step: initialStep
     });
 
-    if (!existing) {
-      const laptop = await database.getLaptop(order.laptop_id);
-      await sendAdmin(
-        `Новая заявка — документы ожидаются\n\n${orderDetails(order, laptop)}\n` +
-        `Клиент: ${order.customer_name || '—'}\nТелефон: ${order.customer_phone || '—'}\n` +
-        `Залог: определить после проверки документов.`
-      );
-    }
+    // Черновики не засоряют рабочую группу: отдельная тема создаётся после полного пакета документов.
 
     if (session.step === 'awaiting_phone_contact') {
       await telegram.sendMessage(message.chat.id,
@@ -576,7 +616,7 @@ export function createRentopBot({ config, telegram, database }) {
     await saveStep(session, { step: 'under_review' });
     await telegram.sendMessage(session.telegram_chat_id, 'Спасибо. Документы и подтверждение оферты переданы менеджеру Rentop на проверку. Мы сообщим решение в этом чате.');
     const laptop = await database.getLaptop(order.laptop_id);
-    await sendAdmin(
+    await sendOrderAdmin(order, session,
       `📁 Заявка ${orderRef(order)} · документы готовы к проверке\n\n${orderDetails(order, laptop)}\n` +
       `Клиент: ${order.customer_name || '—'}\nТелефон: ${order.customer_phone || '—'}\n` +
       `Документы: ${[session.id_document_first_message_id, session.id_document_second_message_id, session.selfie_message_id, session.supporting_document_message_id].filter(Boolean).length} из 4\n` +
@@ -611,11 +651,11 @@ export function createRentopBot({ config, telegram, database }) {
     }
     if (session.step === 'awaiting_extension_receipt') {
       if (!isDocumentMessage(message)) return telegram.sendMessage(message.chat.id, 'Отправьте чек оплаты продления как фото или файл.');
-      await telegram.forwardMessage(config.adminChatId, message.chat.id, message.message_id);
+      await forwardOrderMedia(order, session, message.chat.id, message.message_id);
       await saveStep(session, { step: 'in_use' });
       await recordEvent({ order_id: order.id, event_type: 'extension_receipt_received', actor_type: 'customer', actor_telegram_id: message.from.id, metadata: { telegram_message_id: message.message_id, extension_days: session.extension_days, extension_amount: session.extension_amount } });
       await telegram.sendMessage(message.chat.id, 'Чек получен и передан менеджеру. Аренда будет продлена только после подтверждения оплаты.');
-      return sendAdmin(
+      return sendOrderAdmin(order, session,
         `💳 Чек за продление получен\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\nПродление: +${session.extension_days} дн.\nДоплата: ${session.extension_amount} сом`,
         { reply_markup: { inline_keyboard: [[
           { text: '✅ Подтвердить оплату и продлить', callback_data: `extension_confirm:${order.id}` },
@@ -627,7 +667,7 @@ export function createRentopBot({ config, telegram, database }) {
       if (!text || text.length < 5) return telegram.sendMessage(message.chat.id, 'Коротко опишите причину и когда вам удобно вернуть ноутбук.');
       await saveStep(session, { step: 'in_use' });
       await recordEvent({ order_id: order.id, event_type: 'early_return_requested_by_customer', actor_type: 'customer', actor_telegram_id: message.from.id, metadata: { reason: text.slice(0, 1500) } });
-      await sendAdmin(
+      await sendOrderAdmin(order, session,
         `↩️ Запрос на досрочный возврат\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\nСообщение клиента:\n${text.slice(0, 1500)}\n\nАренда и расчёт не меняются автоматически: менеджер отдельно оценивает фактический срок, технику и возможный перенос неиспользованных дней.`,
         { reply_markup: { inline_keyboard: [[
           { text: '📦 Начать возврат: запросить видео', callback_data: `return_start:${order.id}` },
@@ -637,11 +677,11 @@ export function createRentopBot({ config, telegram, database }) {
       return telegram.sendMessage(message.chat.id, 'Запрос на досрочный возврат передан Rentop. Неиспользованные дни и залог не пересчитываются автоматически: менеджер сначала согласует возврат и напишет вам через бота.');
     }
     if (order.status === 'awaiting_pickup' && isVideoEvidence(message)) {
-      await telegram.forwardMessage(config.adminChatId, message.chat.id, message.message_id);
+      await forwardOrderMedia(order, session, message.chat.id, message.message_id);
       await saveStep(session, { pickup_video_received_at: new Date().toISOString() });
       await database.updateOrder(order.id, { received_media_telegram_message_id: message.message_id });
       await recordEvent({ order_id: order.id, event_type: 'pickup_condition_video_received', actor_type: 'customer', actor_telegram_id: message.from.id, metadata: { telegram_message_id: message.message_id } });
-      await sendAdmin(`🎥 Получено видео осмотра при выдаче\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}`);
+      await sendOrderAdmin(order, session, `🎥 Получено видео осмотра при выдаче\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}`);
       return telegram.sendMessage(message.chat.id, 'Видео осмотра получено. Если всё в порядке, подтвердите получение ноутбука.', pickupConfirmationKeyboard(order.id));
     }
     if (order.status === 'return_requested') {
@@ -649,10 +689,10 @@ export function createRentopBot({ config, telegram, database }) {
         return telegram.sendMessage(message.chat.id, 'Для возврата отправьте видео как файл. Бот подскажет следующий шаг после проверки менеджером.');
       }
       if (session.step === 'awaiting_return_precheck') {
-        await telegram.forwardMessage(config.adminChatId, message.chat.id, message.message_id);
+        await forwardOrderMedia(order, session, message.chat.id, message.message_id);
         await saveStep(session, { step: 'awaiting_return_approval', return_video_received_at: new Date().toISOString() });
         await recordEvent({ order_id: order.id, event_type: 'return_precheck_video_received', actor_type: 'customer', actor_telegram_id: message.from.id, metadata: { telegram_message_id: message.message_id } });
-        await sendAdmin(`🎥 Получено предварительное видео возврата\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\nПроверьте состояние на видео. Только после согласования клиент получит инструкцию положить технику в ячейку.`, {
+        await sendOrderAdmin(order, session, `🎥 Получено предварительное видео возврата\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\nПроверьте состояние на видео. Только после согласования клиент получит инструкцию положить технику в ячейку.`, {
           reply_markup: { inline_keyboard: [[
             { text: '✅ Видео согласовано: дать инструкцию', callback_data: `return_video_approve:${order.id}` },
             { text: '💬 Написать клиенту', callback_data: `message_client:${order.id}` }
@@ -661,10 +701,10 @@ export function createRentopBot({ config, telegram, database }) {
         return telegram.sendMessage(message.chat.id, 'Видео получено. Пока не помещайте ноутбук в ячейку: Rentop проверит состояние и пришлёт дальнейшую инструкцию через бота.');
       }
       if (session.step === 'awaiting_return_dropoff') {
-        await telegram.forwardMessage(config.adminChatId, message.chat.id, message.message_id);
+        await forwardOrderMedia(order, session, message.chat.id, message.message_id);
         await saveStep(session, { step: 'awaiting_return_retrieval', return_video_received_at: new Date().toISOString() });
         await recordEvent({ order_id: order.id, event_type: 'return_dropoff_video_received', actor_type: 'customer', actor_telegram_id: message.from.id, metadata: { telegram_message_id: message.message_id } });
-        await sendAdmin(`🎥 Получено финальное видео помещения в ячейку\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\nПосле того как Rentop заберёт технику из ячейки и осмотрит её, нажмите подтверждение.`, {
+        await sendOrderAdmin(order, session, `🎥 Получено финальное видео помещения в ячейку\n\n${orderDetails(order, await database.getLaptop(order.laptop_id))}\n\nПосле того как Rentop заберёт технику из ячейки и осмотрит её, нажмите подтверждение.`, {
           reply_markup: { inline_keyboard: [[
             { text: '✅ Забрали из ячейки и осмотрели', callback_data: `return_received:${order.id}` },
             { text: '💬 Написать клиенту', callback_data: `message_client:${order.id}` }
@@ -730,7 +770,7 @@ export function createRentopBot({ config, telegram, database }) {
     if (session.step === 'awaiting_feedback') {
       if (!text || text.length < 2) return telegram.sendMessage(message.chat.id, 'Напишите, пожалуйста, короткий отзыв текстом.');
       await recordEvent({ order_id: order.id, event_type: 'customer_feedback_received', actor_type: 'customer', actor_telegram_id: message.from.id, metadata: { feedback: text.slice(0, 1500) } });
-      await sendAdmin(`⭐ Новый отзыв по заявке ${orderRef(order)}\n\n${text.slice(0, 1500)}`);
+      await sendOrderAdmin(order, session, `⭐ Новый отзыв по заявке ${orderRef(order)}\n\n${text.slice(0, 1500)}`);
       await saveStep(session, { step: order.status === 'completed' ? 'completed' : 'in_use' });
       return sendCustomerServiceMenu(message.chat.id, 'Спасибо за отзыв! Он передан команде Rentop.');
     }
@@ -790,11 +830,11 @@ export function createRentopBot({ config, telegram, database }) {
     }
     if (session.step === 'awaiting_receipt') {
       if (!isDocumentMessage(message)) return telegram.sendMessage(message.chat.id, 'Отправьте чек оплаты как фото или файл.');
-      await telegram.forwardMessage(config.adminChatId, message.chat.id, message.message_id);
+      await forwardOrderMedia(order, session, message.chat.id, message.message_id);
       await database.updateOrder(order.id, { status: 'payment_review', payment_receipt_received_at: new Date().toISOString() });
       await saveStep(session, { step: 'payment_review', payment_receipt_received_at: new Date().toISOString() });
       await telegram.sendMessage(message.chat.id, 'Чек получен и передан менеджеру на проверку.');
-      return sendAdmin(`Проверьте оплату по заявке ${orderRef(order)}.`, adminKeyboard([
+      return sendOrderAdmin(order, session, `Проверьте оплату по заявке ${orderRef(order)}.`, adminKeyboard([
         { text: '✅ Оплата подтверждена', callback_data: `paid:${order.id}` },
         { text: '❌ Чек отклонён', callback_data: `payment_reject:${order.id}` }
       ]));
@@ -926,7 +966,7 @@ export function createRentopBot({ config, telegram, database }) {
     if (action === 'caseok') {
       await resolveSupportCaseSafely(order.id, value, callback.from.id);
       await recordEvent({ order_id: order.id, event_type: 'support_case_resolved_by_customer', actor_type: 'customer', actor_telegram_id: callback.from.id, metadata: { kind: value } });
-      await sendAdmin(`✅ Клиент отметил обращение как решённое\nЗаявка ${orderRef(order)} · ${value === 'archa' ? 'ARCHA POINT' : 'Rentop'}.`);
+      await sendOrderAdmin(order, session, `✅ Клиент отметил обращение как решённое\nЗаявка ${orderRef(order)} · ${value === 'archa' ? 'ARCHA POINT' : 'Rentop'}.`);
       const sendMenu = order.status === 'in_use' ? sendActiveRentalMenu : sendCustomerServiceMenu;
       await sendMenu(session.telegram_chat_id, '✅ Вопрос решён. Спасибо! Быстрое меню остаётся ниже — оно пригодится, если понадобится помощь или вы захотите оставить отзыв.');
       return telegram.answerCallback(callback.id, 'Спасибо, обращение закрыто.');
@@ -959,7 +999,7 @@ export function createRentopBot({ config, telegram, database }) {
       const confirmedNow = ['awaiting_pickup', 'issued'].includes(order.status) && Boolean(session.pickup_video_received_at);
       await confirmPickup(order, session, callback.message.chat.id, 'customer');
       if (confirmedNow) {
-        await sendAdmin(`✅ Клиент подтвердил получение ноутбука\n${orderDetails(order, await database.getLaptop(order.laptop_id))}`);
+        await sendOrderAdmin(order, session, `✅ Клиент подтвердил получение ноутбука\n${orderDetails(order, await database.getLaptop(order.laptop_id))}`);
       }
       return telegram.answerCallback(callback.id, confirmedNow ? 'Получение подтверждено.' : 'Следуйте инструкции в чате.');
     }
@@ -1198,6 +1238,7 @@ export function createRentopBot({ config, telegram, database }) {
       if (order.status !== 'returned') return telegram.answerCallback(callback.id, 'Сначала отметьте получение и осмотр техники.');
       await database.updateOrder(order.id, { status: 'completed' });
       await saveStep(session, { step: 'completed' });
+      await closeOrderTopic(session);
       await recordEvent({ order_id: order.id, event_type: 'rental_completed_after_deposit_return', actor_type: 'manager', actor_telegram_id: callback.from.id, metadata: {} });
       await telegram.sendMessage(session.telegram_chat_id, '✅ Аренда завершена. Спасибо, что выбрали Rentop!');
       return telegram.answerCallback(callback.id, 'Аренда завершена.');
@@ -1265,6 +1306,7 @@ export function createRentopBot({ config, telegram, database }) {
     } else if (action === 'reject') {
       await database.updateOrder(order.id, { status: 'rejected' });
       await saveStep(session, { step: 'completed' });
+      await closeOrderTopic(session);
       await telegram.sendMessage(session.telegram_chat_id, 'К сожалению, заявку не удалось одобрить. По вопросам напишите в поддержку Rentop KG.');
     } else if (action === 'bank') {
       if (String(callback.from.id) !== String(session.telegram_user_id)) return telegram.answerCallback(callback.id, 'Эта кнопка не для вашей заявки.');
