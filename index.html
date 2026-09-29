@@ -575,8 +575,20 @@
   </div>
 </div>
 
-  <div class="rentop-mascot" id="rentop-mascot" aria-hidden="true">
-    <img src="assets/rentop-mini-mascot.png" alt="">
+  <div class="rentop-mascot" id="rentop-mascot">
+    <button class="rentop-mascot-button" type="button" aria-label="Открыть помощника Rentop" aria-expanded="false" aria-controls="rentop-mascot-panel">
+      <img class="rentop-mascot-wave" src="assets/rentop-mascot-wave.png" alt="">
+      <img class="rentop-mascot-help" src="assets/rentop-mascot-help.png" alt="">
+      <span class="rentop-mascot-ping" aria-hidden="true">?</span>
+    </button>
+    <div class="rentop-mascot-panel" id="rentop-mascot-panel" hidden>
+      <button class="rentop-mascot-close" type="button" aria-label="Закрыть помощника">×</button>
+      <strong>Привет! Я помощник Rentop</strong>
+      <span>Помогу выбрать ноутбук, разобраться с выдачей или связаться с командой.</span>
+      <a href="#catalog">Подобрать ноутбук</a>
+      <a href="#faq">Посмотреть ответы</a>
+      <a href="https://t.me/rentop_kg_bot" target="_blank" rel="noopener noreferrer">Написать в поддержку</a>
+    </div>
   </div>
 
   <!-- Плавающая кнопка WhatsApp -->

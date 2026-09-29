@@ -1050,17 +1050,30 @@ body {
   z-index: 82;
   top: 0;
   left: 0;
-  width: 86px;
-  height: 100px;
+  width: 112px;
+  height: 128px;
   opacity: 0;
-  pointer-events: auto;
+  pointer-events: none;
   transform: translate3d(var(--mascot-x), var(--mascot-y), 0);
   transition: transform 620ms cubic-bezier(.2, .82, .27, 1.12), opacity 180ms ease;
 }
 
 .rentop-mascot.is-ready { opacity: 1; }
 
+.rentop-mascot-button {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
 .rentop-mascot img {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;
@@ -1070,13 +1083,64 @@ body {
   animation: rentop-mascot-idle 3.4s ease-in-out infinite;
 }
 
-.rentop-mascot:hover img {
+.rentop-mascot-help { opacity: 0; }
+
+.rentop-mascot:hover .rentop-mascot-wave,
+.rentop-mascot-button:focus-visible .rentop-mascot-wave {
   animation: rentop-mascot-wave 520ms ease-in-out 2;
 }
 
-.rentop-mascot.is-moving img {
+.rentop-mascot.is-moving .rentop-mascot-wave {
   animation: rentop-mascot-hop 260ms ease-in-out 2;
 }
+
+.rentop-mascot.is-open .rentop-mascot-wave { opacity: 0; }
+.rentop-mascot.is-open .rentop-mascot-help { opacity: 1; animation: rentop-mascot-idle 3.4s ease-in-out infinite; }
+
+.rentop-mascot-ping {
+  position: absolute;
+  top: 8px;
+  right: 1px;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 2px solid #d8f8ff;
+  border-radius: 50%;
+  background: #178cb0;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  box-shadow: 0 0 0 5px rgba(23, 140, 176, .17);
+  animation: rentop-mascot-ping 2.4s ease-in-out infinite;
+}
+
+.rentop-mascot.is-open .rentop-mascot-ping { opacity: 0; }
+
+.rentop-mascot-panel {
+  position: absolute;
+  top: 8px;
+  left: calc(100% - 10px);
+  width: 252px;
+  padding: 16px;
+  border: 1px solid rgba(143, 223, 255, .46);
+  border-radius: 16px;
+  background: rgba(7, 20, 33, .97);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .34);
+  color: #eaf8ff;
+  pointer-events: auto;
+}
+
+.rentop-mascot.is-panel-left .rentop-mascot-panel { right: calc(100% - 10px); left: auto; }
+.rentop-mascot-panel[hidden] { display: none; }
+.rentop-mascot-panel strong,
+.rentop-mascot-panel span,
+.rentop-mascot-panel a { display: block; }
+.rentop-mascot-panel strong { padding-right: 22px; margin-bottom: 5px; font-size: 13px; }
+.rentop-mascot-panel span { margin-bottom: 8px; color: #b5d9e8; font-size: 12px; line-height: 1.4; }
+.rentop-mascot-panel a { padding: 5px 0; color: var(--accent); font-size: 12px; font-weight: 700; text-decoration: none; }
+.rentop-mascot-panel a:hover { color: #fff; }
+.rentop-mascot-close { position: absolute; top: 7px; right: 8px; border: 0; background: transparent; color: #b5d9e8; cursor: pointer; font-size: 22px; line-height: 1; }
 
 @keyframes rentop-mascot-idle {
   0%, 100% { transform: translateY(0) rotate(-1deg); }
@@ -1096,8 +1160,17 @@ body {
   72% { transform: translateY(1px) rotate(3deg) scale(.97, 1.04); }
 }
 
+@keyframes rentop-mascot-ping {
+  0%, 100% { transform: scale(1); }
+  14% { transform: scale(1.12); }
+  28% { transform: scale(1); }
+}
+
 @media (max-width: 760px) {
-  .rentop-mascot { display: none; }
+  .rentop-mascot { width: 64px; height: 76px; z-index: 96; }
+  .rentop-mascot-ping { top: 1px; right: -2px; width: 20px; height: 20px; font-size: 12px; }
+  .rentop-mascot-panel { top: 0; left: calc(100% - 4px); width: min(224px, calc(100vw - 86px)); padding: 13px; }
+  .rentop-mascot.is-panel-left .rentop-mascot-panel { right: calc(100% - 4px); }
 }
 
 .locker-action {

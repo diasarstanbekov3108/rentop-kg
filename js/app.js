@@ -58,6 +58,9 @@ const archaOrderBtn = document.getElementById('open-archa-order');
 const archaSelectionNotice = document.getElementById('archa-selection-notice');
 const closeArchaSelectionBtn = document.getElementById('close-archa-selection');
 const rentopMascot = document.getElementById('rentop-mascot');
+const rentopMascotButton = document.querySelector('.rentop-mascot-button');
+const rentopMascotPanel = document.getElementById('rentop-mascot-panel');
+const rentopMascotClose = document.querySelector('.rentop-mascot-close');
 
 // Burger
 const burger = document.getElementById('burger');
@@ -477,9 +480,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   let mascotFrame;
   let mascotMoveTimer;
 
+  const setMascotOpen = (open) => {
+    if (!rentopMascot || !rentopMascotButton || !rentopMascotPanel) return;
+    rentopMascot.classList.toggle('is-open', open);
+    rentopMascotPanel.hidden = !open;
+    rentopMascotButton.setAttribute('aria-expanded', String(open));
+  };
+
+  rentopMascotButton?.addEventListener('click', () => setMascotOpen(!rentopMascot.classList.contains('is-open')));
+  rentopMascotClose?.addEventListener('click', () => setMascotOpen(false));
+  rentopMascotPanel?.querySelectorAll('a').forEach((link) => link.addEventListener('click', () => setMascotOpen(false)));
+
   const updateMascotPosition = () => {
     mascotFrame = undefined;
-    if (!rentopMascot || window.matchMedia('(max-width: 760px)').matches) return;
+    if (!rentopMascot) return;
 
     const stops = mascotStops
       .map((selector) => document.querySelector(selector))
@@ -493,11 +507,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       return candidateDistance < closestDistance ? candidate : closest;
     });
     const rect = stop.getBoundingClientRect();
-    const x = Math.max(18, Math.min(window.innerWidth - 90, rect.left - 66));
-    const y = Math.max(118, Math.min(window.innerHeight - 108, rect.top - 72));
+    const compact = window.matchMedia('(max-width: 760px)').matches;
+    const mascotWidth = compact ? 64 : 112;
+    const mascotHeight = compact ? 76 : 128;
+    const x = Math.max(compact ? 8 : 18, Math.min(window.innerWidth - mascotWidth - 8, rect.left - (compact ? 18 : 82)));
+    const y = Math.max(compact ? 76 : 108, Math.min(window.innerHeight - mascotHeight - 10, rect.top - (compact ? 54 : 94)));
 
     rentopMascot.style.setProperty('--mascot-x', `${Math.round(x)}px`);
     rentopMascot.style.setProperty('--mascot-y', `${Math.round(y)}px`);
+    rentopMascot.classList.toggle('is-panel-left', x > window.innerWidth - (compact ? 245 : 350));
     rentopMascot.classList.add('is-ready', 'is-moving');
     window.clearTimeout(mascotMoveTimer);
     mascotMoveTimer = window.setTimeout(() => rentopMascot.classList.remove('is-moving'), 620);
