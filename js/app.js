@@ -57,9 +57,7 @@ const submitBtn = document.getElementById('submitBtn');
 const archaOrderBtn = document.getElementById('open-archa-order');
 const archaSelectionNotice = document.getElementById('archa-selection-notice');
 const closeArchaSelectionBtn = document.getElementById('close-archa-selection');
-const rentopAssistant = document.getElementById('rentop-assistant');
-const rentopAssistantButton = document.querySelector('.rentop-assistant-button');
-const rentopAssistantPanel = document.getElementById('rentop-assistant-panel');
+const rentopMascot = document.getElementById('rentop-mascot');
 
 // Burger
 const burger = document.getElementById('burger');
@@ -475,18 +473,44 @@ function closeInfoModal(m) {
 
 // ========== INIT ==========
 document.addEventListener('DOMContentLoaded', async () => {
-  rentopAssistantButton?.addEventListener('click', () => {
-    const isOpen = !rentopAssistantPanel?.hidden;
-    if (rentopAssistantPanel) rentopAssistantPanel.hidden = isOpen;
-    rentopAssistantButton.setAttribute('aria-expanded', String(!isOpen));
-    rentopAssistant?.classList.toggle('is-open', !isOpen);
-  });
-  let assistantScrollTimer;
-  window.addEventListener('scroll', () => {
-    rentopAssistant?.classList.add('is-scrolling');
-    window.clearTimeout(assistantScrollTimer);
-    assistantScrollTimer = window.setTimeout(() => rentopAssistant?.classList.remove('is-scrolling'), 180);
-  }, { passive: true });
+  const mascotStops = ['.hero h1', '#catalog .section-title', '#archa-point h2', '#b2b h2', '#faq .section-title'];
+  let mascotFrame;
+  let mascotMoveTimer;
+
+  const updateMascotPosition = () => {
+    mascotFrame = undefined;
+    if (!rentopMascot || window.matchMedia('(max-width: 760px)').matches) return;
+
+    const stops = mascotStops
+      .map((selector) => document.querySelector(selector))
+      .filter(Boolean);
+    if (!stops.length) return;
+
+    const guideLine = window.innerHeight * 0.34;
+    const stop = stops.reduce((closest, candidate) => {
+      const closestDistance = Math.abs(closest.getBoundingClientRect().top - guideLine);
+      const candidateDistance = Math.abs(candidate.getBoundingClientRect().top - guideLine);
+      return candidateDistance < closestDistance ? candidate : closest;
+    });
+    const rect = stop.getBoundingClientRect();
+    const x = Math.max(18, Math.min(window.innerWidth - 90, rect.left - 66));
+    const y = Math.max(118, Math.min(window.innerHeight - 108, rect.top - 72));
+
+    rentopMascot.style.setProperty('--mascot-x', `${Math.round(x)}px`);
+    rentopMascot.style.setProperty('--mascot-y', `${Math.round(y)}px`);
+    rentopMascot.classList.add('is-ready', 'is-moving');
+    window.clearTimeout(mascotMoveTimer);
+    mascotMoveTimer = window.setTimeout(() => rentopMascot.classList.remove('is-moving'), 620);
+  };
+
+  const scheduleMascotPosition = () => {
+    if (mascotFrame) return;
+    mascotFrame = window.requestAnimationFrame(updateMascotPosition);
+  };
+
+  window.addEventListener('scroll', scheduleMascotPosition, { passive: true });
+  window.addEventListener('resize', scheduleMascotPosition);
+  scheduleMascotPosition();
 
   loadSavedLaptops();
   // Загрузка ноутбуков из Supabase
