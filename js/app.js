@@ -586,7 +586,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     const rect = stop.getBoundingClientRect();
     const compact = window.matchMedia('(max-width: 760px)').matches;
-    setMascotPosition(rect.left - (compact ? 12 : 92), rect.top - (compact ? 58 : 100));
+    setMascotPosition(rect.left - (compact ? 6 : 24), rect.top - (compact ? 58 : 100));
     rentopMascot.classList.add('is-ready', 'is-moving');
     window.clearTimeout(mascotMoveTimer);
     mascotMoveTimer = window.setTimeout(() => rentopMascot.classList.remove('is-moving'), 620);
