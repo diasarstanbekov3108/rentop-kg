@@ -1087,7 +1087,9 @@ body {
 .rentop-mascot-look,
 .rentop-mascot-wave,
 .rentop-mascot-think,
-.rentop-mascot-happy { opacity: 0; }
+.rentop-mascot-happy,
+.rentop-mascot-walk-a,
+.rentop-mascot-walk-b { opacity: 0; }
 .rentop-mascot.is-looking .rentop-mascot-work { opacity: 0; }
 .rentop-mascot.is-looking .rentop-mascot-look { opacity: 1; }
 .rentop-mascot.is-waving .rentop-mascot-work,
@@ -1101,9 +1103,11 @@ body {
 .rentop-mascot.is-happy .rentop-mascot-happy { opacity: 1; }
 .rentop-mascot.is-walking .rentop-mascot-work,
 .rentop-mascot.is-walking .rentop-mascot-look,
+.rentop-mascot.is-walking .rentop-mascot-wave,
 .rentop-mascot.is-walking .rentop-mascot-think,
 .rentop-mascot.is-walking .rentop-mascot-happy { opacity: 0; }
-.rentop-mascot.is-walking .rentop-mascot-wave { opacity: 1; }
+.rentop-mascot.is-walking .rentop-mascot-walk-a { animation: rentop-mascot-step-a 340ms steps(1, end) infinite; }
+.rentop-mascot.is-walking .rentop-mascot-walk-b { animation: rentop-mascot-step-b 340ms steps(1, end) infinite; }
 .rentop-mascot.is-walking .rentop-mascot-button { animation: rentop-mascot-walk 360ms ease-in-out infinite; }
 .rentop-mascot.is-facing-left img { transform: scaleX(-1); }
 
@@ -1157,6 +1161,16 @@ body {
 @keyframes rentop-mascot-walk {
   0%, 100% { transform: translateY(0) rotate(-2deg); }
   50% { transform: translateY(-7px) rotate(2deg); }
+}
+
+@keyframes rentop-mascot-step-a {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+@keyframes rentop-mascot-step-b {
+  0%, 49% { opacity: 0; }
+  50%, 100% { opacity: 1; }
 }
 
 body:has(#order-modal.active) .rentop-mascot { z-index: 210; }
