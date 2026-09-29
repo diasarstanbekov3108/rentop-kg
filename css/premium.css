@@ -1031,6 +1031,121 @@ body {
   color: #fff;
 }
 
+.hero-buttons .btn-secondary,
+.b2b-card .btn-primary {
+  background: linear-gradient(135deg, #176f91, #2095b8);
+  color: #f4fcff;
+  border: 1px solid rgba(143, 223, 255, 0.46);
+}
+
+.hero-buttons .btn-secondary:hover,
+.b2b-card .btn-primary:hover {
+  background: linear-gradient(135deg, #1d85aa, #2aa9cb);
+  border-color: rgba(184, 238, 255, 0.8);
+  color: #fff;
+}
+
+.rentop-assistant {
+  position: fixed;
+  z-index: 92;
+  right: 24px;
+  bottom: 100px;
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.rentop-assistant-button {
+  position: relative;
+  width: 104px;
+  height: 116px;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+  filter: drop-shadow(0 12px 22px rgba(0, 0, 0, 0.38));
+  transition: transform 180ms ease;
+}
+
+.rentop-assistant-button:hover,
+.rentop-assistant-button:focus-visible {
+  transform: translateY(-5px) scale(1.04);
+  outline: none;
+}
+
+.rentop-assistant-button:focus-visible img {
+  outline: 3px solid rgba(143, 223, 255, 0.8);
+  outline-offset: 4px;
+}
+
+.rentop-assistant-button img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  animation: rentop-float 3.8s ease-in-out infinite;
+}
+
+.rentop-assistant-wave {
+  position: absolute;
+  top: 15px;
+  right: -2px;
+  font-size: 24px;
+  animation: rentop-wave 2.8s ease-in-out infinite;
+  transform-origin: 70% 80%;
+}
+
+.rentop-assistant.is-scrolling .rentop-assistant-button img {
+  animation: rentop-walk 180ms ease-in-out infinite alternate;
+}
+
+.rentop-assistant-panel {
+  width: 238px;
+  padding: 13px 14px;
+  border: 1px solid rgba(143, 223, 255, 0.42);
+  border-radius: 16px;
+  background: rgba(10, 22, 35, 0.96);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.3);
+  color: #eaf8ff;
+  pointer-events: auto;
+}
+
+.rentop-assistant-panel[hidden] { display: none; }
+.rentop-assistant-panel strong,
+.rentop-assistant-panel span,
+.rentop-assistant-panel a { display: block; }
+.rentop-assistant-panel strong { margin-bottom: 3px; font-size: 13px; }
+.rentop-assistant-panel span { margin-bottom: 9px; color: #b5d9e8; font-size: 12px; line-height: 1.35; }
+.rentop-assistant-panel a { padding: 5px 0; color: var(--accent); font-size: 12px; font-weight: 700; text-decoration: none; }
+.rentop-assistant-panel a:hover { color: #fff; }
+
+@keyframes rentop-float {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-6px) rotate(1deg); }
+}
+
+@keyframes rentop-wave {
+  0%, 68%, 100% { transform: rotate(0); }
+  76% { transform: rotate(18deg); }
+  84% { transform: rotate(-12deg); }
+  92% { transform: rotate(14deg); }
+}
+
+@keyframes rentop-walk {
+  from { transform: translateY(-2px) rotate(-2deg); }
+  to { transform: translateY(2px) rotate(2deg); }
+}
+
+@media (max-width: 640px) {
+  .rentop-assistant { right: 12px; bottom: 80px; }
+  .rentop-assistant-button { width: 72px; height: 82px; }
+  .rentop-assistant-wave { top: 8px; font-size: 18px; }
+  .rentop-assistant-panel { width: min(230px, calc(100vw - 28px)); }
+}
+
 .locker-action {
   display: grid;
   justify-items: center;

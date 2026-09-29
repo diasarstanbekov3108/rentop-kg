@@ -57,6 +57,9 @@ const submitBtn = document.getElementById('submitBtn');
 const archaOrderBtn = document.getElementById('open-archa-order');
 const archaSelectionNotice = document.getElementById('archa-selection-notice');
 const closeArchaSelectionBtn = document.getElementById('close-archa-selection');
+const rentopAssistant = document.getElementById('rentop-assistant');
+const rentopAssistantButton = document.querySelector('.rentop-assistant-button');
+const rentopAssistantPanel = document.getElementById('rentop-assistant-panel');
 
 // Burger
 const burger = document.getElementById('burger');
@@ -472,6 +475,19 @@ function closeInfoModal(m) {
 
 // ========== INIT ==========
 document.addEventListener('DOMContentLoaded', async () => {
+  rentopAssistantButton?.addEventListener('click', () => {
+    const isOpen = !rentopAssistantPanel?.hidden;
+    if (rentopAssistantPanel) rentopAssistantPanel.hidden = isOpen;
+    rentopAssistantButton.setAttribute('aria-expanded', String(!isOpen));
+    rentopAssistant?.classList.toggle('is-open', !isOpen);
+  });
+  let assistantScrollTimer;
+  window.addEventListener('scroll', () => {
+    rentopAssistant?.classList.add('is-scrolling');
+    window.clearTimeout(assistantScrollTimer);
+    assistantScrollTimer = window.setTimeout(() => rentopAssistant?.classList.remove('is-scrolling'), 180);
+  }, { passive: true });
+
   loadSavedLaptops();
   // Загрузка ноутбуков из Supabase
   laptops = await fetchLaptops();
