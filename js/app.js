@@ -484,7 +484,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   let mascotMoodTimer;
   let mascotWalkTimer;
   let mascotBeforeOrder;
-  const mascotStorageKey = 'rentop_mascot_position_v1';
+  const mascotStorageKey = () => window.matchMedia('(max-width: 760px)').matches
+    ? 'rentop_mascot_position_v2_mobile'
+    : 'rentop_mascot_position_v2_desktop';
   const mascotMoodClasses = ['is-looking', 'is-waving', 'is-thinking', 'is-happy'];
 
   const setMascotOpen = (open) => {
@@ -528,17 +530,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     rentopMascot.classList.toggle('is-panel-left', left > window.innerWidth - 350);
     if (persist) {
       rentopMascot.classList.add('is-pinned');
-      localStorage.setItem(mascotStorageKey, JSON.stringify({ x: left, y: top }));
+      localStorage.setItem(mascotStorageKey(), JSON.stringify({ x: left, y: top }));
     }
   };
 
   try {
-    const savedMascotPosition = JSON.parse(localStorage.getItem(mascotStorageKey) || 'null');
+    const savedMascotPosition = JSON.parse(localStorage.getItem(mascotStorageKey()) || 'null');
     if (savedMascotPosition && Number.isFinite(savedMascotPosition.x) && Number.isFinite(savedMascotPosition.y)) {
       setMascotPosition(savedMascotPosition.x, savedMascotPosition.y, true);
     }
   } catch {
-    localStorage.removeItem(mascotStorageKey);
+    localStorage.removeItem(mascotStorageKey());
   }
 
   rentopMascotButton?.addEventListener('pointerdown', (event) => {
@@ -572,7 +574,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   rentopMascotButton?.addEventListener('pointerup', endMascotDrag);
   rentopMascotButton?.addEventListener('pointercancel', endMascotDrag);
   rentopMascotButton?.addEventListener('dblclick', () => {
-    localStorage.removeItem(mascotStorageKey);
+    localStorage.removeItem(mascotStorageKey());
     rentopMascot?.classList.remove('is-pinned');
     scheduleMascotPosition();
   });
@@ -605,7 +607,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     const rect = stop.getBoundingClientRect();
     const compact = window.matchMedia('(max-width: 760px)').matches;
-    setMascotPosition(rect.left - (compact ? 6 : 24), rect.top - (compact ? 72 : 135));
+    if (compact) {
+      // На телефоне помощник не закрывает заголовок и остаётся доступным над нижними кнопками.
+      const { width, height } = mascotSize();
+      setMascotPosition(window.innerWidth - width - 12, window.innerHeight - height - 104);
+    } else {
+      setMascotPosition(rect.left - 24, rect.top - 135);
+    }
     rentopMascot.classList.add('is-ready', 'is-moving');
     window.clearTimeout(mascotMoveTimer);
     mascotMoveTimer = window.setTimeout(() => rentopMascot.classList.remove('is-moving'), 620);
