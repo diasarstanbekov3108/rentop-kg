@@ -31,6 +31,11 @@ export function createSupabaseApi(config) {
     }).then((rows) => rows?.[0] || null),
     getSession: (orderId) => getOne(`rental_order_bot_sessions?order_id=eq.${encodeURIComponent(orderId)}&select=*`),
     getSessionByUser: (userId) => getOne(`rental_order_bot_sessions?telegram_user_id=eq.${encodeURIComponent(userId)}&select=*&order=updated_at.desc`),
+    listOrdersByTelegramUser: (userId, limit = 20) => request(
+      `rental_orders?telegram_user_id=eq.${encodeURIComponent(userId)}` +
+      '&select=id,laptop_id,customer_name,rental_start_date,rental_end_date,rental_days,status,delivery_type,locker_address,created_at,updated_at' +
+      `&order=updated_at.desc&limit=${Math.min(Math.max(Number(limit) || 20, 1), 30)}`
+    ),
     saveSession: (session) => request('rental_order_bot_sessions?on_conflict=order_id', {
       method: 'POST',
       headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
