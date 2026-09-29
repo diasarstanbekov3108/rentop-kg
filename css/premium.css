@@ -1050,8 +1050,8 @@ body {
   z-index: 82;
   top: 0;
   left: 0;
-  width: 112px;
-  height: 128px;
+  width: 132px;
+  height: 132px;
   opacity: 0;
   pointer-events: none;
   transform: translate3d(var(--mascot-x), var(--mascot-y), 0);
@@ -1068,6 +1068,7 @@ body {
   border: 0;
   background: transparent;
   cursor: pointer;
+  touch-action: none;
   pointer-events: auto;
 }
 
@@ -1080,42 +1081,22 @@ body {
   object-fit: contain;
   filter: drop-shadow(0 10px 16px rgba(0, 0, 0, .32));
   transform-origin: 50% 85%;
-  animation: rentop-mascot-idle 3.4s ease-in-out infinite;
+  transition: opacity 160ms ease;
 }
 
-.rentop-mascot-help { opacity: 0; }
+.rentop-mascot-look { opacity: 0; }
+.rentop-mascot.is-looking .rentop-mascot-work { opacity: 0; }
+.rentop-mascot.is-looking .rentop-mascot-look { opacity: 1; }
 
-.rentop-mascot:hover .rentop-mascot-wave,
-.rentop-mascot-button:focus-visible .rentop-mascot-wave {
-  animation: rentop-mascot-wave 520ms ease-in-out 2;
+.rentop-mascot:hover .rentop-mascot-button,
+.rentop-mascot-button:focus-visible {
+  animation: rentop-mascot-typing 680ms ease-in-out infinite;
+  outline: none;
 }
 
-.rentop-mascot.is-moving .rentop-mascot-wave {
-  animation: rentop-mascot-hop 260ms ease-in-out 2;
+.rentop-mascot.is-moving .rentop-mascot-button {
+  animation: rentop-mascot-hop 360ms ease-in-out 1;
 }
-
-.rentop-mascot.is-open .rentop-mascot-wave { opacity: 0; }
-.rentop-mascot.is-open .rentop-mascot-help { opacity: 1; animation: rentop-mascot-idle 3.4s ease-in-out infinite; }
-
-.rentop-mascot-ping {
-  position: absolute;
-  top: 8px;
-  right: 1px;
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  border: 2px solid #d8f8ff;
-  border-radius: 50%;
-  background: #178cb0;
-  color: #fff;
-  font-size: 15px;
-  font-weight: 800;
-  box-shadow: 0 0 0 5px rgba(23, 140, 176, .17);
-  animation: rentop-mascot-ping 2.4s ease-in-out infinite;
-}
-
-.rentop-mascot.is-open .rentop-mascot-ping { opacity: 0; }
 
 .rentop-mascot-panel {
   position: absolute;
@@ -1142,33 +1123,20 @@ body {
 .rentop-mascot-panel a:hover { color: #fff; }
 .rentop-mascot-close { position: absolute; top: 7px; right: 8px; border: 0; background: transparent; color: #b5d9e8; cursor: pointer; font-size: 22px; line-height: 1; }
 
-@keyframes rentop-mascot-idle {
-  0%, 100% { transform: translateY(0) rotate(-1deg); }
-  50% { transform: translateY(-5px) rotate(1deg); }
-}
-
-@keyframes rentop-mascot-wave {
-  0%, 100% { transform: translateY(0) rotate(0); }
-  28% { transform: translateY(-10px) rotate(-7deg); }
-  56% { transform: translateY(-4px) rotate(7deg); }
-  78% { transform: translateY(-8px) rotate(-4deg); }
-}
-
 @keyframes rentop-mascot-hop {
   0%, 100% { transform: translateY(0) scale(1, 1); }
   45% { transform: translateY(-14px) rotate(-4deg) scale(1.03, .97); }
   72% { transform: translateY(1px) rotate(3deg) scale(.97, 1.04); }
 }
 
-@keyframes rentop-mascot-ping {
-  0%, 100% { transform: scale(1); }
-  14% { transform: scale(1.12); }
-  28% { transform: scale(1); }
+@keyframes rentop-mascot-typing {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  32% { transform: translateY(-4px) rotate(-1deg); }
+  65% { transform: translateY(1px) rotate(1deg); }
 }
 
 @media (max-width: 760px) {
-  .rentop-mascot { width: 64px; height: 76px; z-index: 96; }
-  .rentop-mascot-ping { top: 1px; right: -2px; width: 20px; height: 20px; font-size: 12px; }
+  .rentop-mascot { width: 84px; height: 84px; z-index: 96; }
   .rentop-mascot-panel { top: 0; left: calc(100% - 4px); width: min(224px, calc(100vw - 86px)); padding: 13px; }
   .rentop-mascot.is-panel-left .rentop-mascot-panel { right: calc(100% - 4px); }
 }

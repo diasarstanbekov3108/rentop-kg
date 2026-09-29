@@ -479,6 +479,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const mascotStops = ['.hero h1', '#catalog .section-title', '#archa-point h2', '#b2b h2', '#faq .section-title'];
   let mascotFrame;
   let mascotMoveTimer;
+  let mascotDrag;
+  let mascotDidDrag = false;
+  const mascotStorageKey = 'rentop_mascot_position_v1';
 
   const setMascotOpen = (open) => {
     if (!rentopMascot || !rentopMascotButton || !rentopMascotPanel) return;
@@ -487,13 +490,88 @@ document.addEventListener('DOMContentLoaded', async () => {
     rentopMascotButton.setAttribute('aria-expanded', String(open));
   };
 
-  rentopMascotButton?.addEventListener('click', () => setMascotOpen(!rentopMascot.classList.contains('is-open')));
+  rentopMascotButton?.addEventListener('click', (event) => {
+    if (mascotDidDrag) {
+      event.preventDefault();
+      mascotDidDrag = false;
+      return;
+    }
+    setMascotOpen(!rentopMascot.classList.contains('is-open'));
+  });
   rentopMascotClose?.addEventListener('click', () => setMascotOpen(false));
   rentopMascotPanel?.querySelectorAll('a').forEach((link) => link.addEventListener('click', () => setMascotOpen(false)));
+
+  const mascotSize = () => window.matchMedia('(max-width: 760px)').matches
+    ? { width: 84, height: 84, inset: 8 }
+    : { width: 132, height: 132, inset: 18 };
+
+  const setMascotPosition = (x, y, persist = false) => {
+    if (!rentopMascot) return;
+    const { width, height, inset } = mascotSize();
+    const left = Math.max(inset, Math.min(window.innerWidth - width - inset, x));
+    const top = Math.max(74, Math.min(window.innerHeight - height - inset, y));
+    rentopMascot.style.setProperty('--mascot-x', `${Math.round(left)}px`);
+    rentopMascot.style.setProperty('--mascot-y', `${Math.round(top)}px`);
+    rentopMascot.classList.toggle('is-panel-left', left > window.innerWidth - 350);
+    if (persist) {
+      rentopMascot.classList.add('is-pinned');
+      localStorage.setItem(mascotStorageKey, JSON.stringify({ x: left, y: top }));
+    }
+  };
+
+  try {
+    const savedMascotPosition = JSON.parse(localStorage.getItem(mascotStorageKey) || 'null');
+    if (savedMascotPosition && Number.isFinite(savedMascotPosition.x) && Number.isFinite(savedMascotPosition.y)) {
+      setMascotPosition(savedMascotPosition.x, savedMascotPosition.y, true);
+    }
+  } catch {
+    localStorage.removeItem(mascotStorageKey);
+  }
+
+  rentopMascotButton?.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || !rentopMascot) return;
+    const rect = rentopMascot.getBoundingClientRect();
+    mascotDrag = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, left: rect.left, top: rect.top };
+    mascotDidDrag = false;
+    rentopMascotButton.setPointerCapture(event.pointerId);
+  });
+
+  rentopMascotButton?.addEventListener('pointermove', (event) => {
+    if (!mascotDrag || mascotDrag.pointerId !== event.pointerId) return;
+    const dx = event.clientX - mascotDrag.startX;
+    const dy = event.clientY - mascotDrag.startY;
+    if (Math.abs(dx) + Math.abs(dy) < 5) return;
+    mascotDidDrag = true;
+    setMascotOpen(false);
+    setMascotPosition(mascotDrag.left + dx, mascotDrag.top + dy, true);
+  });
+
+  const endMascotDrag = (event) => {
+    if (!mascotDrag || mascotDrag.pointerId !== event.pointerId) return;
+    if (rentopMascotButton?.hasPointerCapture(event.pointerId)) rentopMascotButton.releasePointerCapture(event.pointerId);
+    mascotDrag = undefined;
+  };
+
+  rentopMascotButton?.addEventListener('pointerup', endMascotDrag);
+  rentopMascotButton?.addEventListener('pointercancel', endMascotDrag);
+  rentopMascotButton?.addEventListener('dblclick', () => {
+    localStorage.removeItem(mascotStorageKey);
+    rentopMascot?.classList.remove('is-pinned');
+    scheduleMascotPosition();
+  });
+
+  window.setInterval(() => {
+    rentopMascot?.classList.toggle('is-looking');
+    window.setTimeout(() => rentopMascot?.classList.remove('is-looking'), 720);
+  }, 3800);
 
   const updateMascotPosition = () => {
     mascotFrame = undefined;
     if (!rentopMascot) return;
+    if (rentopMascot.classList.contains('is-pinned')) {
+      rentopMascot.classList.add('is-ready');
+      return;
+    }
 
     const stops = mascotStops
       .map((selector) => document.querySelector(selector))
@@ -508,14 +586,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     const rect = stop.getBoundingClientRect();
     const compact = window.matchMedia('(max-width: 760px)').matches;
-    const mascotWidth = compact ? 64 : 112;
-    const mascotHeight = compact ? 76 : 128;
-    const x = Math.max(compact ? 8 : 18, Math.min(window.innerWidth - mascotWidth - 8, rect.left - (compact ? 18 : 82)));
-    const y = Math.max(compact ? 76 : 108, Math.min(window.innerHeight - mascotHeight - 10, rect.top - (compact ? 54 : 94)));
-
-    rentopMascot.style.setProperty('--mascot-x', `${Math.round(x)}px`);
-    rentopMascot.style.setProperty('--mascot-y', `${Math.round(y)}px`);
-    rentopMascot.classList.toggle('is-panel-left', x > window.innerWidth - (compact ? 245 : 350));
+    setMascotPosition(rect.left - (compact ? 12 : 92), rect.top - (compact ? 58 : 100));
     rentopMascot.classList.add('is-ready', 'is-moving');
     window.clearTimeout(mascotMoveTimer);
     mascotMoveTimer = window.setTimeout(() => rentopMascot.classList.remove('is-moving'), 620);
