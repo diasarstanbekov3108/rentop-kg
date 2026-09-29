@@ -481,7 +481,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   let mascotMoveTimer;
   let mascotDrag;
   let mascotDidDrag = false;
+  let mascotMoodTimer;
+  let mascotWalkTimer;
+  let mascotBeforeOrder;
   const mascotStorageKey = 'rentop_mascot_position_v1';
+  const mascotMoodClasses = ['is-looking', 'is-waving', 'is-thinking', 'is-happy'];
 
   const setMascotOpen = (open) => {
     if (!rentopMascot || !rentopMascotButton || !rentopMascotPanel) return;
@@ -496,6 +500,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       mascotDidDrag = false;
       return;
     }
+    setMascotMood('happy', 1050);
     setMascotOpen(!rentopMascot.classList.contains('is-open'));
   });
   rentopMascotClose?.addEventListener('click', () => setMascotOpen(false));
@@ -504,6 +509,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   const mascotSize = () => window.matchMedia('(max-width: 760px)').matches
     ? { width: 84, height: 84, inset: 8 }
     : { width: 132, height: 132, inset: 18 };
+
+  const setMascotMood = (mood, duration = 1800) => {
+    if (!rentopMascot) return;
+    rentopMascot.classList.remove(...mascotMoodClasses);
+    if (mood) rentopMascot.classList.add(`is-${mood}`);
+    window.clearTimeout(mascotMoodTimer);
+    if (mood && duration) mascotMoodTimer = window.setTimeout(() => rentopMascot?.classList.remove(`is-${mood}`), duration);
+  };
 
   const setMascotPosition = (x, y, persist = false) => {
     if (!rentopMascot) return;
@@ -534,6 +547,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     mascotDrag = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, left: rect.left, top: rect.top };
     mascotDidDrag = false;
     rentopMascotButton.setPointerCapture(event.pointerId);
+    rentopMascot.classList.add('is-walking');
   });
 
   rentopMascotButton?.addEventListener('pointermove', (event) => {
@@ -543,6 +557,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (Math.abs(dx) + Math.abs(dy) < 5) return;
     mascotDidDrag = true;
     setMascotOpen(false);
+    rentopMascot.classList.toggle('is-facing-left', dx < 0);
     setMascotPosition(mascotDrag.left + dx, mascotDrag.top + dy, true);
   });
 
@@ -550,6 +565,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!mascotDrag || mascotDrag.pointerId !== event.pointerId) return;
     if (rentopMascotButton?.hasPointerCapture(event.pointerId)) rentopMascotButton.releasePointerCapture(event.pointerId);
     mascotDrag = undefined;
+    window.clearTimeout(mascotWalkTimer);
+    mascotWalkTimer = window.setTimeout(() => rentopMascot?.classList.remove('is-walking'), 260);
   };
 
   rentopMascotButton?.addEventListener('pointerup', endMascotDrag);
@@ -561,9 +578,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   window.setInterval(() => {
-    rentopMascot?.classList.toggle('is-looking');
-    window.setTimeout(() => rentopMascot?.classList.remove('is-looking'), 720);
-  }, 3800);
+    const moods = ['looking', 'looking', 'thinking', 'waving'];
+    setMascotMood(moods[Math.floor(Math.random() * moods.length)]);
+  }, 4600);
+
+  rentopMascotButton?.addEventListener('mouseenter', () => setMascotMood('waving', 1100));
 
   const updateMascotPosition = () => {
     mascotFrame = undefined;
@@ -586,7 +605,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     const rect = stop.getBoundingClientRect();
     const compact = window.matchMedia('(max-width: 760px)').matches;
-    setMascotPosition(rect.left - (compact ? 6 : 24), rect.top - (compact ? 58 : 100));
+    setMascotPosition(rect.left - (compact ? 6 : 24), rect.top - (compact ? 72 : 135));
     rentopMascot.classList.add('is-ready', 'is-moving');
     window.clearTimeout(mascotMoveTimer);
     mascotMoveTimer = window.setTimeout(() => rentopMascot.classList.remove('is-moving'), 620);
@@ -600,6 +619,31 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.addEventListener('scroll', scheduleMascotPosition, { passive: true });
   window.addEventListener('resize', scheduleMascotPosition);
   scheduleMascotPosition();
+
+  if (modal) {
+    new MutationObserver(() => {
+      const orderOpen = modal.classList.contains('active');
+      if (orderOpen && !mascotBeforeOrder && rentopMascot) {
+        mascotBeforeOrder = {
+          x: rentopMascot.style.getPropertyValue('--mascot-x'),
+          y: rentopMascot.style.getPropertyValue('--mascot-y'),
+          pinned: rentopMascot.classList.contains('is-pinned')
+        };
+        const { width } = mascotSize();
+        setMascotPosition(window.innerWidth - width - 18, 86);
+        rentopMascot.classList.add('is-order-help');
+        setMascotMood('thinking', 2800);
+      }
+      if (!orderOpen && mascotBeforeOrder && rentopMascot) {
+        rentopMascot.style.setProperty('--mascot-x', mascotBeforeOrder.x);
+        rentopMascot.style.setProperty('--mascot-y', mascotBeforeOrder.y);
+        rentopMascot.classList.toggle('is-pinned', mascotBeforeOrder.pinned);
+        rentopMascot.classList.remove('is-order-help');
+        mascotBeforeOrder = undefined;
+        scheduleMascotPosition();
+      }
+    }).observe(modal, { attributes: true, attributeFilter: ['class'] });
+  }
 
   loadSavedLaptops();
   // Загрузка ноутбуков из Supabase
