@@ -1099,6 +1099,11 @@ body {
 .rentop-mascot.is-waving .rentop-mascot-wave,
 .rentop-mascot.is-thinking .rentop-mascot-think,
 .rentop-mascot.is-happy .rentop-mascot-happy { opacity: 1; }
+.rentop-mascot.is-walking .rentop-mascot-work,
+.rentop-mascot.is-walking .rentop-mascot-look,
+.rentop-mascot.is-walking .rentop-mascot-think,
+.rentop-mascot.is-walking .rentop-mascot-happy { opacity: 0; }
+.rentop-mascot.is-walking .rentop-mascot-wave { opacity: 1; }
 .rentop-mascot.is-walking .rentop-mascot-button { animation: rentop-mascot-walk 360ms ease-in-out infinite; }
 .rentop-mascot.is-facing-left img { transform: scaleX(-1); }
 

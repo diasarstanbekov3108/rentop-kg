@@ -543,29 +543,51 @@ document.addEventListener('DOMContentLoaded', async () => {
     localStorage.removeItem(mascotStorageKey());
   }
 
-  rentopMascotButton?.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0 || !rentopMascot) return;
+  const beginMascotDrag = ({ pointerId, startX, startY, input }) => {
+    if (!rentopMascot) return;
     const rect = rentopMascot.getBoundingClientRect();
-    mascotDrag = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, left: rect.left, top: rect.top };
+    mascotDrag = { pointerId, startX, startY, left: rect.left, top: rect.top, input };
     mascotDidDrag = false;
-    rentopMascotButton.setPointerCapture(event.pointerId);
     rentopMascot.classList.add('is-walking');
-  });
+  };
 
-  rentopMascotButton?.addEventListener('pointermove', (event) => {
-    if (!mascotDrag || mascotDrag.pointerId !== event.pointerId) return;
-    const dx = event.clientX - mascotDrag.startX;
-    const dy = event.clientY - mascotDrag.startY;
+  const moveMascotDrag = (clientX, clientY) => {
+    if (!mascotDrag || !rentopMascot) return;
+    const dx = clientX - mascotDrag.startX;
+    const dy = clientY - mascotDrag.startY;
     if (Math.abs(dx) + Math.abs(dy) < 5) return;
     mascotDidDrag = true;
     setMascotOpen(false);
     rentopMascot.classList.toggle('is-facing-left', dx < 0);
     setMascotPosition(mascotDrag.left + dx, mascotDrag.top + dy, true);
+  };
+
+  // Сенсорный ввод оставляем на Pointer Events, а для мыши используем window-mousemove.
+  // Это стабильно работает и в браузерах, где pointer capture не отдаёт движение кнопке.
+  rentopMascotButton?.addEventListener('pointerdown', (event) => {
+    if (event.pointerType === 'mouse' || event.button !== 0 || !rentopMascot) return;
+    beginMascotDrag({ pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, input: 'pointer' });
+    rentopMascotButton.setPointerCapture(event.pointerId);
+  });
+
+  rentopMascotButton?.addEventListener('pointermove', (event) => {
+    if (!mascotDrag || mascotDrag.input !== 'pointer' || mascotDrag.pointerId !== event.pointerId) return;
+    moveMascotDrag(event.clientX, event.clientY);
+  });
+
+  rentopMascotButton?.addEventListener('mousedown', (event) => {
+    if (event.button !== 0 || mascotDrag) return;
+    event.preventDefault();
+    beginMascotDrag({ pointerId: 'mouse', startX: event.clientX, startY: event.clientY, input: 'mouse' });
+  });
+
+  window.addEventListener('mousemove', (event) => {
+    if (mascotDrag?.input === 'mouse') moveMascotDrag(event.clientX, event.clientY);
   });
 
   const endMascotDrag = (event) => {
-    if (!mascotDrag || mascotDrag.pointerId !== event.pointerId) return;
-    if (rentopMascotButton?.hasPointerCapture(event.pointerId)) rentopMascotButton.releasePointerCapture(event.pointerId);
+    if (!mascotDrag || (mascotDrag.input === 'pointer' && mascotDrag.pointerId !== event.pointerId)) return;
+    if (mascotDrag.input === 'pointer' && rentopMascotButton?.hasPointerCapture(mascotDrag.pointerId)) rentopMascotButton.releasePointerCapture(mascotDrag.pointerId);
     mascotDrag = undefined;
     window.clearTimeout(mascotWalkTimer);
     mascotWalkTimer = window.setTimeout(() => rentopMascot?.classList.remove('is-walking'), 260);
@@ -573,6 +595,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   rentopMascotButton?.addEventListener('pointerup', endMascotDrag);
   rentopMascotButton?.addEventListener('pointercancel', endMascotDrag);
+  window.addEventListener('mouseup', () => {
+    if (mascotDrag?.input === 'mouse') endMascotDrag({});
+  });
   rentopMascotButton?.addEventListener('dblclick', () => {
     localStorage.removeItem(mascotStorageKey());
     rentopMascot?.classList.remove('is-pinned');
