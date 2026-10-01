@@ -555,7 +555,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!mascotDrag || !rentopMascot) return;
     const dx = clientX - mascotDrag.startX;
     const dy = clientY - mascotDrag.startY;
-    if (Math.abs(dx) + Math.abs(dy) < 5) return;
+    if (Math.abs(dx) + Math.abs(dy) < 3) return;
     mascotDidDrag = true;
     setMascotOpen(false);
     rentopMascot.classList.toggle('is-facing-left', dx < 0);
@@ -572,6 +572,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   rentopMascotButton?.addEventListener('pointermove', (event) => {
     if (!mascotDrag || mascotDrag.input !== 'pointer' || mascotDrag.pointerId !== event.pointerId) return;
+    event.preventDefault();
     moveMascotDrag(event.clientX, event.clientY);
   });
 
@@ -662,8 +663,13 @@ document.addEventListener('DOMContentLoaded', async () => {
           y: rentopMascot.style.getPropertyValue('--mascot-y'),
           pinned: rentopMascot.classList.contains('is-pinned')
         };
-        const { width } = mascotSize();
-        setMascotPosition(window.innerWidth - width - 18, 86);
+        const { width, height } = mascotSize();
+        const compact = window.matchMedia('(max-width: 760px)').matches;
+        // На телефоне не перекрываем дату и поля в форме: помощник остаётся у нижнего края.
+        setMascotPosition(
+          compact ? window.innerWidth - width - 12 : window.innerWidth - width - 18,
+          compact ? window.innerHeight - height - 104 : 86
+        );
         rentopMascot.classList.add('is-order-help');
         setMascotMood('thinking', 2800);
       }
