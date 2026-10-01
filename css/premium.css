@@ -1059,6 +1059,7 @@ body {
 }
 
 .rentop-mascot.is-ready { opacity: 1; }
+.rentop-mascot.is-walking { transition: none; }
 
 .rentop-mascot-button {
   position: relative;

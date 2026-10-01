@@ -1857,7 +1857,7 @@ section {
   }
 }
 
-@media (max-width: 420px) {
+@media (max-width: 560px) {
   .rental-dates {
     grid-template-columns: 1fr;
   }
