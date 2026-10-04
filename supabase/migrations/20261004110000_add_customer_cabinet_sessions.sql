@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS public.customer_auth_challenges (
   attempts integer NOT NULL DEFAULT 0,
   consumed_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT customer_auth_challenges_phone_format CHECK (phone ~ '^\\+996[0-9]{9}$'),
+  CONSTRAINT customer_auth_challenges_phone_format CHECK (phone ~ '^[+]996[0-9]{9}$'),
   CONSTRAINT customer_auth_challenges_attempts_allowed CHECK (attempts BETWEEN 0 AND 5)
 );
 
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS public.customer_cabinet_sessions (
   user_agent text,
   ip inet,
   created_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT customer_cabinet_sessions_phone_format CHECK (phone ~ '^\\+996[0-9]{9}$')
+  CONSTRAINT customer_cabinet_sessions_phone_format CHECK (phone ~ '^[+]996[0-9]{9}$')
 );
 
 CREATE INDEX IF NOT EXISTS customer_cabinet_sessions_token_idx
@@ -40,10 +40,10 @@ CREATE INDEX IF NOT EXISTS customer_cabinet_sessions_token_idx
 -- могли быть записаны с пробелами, скобками или тире, поэтому нормализуем их.
 UPDATE public.rental_orders
 SET customer_phone = CASE
-  WHEN regexp_replace(coalesce(customer_phone, ''), '\\D', '', 'g') ~ '^996[0-9]{9}$'
-    THEN '+' || regexp_replace(customer_phone, '\\D', '', 'g')
-  WHEN regexp_replace(coalesce(customer_phone, ''), '\\D', '', 'g') ~ '^0[0-9]{9}$'
-    THEN '+996' || substr(regexp_replace(customer_phone, '\\D', '', 'g'), 2)
+  WHEN regexp_replace(coalesce(customer_phone, ''), '[^0-9]', '', 'g') ~ '^996[0-9]{9}$'
+    THEN '+' || regexp_replace(customer_phone, '[^0-9]', '', 'g')
+  WHEN regexp_replace(coalesce(customer_phone, ''), '[^0-9]', '', 'g') ~ '^0[0-9]{9}$'
+    THEN '+996' || substr(regexp_replace(customer_phone, '[^0-9]', '', 'g'), 2)
   ELSE customer_phone
 END
 WHERE customer_phone IS NOT NULL;
