@@ -27,7 +27,8 @@
       <img src="assets/rentop-mascot-work.png" alt="Помощник Rentop" class="cabinet-mascot">
     </section>
 
-    <section class="cabinet-card cabinet-login" id="cabinet-login">
+    <section class="cabinet-loading" id="cabinet-loading" aria-live="polite"><span></span>Проверяем вход…</section>
+    <section class="cabinet-card cabinet-login" id="cabinet-login" hidden>
       <h2>Войти по номеру</h2>
       <p class="cabinet-muted">Мы отправим одноразовый код. Пароль не нужен.</p>
       <form id="phone-form" novalidate>
@@ -53,6 +54,7 @@
         </div>
         <button class="cabinet-logout" type="button" id="cabinet-logout">Выйти</button>
       </div>
+      <a class="cabinet-manager-link" id="cabinet-manager-link" href="/manager" hidden>Панель менеджера →</a>
       <div class="cabinet-dashboard-notice" id="cabinet-dashboard-notice" hidden></div>
       <div class="cabinet-profile" id="cabinet-profile"></div>
       <div class="cabinet-rentals" id="cabinet-rentals"></div>

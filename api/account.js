@@ -80,7 +80,7 @@ export default async function handler(request, response) {
     if (request.method !== 'POST') return json(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
     if (payload.action === 'logout') { const raw = readCookie(request, COOKIE); if (raw) await database.revokeCabinetSession(hash(secret, raw)); response.setHeader('Set-Cookie', `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`); return json(response, 200, { ok:true }); }
-    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'save_profile' || payload.action === 'extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request') {
+    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'document_correction_request' || payload.action === 'save_profile' || payload.action === 'extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request') {
       const session = await verifySession();
       if (!session) return json(response, 401, { error:'Сессия истекла. Войдите в кабинет снова.', code:'AUTH_REQUIRED' });
       if (payload.action === 'save_profile') {
@@ -92,6 +92,15 @@ export default async function handler(request, response) {
       }
       const order = await database.getOrder(String(payload.orderId || ''));
       if (!order || order.customer_phone !== session.phone) return json(response, 404, { error:'Заявка не найдена.' });
+      if (payload.action === 'document_correction_request') {
+        const documents = await database.listOrderDocuments(order.id);
+        if (!documents.length) return json(response, 400, { error:'Сначала прикрепите документы.' });
+        if (await database.hasOrderEvent(order.id, 'customer_requested_document_correction_from_cabinet')) return json(response, 409, { error:'Запрос на исправление уже отправлен менеджеру. Дождитесь ответа.' });
+        const note = String(payload.message || '').trim().slice(0, 400);
+        await database.createEvent({ order_id:order.id, event_type:'customer_requested_document_correction_from_cabinet', actor_type:'customer', metadata:{ note:note || null } });
+        try { await createTelegramApi(config.telegramBotToken).sendMessage(config.adminChatId, `⚠️ Клиент просит заменить документ с сайта\n\nЗаявка ${orderRef(order)}\n${note || 'Причина не указана'}\n\nПроверьте документы и отклоните неверный файл в панели менеджера — клиент сможет прикрепить замену.`); } catch (error) { console.error('Document correction notification failed:', error.message); }
+        return json(response, 201, { ok:true, message:'Запрос на исправление передан менеджеру. После отклонения неверного файла появится загрузка замены.' });
+      }
       if (payload.action === 'create_document_upload') {
         const kind = String(payload.kind || '');
         const contentType = String(payload.contentType || '').toLowerCase();
@@ -117,6 +126,8 @@ export default async function handler(request, response) {
         if (!DOCUMENT_TYPES.has(kind) || !path.startsWith(`${order.id}/${kind}/`) || !DOCUMENT_MIME_TYPES.has(contentType) || !Number.isInteger(byteSize) || byteSize < 1 || byteSize > MAX_DOCUMENT_BYTES) {
           return json(response, 400, { error:'Не удалось зарегистрировать документ.' });
         }
+        const latestOfKind = (await database.listOrderDocuments(order.id)).find(document => document.kind === kind);
+        if (latestOfKind && latestOfKind.status !== 'rejected') return json(response, 409, { error:'Этот документ уже отправлен. Дождитесь проверки или запросите исправление.' });
         const document = await database.registerOrderDocument({ order_id:order.id, kind, storage_path:path, file_name:fileName, content_type:contentType, byte_size:byteSize });
         await database.createEvent({ order_id:order.id, event_type:'customer_uploaded_document_from_cabinet', actor_type:'customer', metadata:{ kind } });
         await notifyDocumentManager(order, document);

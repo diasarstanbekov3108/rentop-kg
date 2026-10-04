@@ -137,6 +137,9 @@ export function createSupabaseApi(config) {
     createEvent: (event) => request('rental_order_events', {
       method: 'POST', body: JSON.stringify(event)
     }).then((rows) => rows?.[0] || null),
+    hasOrderEvent: (orderId, eventType) => getOne(
+      `rental_order_events?order_id=eq.${encodeURIComponent(orderId)}&event_type=eq.${encodeURIComponent(eventType)}&select=id&limit=1`
+    ),
     getRecentCabinetChallenge: (phone) => getOne(
       `customer_auth_challenges?phone=eq.${encodeURIComponent(phone)}&select=*&order=created_at.desc&limit=1`
     ),

@@ -1,4 +1,5 @@
 const login = document.getElementById('cabinet-login');
+const loading = document.getElementById('cabinet-loading');
 const dashboard = document.getElementById('cabinet-dashboard');
 const phoneForm = document.getElementById('phone-form');
 const codeForm = document.getElementById('code-form');
@@ -9,6 +10,7 @@ const rentalsEl = document.getElementById('cabinet-rentals');
 const emptyEl = document.getElementById('cabinet-empty');
 const profileEl = document.getElementById('cabinet-profile');
 const dashboardNotice = document.getElementById('cabinet-dashboard-notice');
+const managerLink = document.getElementById('cabinet-manager-link');
 let pendingPhone = '';
 
 const formatPhone = (value, masked = false) => {
@@ -48,16 +50,30 @@ function requestLabel(request) {
   if (request.kind === 'extension') return `Продление: +${request.requested_days} дн. до ${date(request.proposed_return_date)}`;
   return 'Досрочный возврат';
 }
+function latestDocuments(order) {
+  return new Map((order.documents || []).map(document => [document.kind, document]));
+}
 function documentSummary(order) {
-  const latest = new Map((order.documents || []).map(document => [document.kind, document]));
-  const state = (kind, label) => `<span>${latest.has(kind) ? '✓' : '○'} ${label}</span>`;
+  const latest = latestDocuments(order);
+  const state = (kind, label) => `<span>${latest.has(kind) ? (latest.get(kind).status === 'rejected' ? '↺' : '✓') : '○'} ${label}</span>`;
   return `<div class="cabinet-doc-summary">${state('identity', 'Документ')}${state('selfie', 'Селфи')}${state('supporting', 'Доп. документ')}</div>`;
+}
+function documentMode(order) {
+  const latest = latestDocuments(order);
+  const required = ['identity', 'selfie'];
+  const missing = required.filter(kind => !latest.has(kind));
+  const rejected = required.filter(kind => latest.get(kind)?.status === 'rejected');
+  if (rejected.length) return { mode:'replacement', kinds:rejected };
+  if (missing.length) return { mode:'upload', kinds:missing };
+  return { mode:'submitted', kinds:[] };
 }
 function actionPanel(order) {
   const canAct = ['issued', 'in_use'].includes(order.status);
   const openExtension = order.requests?.find(request => request.kind === 'extension' && ['open','in_progress'].includes(request.status));
   const openReturn = order.requests?.find(request => request.kind === 'early_return' && ['open','in_progress'].includes(request.status));
-  const documents = `<button class="cabinet-action secondary" data-panel="documents" data-order="${order.id}">Документы и договор</button>`;
+  const docState = documentMode(order);
+  const documentText = docState.mode === 'submitted' ? 'Документы на проверке' : docState.mode === 'replacement' ? 'Заменить документ' : 'Документы и договор';
+  const documents = `<button class="cabinet-action secondary" data-panel="documents" data-document-mode="${docState.mode}" data-document-kinds="${docState.kinds.join(',')}" data-order="${order.id}">${documentText}</button>`;
   if (openExtension || openReturn) return `${documents}<div class="cabinet-request-state">⌛ ${escape(requestLabel(openExtension || openReturn))}: ожидает решения менеджера</div>`;
   if (!canAct) return `${documents}<div class="cabinet-action-disabled">Продление и досрочный возврат станут доступны после выдачи ноутбука.</div><button class="cabinet-action secondary" data-panel="support" data-order="${order.id}">Нужна помощь</button>`;
   return `<div class="cabinet-actions">${documents}<button class="cabinet-action" data-panel="extend" data-order="${order.id}">Продлить аренду</button><button class="cabinet-action secondary" data-panel="return" data-order="${order.id}">Вернуть раньше</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button></div>`;
@@ -65,15 +81,21 @@ function actionPanel(order) {
 function requestForm(order) {
   return `<div class="cabinet-request-panel" id="panel-${order.id}" hidden></div>`;
 }
-function panelMarkup(kind, orderId) {
-  if (kind === 'documents') return `<form class="cabinet-inline-form cabinet-documents-form" data-document-upload="true" data-order="${orderId}"><label>Подтвердите данные для заявки</label><p>Документы увидит только команда Rentop для проверки заявки. Допустимы JPG, PNG или PDF до 8 МБ.</p>${fileControl('identity', 'Паспорт или ID-карта', 'обязательно')}${fileControl('selfie', 'Селфи с документом', 'обязательно')}${fileControl('supporting', 'Дополнительный официальный документ', 'необязательно: справка с работы, места жительства или иной документ по запросу менеджера')}<label class="cabinet-document-consent"><input name="documentConsent" type="checkbox" required><span>Согласен(на) на передачу документов команде Rentop для проверки и оформления договора.</span></label><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Загрузить документы</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>После загрузки менеджер проверит документы. Следующий этап появится в этой карточке.</p></form>`;
+function panelMarkup(kind, orderId, documentState = {}) {
+  if (kind === 'documents') {
+    if (documentState.mode === 'submitted') return `<div class="cabinet-document-wait"><strong>Документы отправлены</strong><p>Ваша заявка обрабатывается. Ожидайте ответа менеджера — повторная отправка заблокирована.</p><button class="cabinet-action ghost" type="button" data-document-correction="${orderId}">Я отправил(а) неверный документ</button></div>`;
+    const replacement = documentState.mode === 'replacement';
+    const kinds = replacement ? String(documentState.kinds || '').split(',').filter(Boolean) : ['identity', 'selfie', 'supporting'];
+    const requiredKinds = replacement ? kinds : ['identity', 'selfie'];
+    return `<form class="cabinet-inline-form cabinet-documents-form" data-document-upload="true" data-required-kinds="${requiredKinds.join(',')}" data-order="${orderId}"><label>${replacement ? 'Прикрепите исправленный документ' : 'Подтвердите данные для заявки'}</label><p>${replacement ? 'Менеджер открыл замену для отмеченного файла. После повторной загрузки заявка снова уйдёт на проверку.' : 'Документы увидит только команда Rentop для проверки заявки. Допустимы JPG, PNG или PDF до 8 МБ.'}</p>${kinds.map(fileControl).join('')}<label class="cabinet-document-consent"><input name="documentConsent" type="checkbox" required><span>Согласен(на) на передачу документов команде Rentop для проверки и оформления договора.</span></label><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">${replacement ? 'Отправить замену' : 'Загрузить документы'}</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>После загрузки менеджер проверит документы. Следующий этап появится в этой карточке.</p></form>`;
+  }
   if (kind === 'extend') return `<form class="cabinet-inline-form" data-request="extension_request" data-order="${orderId}"><label>На сколько дней продлить?</label><div class="cabinet-inline-row"><input name="days" type="number" min="1" max="30" value="3" required><button class="cabinet-action" type="submit">Отправить запрос</button></div><p>Менеджер проверит доступность и пришлёт сумму к оплате.</p></form>`;
   if (kind === 'return') return `<form class="cabinet-inline-form" data-request="early_return_request" data-order="${orderId}"><label>Коротко опишите причину (необязательно)</label><textarea name="message" maxlength="500" placeholder="Например: изменились планы, хочу вернуть сегодня"></textarea><div class="cabinet-inline-row"><button class="cabinet-action danger" type="submit">Запросить возврат</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>Не кладите ноутбук в ячейку, пока не появится инструкция и новый PIN/QR.</p></form>`;
   return `<form class="cabinet-inline-form" data-request="support_request" data-order="${orderId}"><label>Чем помочь?</label><select name="kind"><option value="rentop">Вопрос к Rentop</option><option value="archa">Проблема с ARCHA POINT</option></select><textarea name="message" minlength="3" maxlength="1000" placeholder="Опишите ситуацию — менеджер увидит сообщение"></textarea><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Отправить обращение</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
 }
-function fileControl(kind, title, hint) {
-  const required = kind === 'identity' || kind === 'selfie' ? 'required' : '';
-  return `<div class="cabinet-file-control"><label for="document-${kind}">${title} <span>${hint}</span></label><input id="document-${kind}" name="${kind}" type="file" accept="image/jpeg,image/png,application/pdf" ${required} hidden><div><button class="cabinet-file-choose" type="button" data-file-trigger="${kind}">Выберите файл</button><button class="cabinet-file-preview" type="button" data-file-preview="${kind}" disabled>Файл не выбран</button></div></div>`;
+function fileControl(kind) {
+  const [title, hint] = ({ identity:['Паспорт или ID-карта', 'обязательно'], selfie:['Селфи с документом', 'обязательно'], supporting:['Дополнительный официальный документ', 'необязательно: справка с работы, места жительства или иной документ по запросу менеджера'] }[kind] || ['Документ', '']);
+  return `<div class="cabinet-file-control"><label for="document-${kind}">${title} <span>${hint}</span></label><input id="document-${kind}" name="${kind}" type="file" accept="image/jpeg,image/png,application/pdf" hidden><div><button class="cabinet-file-choose" type="button" data-file-trigger="${kind}">Выберите файл</button><button class="cabinet-file-preview" type="button" data-file-preview="${kind}" disabled>Файл не выбран</button></div></div>`;
 }
 
 function showRentals(orders, phone, profile = null) {
@@ -95,7 +117,24 @@ function showRentals(orders, phone, profile = null) {
     window.setTimeout(() => window.location.assign('/?resume_booking=1'), 250);
   }
 }
-async function loadSession() { try { const data = await request('GET'); if (data.authenticated) showRentals(data.orders || [], data.phone, data.profile); } catch { /* Silent for guests. */ } }
+async function loadManagerAccess() {
+  if (!managerLink) return;
+  try {
+    const response = await fetch('/api/manager?access=1', { credentials:'same-origin', cache:'no-store' });
+    managerLink.hidden = !response.ok;
+  } catch { managerLink.hidden = true; }
+}
+async function loadSession() {
+  try {
+    const data = await request('GET');
+    loading.hidden = true;
+    if (data.authenticated) { showRentals(data.orders || [], data.phone, data.profile); loadManagerAccess(); return; }
+    login.hidden = false;
+  } catch {
+    loading.hidden = true;
+    login.hidden = false;
+  }
+}
 
 phoneForm?.addEventListener('submit', async event => { event.preventDefault(); const phone = formatPhone(phoneInput.value); if (!phone) return message('Введите номер Кыргызстана: +996XXXXXXXXX.', 'error'); const button = phoneForm.querySelector('button'); button.disabled = true; message('Отправляем код…'); try { await request('POST', { action:'request_code', phone }); pendingPhone = phone; phoneForm.hidden = true; codeForm.hidden = false; codeInput.focus(); message('Код отправлен. Введите 6 цифр из SMS.', 'success'); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
 codeForm?.addEventListener('submit', async event => { event.preventDefault(); const code = codeInput.value.replace(/\D/g, ''); if (code.length !== 6) return message('Введите все 6 цифр кода.', 'error'); const button = codeForm.querySelector('button'); button.disabled = true; message('Проверяем код…'); try { const remember = document.getElementById('cabinet-remember')?.checked !== false; const data = await request('POST', { action:'verify_code', phone:pendingPhone, code, remember }); showRentals(data.orders || [], data.phone, data.profile); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
@@ -121,7 +160,15 @@ rentalsEl?.addEventListener('click', event => {
     const panel = document.getElementById(`panel-${button.dataset.order}`);
     if (!panel) return;
     panel.hidden = !panel.hidden;
-    panel.innerHTML = panel.hidden ? '' : panelMarkup(button.dataset.panel, button.dataset.order);
+    panel.innerHTML = panel.hidden ? '' : panelMarkup(button.dataset.panel, button.dataset.order, { mode:button.dataset.documentMode, kinds:button.dataset.documentKinds });
+    return;
+  }
+  const correction = event.target.closest('[data-document-correction]');
+  if (correction) {
+    correction.disabled = true;
+    request('POST', { action:'document_correction_request', orderId:correction.dataset.documentCorrection })
+      .then(result => { message(result.message, 'success'); correction.textContent = 'Запрос на исправление отправлен'; })
+      .catch(error => { message(error.message, 'error'); correction.disabled = false; });
     return;
   }
   if (event.target.closest('.cabinet-cancel-panel')) {
@@ -143,8 +190,9 @@ rentalsEl?.addEventListener('submit', async event => {
   if (documentForm) {
     event.preventDefault();
     const button = documentForm.querySelector('[type="submit"]');
+    const requiredKinds = String(documentForm.dataset.requiredKinds || '').split(',').filter(Boolean);
     const files = ['identity', 'selfie', 'supporting'].map(kind => ({ kind, file:documentForm.elements[kind]?.files?.[0] })).filter(item => item.file);
-    if (files.length < 2 || !documentForm.elements.documentConsent?.checked) return;
+    if (!requiredKinds.every(kind => files.some(item => item.kind === kind)) || !documentForm.elements.documentConsent?.checked) return;
     button.disabled = true;
     try {
       for (let index = 0; index < files.length; index += 1) {

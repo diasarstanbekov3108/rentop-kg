@@ -19,6 +19,7 @@ export default async function handler(request, response) {
   if (!session || session.revoked_at || new Date(session.expires_at) <= new Date() || !samePhone(session.phone, config.managerPhone)) return reply(response, 401, { error:'Войдите в кабинет с номером менеджера.', code:'MANAGER_AUTH_REQUIRED' });
   try {
     if (request.method === 'GET') {
+      if (String(request.query?.access || '') === '1') return reply(response, 200, { manager:true });
       const orders = await database.listRecentOrders(50);
       const hydrated = await Promise.all(orders.map(async order => {
         const [laptop, documents, requests] = await Promise.all([
