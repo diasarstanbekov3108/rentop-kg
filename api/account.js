@@ -9,6 +9,9 @@ const OTP_TTL_MS = 10 * 60 * 1000;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const EXTENDABLE_STATUSES = new Set(['issued', 'in_use']);
 const RETURNABLE_STATUSES = new Set(['issued', 'in_use']);
+const DOCUMENT_TYPES = new Set(['identity', 'selfie', 'supporting']);
+const DOCUMENT_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'application/pdf']);
+const MAX_DOCUMENT_BYTES = 8 * 1024 * 1024;
 
 function readCookie(request, name) { const source = String(request.headers.cookie || ''); return source.split(';').map(v => v.trim()).find(v => v.startsWith(`${name}=`))?.slice(name.length + 1) || ''; }
 function json(response, status, body) { response.status(status).json(body); }
@@ -33,12 +36,14 @@ export default async function handler(request, response) {
     const orders = await database.listOrdersByCustomerPhone(phone);
     const laptops = await Promise.all(orders.map(order => database.getLaptop(order.laptop_id)));
     const requests = await Promise.all(orders.map((order) => database.listCustomerRequests(order.id).catch(() => [])));
+    const documents = await Promise.all(orders.map((order) => database.listOrderDocuments(order.id).catch(() => [])));
     return orders.map((order, index) => ({
       ...order,
       laptop_title:laptops[index]?.title || laptops[index]?.name || 'Ноутбук Rentop',
       reference: orderRef(order),
       delivery_label:label(order.delivery_type),
-      requests:requests[index]
+      requests:requests[index],
+      documents:documents[index]
     }));
   };
   const accountData = async (phone) => ({
@@ -58,7 +63,7 @@ export default async function handler(request, response) {
     if (request.method !== 'POST') return json(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
     if (payload.action === 'logout') { const raw = readCookie(request, COOKIE); if (raw) await database.revokeCabinetSession(hash(secret, raw)); response.setHeader('Set-Cookie', `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`); return json(response, 200, { ok:true }); }
-    if (payload.action === 'save_profile' || payload.action === 'extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request') {
+    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'save_profile' || payload.action === 'extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request') {
       const session = await verifySession();
       if (!session) return json(response, 401, { error:'Сессия истекла. Войдите в кабинет снова.', code:'AUTH_REQUIRED' });
       if (payload.action === 'save_profile') {
@@ -70,6 +75,35 @@ export default async function handler(request, response) {
       }
       const order = await database.getOrder(String(payload.orderId || ''));
       if (!order || order.customer_phone !== session.phone) return json(response, 404, { error:'Заявка не найдена.' });
+      if (payload.action === 'create_document_upload') {
+        const kind = String(payload.kind || '');
+        const contentType = String(payload.contentType || '').toLowerCase();
+        const byteSize = Number(payload.byteSize);
+        const rawName = String(payload.fileName || '').slice(0, 180);
+        if (!DOCUMENT_TYPES.has(kind) || !DOCUMENT_MIME_TYPES.has(contentType) || !Number.isInteger(byteSize) || byteSize < 1 || byteSize > MAX_DOCUMENT_BYTES) {
+          return json(response, 400, { error:'Допустимы JPG, PNG или PDF размером до 8 МБ.' });
+        }
+        const extension = contentType === 'application/pdf' ? 'pdf' : contentType === 'image/png' ? 'png' : 'jpg';
+        const path = `${order.id}/${kind}/${randomBytes(18).toString('hex')}.${extension}`;
+        const signed = await database.createSignedDocumentUpload(path);
+        const signedPath = signed.url || signed.signedURL || signed.signedUrl;
+        if (!signedPath || !signed.token) throw new Error('Не удалось подготовить безопасную загрузку файла.');
+        const uploadUrl = signedPath.startsWith('http') ? signedPath : `${config.supabaseUrl}/storage/v1${signedPath}`;
+        return json(response, 200, { ok:true, path, uploadUrl, token:signed.token, fileName:rawName });
+      }
+      if (payload.action === 'register_document') {
+        const kind = String(payload.kind || '');
+        const path = String(payload.path || '');
+        const contentType = String(payload.contentType || '').toLowerCase();
+        const byteSize = Number(payload.byteSize);
+        const fileName = String(payload.fileName || 'document').replace(/[\\/\0]/g, '_').slice(0, 180);
+        if (!DOCUMENT_TYPES.has(kind) || !path.startsWith(`${order.id}/${kind}/`) || !DOCUMENT_MIME_TYPES.has(contentType) || !Number.isInteger(byteSize) || byteSize < 1 || byteSize > MAX_DOCUMENT_BYTES) {
+          return json(response, 400, { error:'Не удалось зарегистрировать документ.' });
+        }
+        const document = await database.registerOrderDocument({ order_id:order.id, kind, storage_path:path, file_name:fileName, content_type:contentType, byte_size:byteSize });
+        await database.createEvent({ order_id:order.id, event_type:'customer_uploaded_document_from_cabinet', actor_type:'customer', metadata:{ kind } });
+        return json(response, 201, { ok:true, document });
+      }
       const laptop = await database.getLaptop(order.laptop_id);
       const notifyManager = async (text) => {
         try { await createTelegramApi(config.telegramBotToken).sendMessage(config.adminChatId, text); } catch (error) { console.error('Cabinet manager notification failed:', error.message); }

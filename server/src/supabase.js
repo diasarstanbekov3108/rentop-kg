@@ -21,6 +21,22 @@ export function createSupabaseApi(config) {
     return rows?.[0] || null;
   }
 
+  async function storageRequest(path, options = {}) {
+    const isLegacyJwtKey = config.supabaseServerKey.startsWith('eyJ');
+    const response = await fetch(`${config.supabaseUrl}/storage/v1/${path}`, {
+      ...options,
+      headers: {
+        apikey: config.supabaseServerKey,
+        ...(isLegacyJwtKey ? { Authorization: `Bearer ${config.supabaseServerKey}` } : {}),
+        'content-type': 'application/json',
+        ...(options.headers || {})
+      }
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(body?.message || body?.error || `Supabase Storage request failed (${response.status})`);
+    return body;
+  }
+
   return {
     getLaptop: (id) => getOne(`laptops?id=eq.${encodeURIComponent(id)}&select=*`),
     createOrder: (order) => request('rental_orders', { method: 'POST', body: JSON.stringify(order) }).then((rows) => rows?.[0] || null),
@@ -44,6 +60,16 @@ export function createSupabaseApi(config) {
     createCustomerRequest: (customerRequest) => request('rental_order_customer_requests', {
       method: 'POST', body: JSON.stringify(customerRequest)
     }).then((rows) => rows?.[0] || null),
+    listOrderDocuments: (orderId) => request(
+      `rental_order_documents?order_id=eq.${encodeURIComponent(orderId)}` +
+      '&select=id,kind,file_name,content_type,byte_size,status,uploaded_at,reviewed_at,reviewer_note&order=uploaded_at.desc&limit=20'
+    ),
+    registerOrderDocument: (document) => request('rental_order_documents', {
+      method: 'POST', body: JSON.stringify(document)
+    }).then((rows) => rows?.[0] || null),
+    createSignedDocumentUpload: (path) => storageRequest(`object/upload/sign/rental-documents/${path}`, {
+      method: 'POST', body: JSON.stringify({})
+    }),
     updateOrder: (id, patch) => request(`rental_orders?id=eq.${encodeURIComponent(id)}`, {
       method: 'PATCH', body: JSON.stringify(patch)
     }).then((rows) => rows?.[0] || null),
