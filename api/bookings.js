@@ -24,6 +24,15 @@ function sessionHash(secret, token) {
   return createHmac('sha256', secret).update(token).digest('hex');
 }
 
+function normalizeFullName(value) {
+  const fullName = String(value || '').trim().replace(/\s+/g, ' ');
+  const parts = fullName.split(' ').filter(Boolean);
+  if (parts.length < 3 || parts.some((part) => part.length < 2)) {
+    throw new Error('Укажите фамилию, имя и отчество — как в документе.');
+  }
+  return fullName;
+}
+
 export default async function handler(request, response) {
   response.setHeader('Access-Control-Allow-Origin', '*');
   response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -42,6 +51,7 @@ export default async function handler(request, response) {
       return response.status(401).json({ error: 'Сначала войдите в личный кабинет.', code: 'AUTH_REQUIRED' });
     }
     const payload = request.body || {};
+    const fullName = normalizeFullName(payload.customerName);
     const laptopId = Number(payload.laptopId);
     if (!Number.isFinite(laptopId) || !['delivery', 'pickup', 'arca_locker'].includes(payload.deliveryType)) throw new Error('Некорректные данные заявки.');
     if (payload.deliveryType === 'arca_locker' && !payload.lockerAddress) throw new Error('Выберите локацию ARCHA POINT.');
@@ -51,7 +61,7 @@ export default async function handler(request, response) {
     const token = randomBytes(18).toString('base64url');
     const order = await database.createOrder({
       laptop_id: laptopId,
-      customer_name: String(payload.customerName || '').trim() || null,
+      customer_name: fullName,
       customer_phone: session.phone,
       rental_start_date: payload.startDate,
       rental_end_date: payload.endDate,
@@ -64,9 +74,14 @@ export default async function handler(request, response) {
       locker_address: payload.lockerAddress || null,
       client_token: token
     });
+    await database.saveCustomerProfile({ phone:session.phone, full_name:fullName });
     const bot = createTelegramApi(config.telegramBotToken);
-    const botInfo = await bot.getMe();
-    return response.status(201).json({ orderId: order.id, telegramUrl: `https://t.me/${botInfo.username}?start=r_${token}` });
+    await bot.sendMessage(config.adminChatId,
+      `🆕 Новая заявка с сайта\n\nЗаявка ${order.id.slice(0, 8).toUpperCase()}\n` +
+      `${laptop.title}\nКлиент: ${fullName}\nТелефон: ${session.phone}\n` +
+      `Срок: ${payload.startDate} — ${payload.endDate}\nСумма: ${rental.total} сом\nПолучение: ${payload.deliveryType}`
+    ).catch((error) => console.error('Manager notification failed:', error.message));
+    return response.status(201).json({ orderId: order.id, accountUrl: `/account?created=${encodeURIComponent(order.id)}` });
   } catch (error) {
     console.error('Booking creation failed:', error.message);
     return response.status(400).json({ error: error.message || 'Не удалось создать заявку.' });

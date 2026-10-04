@@ -41,6 +41,11 @@ export default async function handler(request, response) {
       requests:requests[index]
     }));
   };
+  const accountData = async (phone) => ({
+    phone,
+    profile:await database.getCustomerProfile(phone).catch(() => null),
+    orders:await hydrate(phone)
+  });
   const verifySession = async () => {
     const raw = readCookie(request, COOKIE); if (!raw) return null;
     const session = await database.getCabinetSession(hash(secret, raw));
@@ -49,13 +54,20 @@ export default async function handler(request, response) {
     return session;
   };
   try {
-    if (request.method === 'GET') { const session = await verifySession(); if (!session) return json(response, 200, { authenticated:false }); return json(response, 200, { authenticated:true, phone:session.phone, orders:await hydrate(session.phone) }); }
+    if (request.method === 'GET') { const session = await verifySession(); if (!session) return json(response, 200, { authenticated:false }); return json(response, 200, { authenticated:true, ...(await accountData(session.phone)) }); }
     if (request.method !== 'POST') return json(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
     if (payload.action === 'logout') { const raw = readCookie(request, COOKIE); if (raw) await database.revokeCabinetSession(hash(secret, raw)); response.setHeader('Set-Cookie', `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`); return json(response, 200, { ok:true }); }
-    if (payload.action === 'extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request') {
+    if (payload.action === 'save_profile' || payload.action === 'extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request') {
       const session = await verifySession();
       if (!session) return json(response, 401, { error:'Сессия истекла. Войдите в кабинет снова.', code:'AUTH_REQUIRED' });
+      if (payload.action === 'save_profile') {
+        const fullName = String(payload.fullName || '').trim().replace(/\s+/g, ' ');
+        const parts = fullName.split(' ').filter(Boolean);
+        if (parts.length < 3 || parts.some((part) => part.length < 2)) return json(response, 400, { error:'Укажите фамилию, имя и отчество — как в документе.' });
+        const profile = await database.saveCustomerProfile({ phone:session.phone, full_name:fullName });
+        return json(response, 200, { ok:true, profile });
+      }
       const order = await database.getOrder(String(payload.orderId || ''));
       if (!order || order.customer_phone !== session.phone) return json(response, 404, { error:'Заявка не найдена.' });
       const laptop = await database.getLaptop(order.laptop_id);
@@ -112,7 +124,7 @@ export default async function handler(request, response) {
       const raw = randomBytes(32).toString('base64url');
       await database.createCabinetSession({ phone, token_hash:hash(secret, raw), expires_at:new Date(Date.now()+SESSION_TTL_MS).toISOString(), user_agent:String(request.headers['user-agent'] || '').slice(0, 300), ip:clientIp(request) || null });
       response.setHeader('Set-Cookie', `${COOKIE}=${raw}; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS/1000)}; HttpOnly; Secure; SameSite=Lax`);
-      return json(response, 200, { authenticated:true, phone, orders:await hydrate(phone) });
+      return json(response, 200, { authenticated:true, ...(await accountData(phone)) });
     }
     return json(response, 400, { error:'Неизвестное действие.' });
   } catch (error) { console.error('Cabinet API failed:', error.message); return json(response, 400, { error:error.message || 'Не удалось обработать запрос.' }); }

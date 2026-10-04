@@ -7,6 +7,8 @@ const codeInput = document.getElementById('cabinet-code');
 const statusEl = document.getElementById('cabinet-status');
 const rentalsEl = document.getElementById('cabinet-rentals');
 const emptyEl = document.getElementById('cabinet-empty');
+const profileEl = document.getElementById('cabinet-profile');
+const dashboardNotice = document.getElementById('cabinet-dashboard-notice');
 let pendingPhone = '';
 
 const formatPhone = (value, masked = false) => {
@@ -51,7 +53,7 @@ function actionPanel(order) {
   const openExtension = order.requests?.find(request => request.kind === 'extension' && ['open','in_progress'].includes(request.status));
   const openReturn = order.requests?.find(request => request.kind === 'early_return' && ['open','in_progress'].includes(request.status));
   if (openExtension || openReturn) return `<div class="cabinet-request-state">⌛ ${escape(requestLabel(openExtension || openReturn))}: ${openExtension || openReturn ? 'ожидает решения менеджера' : ''}</div>`;
-  if (!canAct) return `<button class="cabinet-action secondary" data-panel="support" data-order="${order.id}">Нужна помощь</button>`;
+  if (!canAct) return `<div class="cabinet-action-disabled">Продление и досрочный возврат станут доступны после выдачи ноутбука.</div><button class="cabinet-action secondary" data-panel="support" data-order="${order.id}">Нужна помощь</button>`;
   return `<div class="cabinet-actions"><button class="cabinet-action" data-panel="extend" data-order="${order.id}">Продлить аренду</button><button class="cabinet-action secondary" data-panel="return" data-order="${order.id}">Вернуть раньше</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button></div>`;
 }
 function requestForm(order) {
@@ -63,9 +65,16 @@ function panelMarkup(kind, orderId) {
   return `<form class="cabinet-inline-form" data-request="support_request" data-order="${orderId}"><label>Чем помочь?</label><select name="kind"><option value="rentop">Вопрос к Rentop</option><option value="archa">Проблема с ARCHA POINT</option></select><textarea name="message" minlength="3" maxlength="1000" placeholder="Опишите ситуацию — менеджер увидит сообщение"></textarea><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Отправить обращение</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
 }
 
-function showRentals(orders, phone) {
+function showRentals(orders, phone, profile = null) {
   login.hidden = true; dashboard.hidden = false;
-  document.getElementById('cabinet-greeting').textContent = `Здравствуйте, ${phone.replace('+996', '+996 ')}!`;
+  const fullName = String(profile?.full_name || '').trim();
+  document.getElementById('cabinet-greeting').textContent = fullName ? `Здравствуйте, ${fullName.split(' ')[1] || fullName}!` : 'Здравствуйте!';
+  profileEl.innerHTML = fullName
+    ? `<p class="cabinet-profile-name">Личный кабинет · ${escape(fullName)} · ${phone}</p>`
+    : `<form class="cabinet-profile-form" id="profile-form"><label for="profile-full-name">Заполните ФИО для договора</label><div><input id="profile-full-name" name="fullName" autocomplete="name" placeholder="Фамилия Имя Отчество" required><button class="cabinet-action" type="submit">Сохранить</button></div><p>Указывайте данные так же, как в документе.</p></form>`;
+  const created = new URLSearchParams(window.location.search).get('created');
+  dashboardNotice.hidden = !created;
+  if (created) dashboardNotice.textContent = 'Заявка создана и уже появилась в кабинете. Следующий шаг покажем здесь.';
   rentalsEl.innerHTML = orders.map(order => {
     const state = statusInfo(order.status);
     return `<article class="cabinet-rental" data-rental="${order.id}"><div class="cabinet-rental-top"><div><h3>${escape(order.laptop_title || 'Ноутбук Rentop')}</h3><p class="cabinet-rental-ref">Заявка ${escape(order.reference)}</p></div><span class="cabinet-badge">${escape(state.title)}</span></div><div class="cabinet-progress" aria-label="Этап ${state.step} из 5"><span class="is-done"></span><span class="${state.step >= 2 ? 'is-done' : ''}"></span><span class="${state.step >= 3 ? 'is-done' : ''}"></span><span class="${state.step >= 4 ? 'is-done' : ''}"></span><span class="${state.step >= 5 ? 'is-done' : ''}"></span></div><p class="cabinet-next-step">${escape(state.text)}</p><div class="cabinet-rental-grid"><div>Срок<strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div>Получение<strong>${escape(order.delivery_label)}</strong></div><div>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div></div>${actionPanel(order)}${requestForm(order)}</article>`;
@@ -75,10 +84,10 @@ function showRentals(orders, phone) {
     window.setTimeout(() => window.location.assign('/?resume_booking=1'), 250);
   }
 }
-async function loadSession() { try { const data = await request('GET'); if (data.authenticated) showRentals(data.orders || [], data.phone); } catch { /* Silent for guests. */ } }
+async function loadSession() { try { const data = await request('GET'); if (data.authenticated) showRentals(data.orders || [], data.phone, data.profile); } catch { /* Silent for guests. */ } }
 
 phoneForm?.addEventListener('submit', async event => { event.preventDefault(); const phone = formatPhone(phoneInput.value); if (!phone) return message('Введите номер Кыргызстана: +996XXXXXXXXX.', 'error'); const button = phoneForm.querySelector('button'); button.disabled = true; message('Отправляем код…'); try { await request('POST', { action:'request_code', phone }); pendingPhone = phone; phoneForm.hidden = true; codeForm.hidden = false; codeInput.focus(); message('Код отправлен. Введите 6 цифр из SMS.', 'success'); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
-codeForm?.addEventListener('submit', async event => { event.preventDefault(); const code = codeInput.value.replace(/\D/g, ''); if (code.length !== 6) return message('Введите все 6 цифр кода.', 'error'); const button = codeForm.querySelector('button'); button.disabled = true; message('Проверяем код…'); try { const data = await request('POST', { action:'verify_code', phone:pendingPhone, code }); showRentals(data.orders || [], data.phone); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
+codeForm?.addEventListener('submit', async event => { event.preventDefault(); const code = codeInput.value.replace(/\D/g, ''); if (code.length !== 6) return message('Введите все 6 цифр кода.', 'error'); const button = codeForm.querySelector('button'); button.disabled = true; message('Проверяем код…'); try { const data = await request('POST', { action:'verify_code', phone:pendingPhone, code }); showRentals(data.orders || [], data.phone, data.profile); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
 document.getElementById('change-phone')?.addEventListener('click', () => { codeForm.hidden = true; phoneForm.hidden = false; codeInput.value = ''; message(''); phoneInput.focus(); });
 document.getElementById('cabinet-logout')?.addEventListener('click', async () => { await request('POST', { action:'logout' }).catch(() => {}); dashboard.hidden = true; login.hidden = false; phoneForm.hidden = false; codeForm.hidden = true; phoneInput.value = ''; codeInput.value = ''; pendingPhone = ''; message('Вы вышли из кабинета.'); });
 rentalsEl?.addEventListener('click', event => {
@@ -106,11 +115,23 @@ rentalsEl?.addEventListener('submit', async event => {
     const result = await request('POST', { action:form.dataset.request, orderId:form.dataset.order, days:data.get('days'), kind:data.get('kind'), message:data.get('message') });
     message(result.message || 'Запрос отправлен.', 'success');
     const fresh = await request('GET');
-    if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone);
+    if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile);
   } catch (error) {
     const output = form.querySelector('.cabinet-form-error') || document.createElement('p');
     output.className = 'cabinet-form-error'; output.textContent = error.message; form.append(output);
     button.disabled = false; button.textContent = 'Попробовать снова';
+  }
+});
+profileEl?.addEventListener('submit', async event => {
+  if (event.target.id !== 'profile-form') return;
+  event.preventDefault();
+  const form = event.target; const button = form.querySelector('button'); button.disabled = true;
+  try {
+    await request('POST', { action:'save_profile', fullName:new FormData(form).get('fullName') });
+    const fresh = await request('GET');
+    if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile);
+  } catch (error) {
+    const output = document.createElement('p'); output.className = 'cabinet-form-error'; output.textContent = error.message; form.append(output); button.disabled = false;
   }
 });
 bindPhoneMask(phoneInput);

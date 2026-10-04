@@ -938,8 +938,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           redirectToCabinet();
           return;
         }
-        if (!response.ok || !result.telegramUrl) throw new Error(result.error || 'Не удалось создать заявку.');
-        window.location.assign(result.telegramUrl);
+        if (!response.ok || !result.accountUrl) throw new Error(result.error || 'Не удалось создать заявку.');
+        window.location.assign(result.accountUrl);
         return;
       } catch (error) {
         submitInFlight = false;
