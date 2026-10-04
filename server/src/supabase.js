@@ -26,6 +26,11 @@ export function createSupabaseApi(config) {
     createOrder: (order) => request('rental_orders', { method: 'POST', body: JSON.stringify(order) }).then((rows) => rows?.[0] || null),
     getOrderByToken: (token) => getOne(`rental_orders?client_token=eq.${encodeURIComponent(token)}&select=*`),
     getOrder: (id) => getOne(`rental_orders?id=eq.${encodeURIComponent(id)}&select=*`),
+    listOrdersByCustomerPhone: (phone, limit = 30) => request(
+      `rental_orders?customer_phone=eq.${encodeURIComponent(phone)}` +
+      '&select=id,laptop_id,rental_start_date,rental_end_date,rental_days,status,total_amount,delivery_type,locker_address,created_at,updated_at' +
+      `&order=updated_at.desc&limit=${Math.min(Math.max(Number(limit) || 30, 1), 50)}`
+    ),
     updateOrder: (id, patch) => request(`rental_orders?id=eq.${encodeURIComponent(id)}`, {
       method: 'PATCH', body: JSON.stringify(patch)
     }).then((rows) => rows?.[0] || null),
@@ -85,6 +90,30 @@ export function createSupabaseApi(config) {
     getAdminActionByUser: (userId) => getOne(`rental_order_admin_actions?admin_user_id=eq.${encodeURIComponent(userId)}&select=*&order=created_at.desc`),
     createEvent: (event) => request('rental_order_events', {
       method: 'POST', body: JSON.stringify(event)
+    }).then((rows) => rows?.[0] || null),
+    getRecentCabinetChallenge: (phone) => getOne(
+      `customer_auth_challenges?phone=eq.${encodeURIComponent(phone)}&select=*&order=created_at.desc&limit=1`
+    ),
+    createCabinetChallenge: (challenge) => request('customer_auth_challenges', {
+      method: 'POST', body: JSON.stringify(challenge)
+    }).then((rows) => rows?.[0] || null),
+    incrementCabinetChallenge: (id, attempts) => request(`customer_auth_challenges?id=eq.${encodeURIComponent(id)}`, {
+      method: 'PATCH', body: JSON.stringify({ attempts }), headers: { Prefer: 'return=representation' }
+    }).then((rows) => rows?.[0] || null),
+    consumeCabinetChallenge: (id) => request(`customer_auth_challenges?id=eq.${encodeURIComponent(id)}`, {
+      method: 'PATCH', body: JSON.stringify({ consumed_at: new Date().toISOString() })
+    }).then((rows) => rows?.[0] || null),
+    getCabinetSession: (tokenHash) => getOne(
+      `customer_cabinet_sessions?token_hash=eq.${encodeURIComponent(tokenHash)}&select=*&limit=1`
+    ),
+    createCabinetSession: (session) => request('customer_cabinet_sessions', {
+      method: 'POST', body: JSON.stringify(session)
+    }).then((rows) => rows?.[0] || null),
+    touchCabinetSession: (id) => request(`customer_cabinet_sessions?id=eq.${encodeURIComponent(id)}`, {
+      method: 'PATCH', body: JSON.stringify({ last_seen_at: new Date().toISOString() })
+    }).then((rows) => rows?.[0] || null),
+    revokeCabinetSession: (tokenHash) => request(`customer_cabinet_sessions?token_hash=eq.${encodeURIComponent(tokenHash)}`, {
+      method: 'PATCH', body: JSON.stringify({ revoked_at: new Date().toISOString() })
     }).then((rows) => rows?.[0] || null)
   };
 }

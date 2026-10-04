@@ -56,6 +56,7 @@ export function loadConfig(env = process.env) {
       enabled: Boolean(nikitaLogin && nikitaPassword && nikitaSender)
     },
     offerOtpHmacSecret: env.OFFER_OTP_HMAC_SECRET || '',
+    customerOtpHmacSecret: env.CUSTOMER_OTP_HMAC_SECRET || '',
     offerVersion: env.OFFER_VERSION || 'draft-2026-09-25',
     offerUrl: env.OFFER_URL || ''
   });

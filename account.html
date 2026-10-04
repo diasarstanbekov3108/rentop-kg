@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#07111f">
+  <title>Личный кабинет — RENTOP.KG</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/cabinet.css">
+</head>
+<body class="cabinet-page">
+  <header class="cabinet-header">
+    <a class="cabinet-brand" href="/" aria-label="На главную RENTOP.KG">RENTOP.<span>KG</span></a>
+    <a class="cabinet-back" href="/">← Каталог</a>
+  </header>
+
+  <main class="cabinet-main">
+    <section class="cabinet-hero">
+      <div>
+        <p class="cabinet-eyebrow">ЛИЧНЫЙ КАБИНЕТ</p>
+        <h1>Ваши аренды —<br>в одном месте.</h1>
+        <p>Проверяйте статус выдачи, сроки, продление и возврат. Вход — только по подтверждённому номеру телефона.</p>
+      </div>
+      <img src="assets/rentop-mascot-work.png" alt="Помощник Rentop" class="cabinet-mascot">
+    </section>
+
+    <section class="cabinet-card cabinet-login" id="cabinet-login">
+      <h2>Войти по номеру</h2>
+      <p class="cabinet-muted">Мы отправим одноразовый код. Пароль не нужен.</p>
+      <form id="phone-form" novalidate>
+        <label for="cabinet-phone">Номер телефона</label>
+        <input id="cabinet-phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+996 700 000 000" required>
+        <button class="cabinet-primary" type="submit">Получить код</button>
+      </form>
+      <form id="code-form" novalidate hidden>
+        <label for="cabinet-code">Код из SMS</label>
+        <input id="cabinet-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" required>
+        <button class="cabinet-primary" type="submit">Войти в кабинет</button>
+        <button class="cabinet-text-button" type="button" id="change-phone">Изменить номер</button>
+      </form>
+      <p class="cabinet-status" id="cabinet-status" role="status"></p>
+    </section>
+
+    <section class="cabinet-dashboard" id="cabinet-dashboard" hidden>
+      <div class="cabinet-dashboard-head">
+        <div>
+          <p class="cabinet-eyebrow">МОИ АРЕНДЫ</p>
+          <h2 id="cabinet-greeting">Здравствуйте!</h2>
+        </div>
+        <button class="cabinet-logout" type="button" id="cabinet-logout">Выйти</button>
+      </div>
+      <div class="cabinet-rentals" id="cabinet-rentals"></div>
+      <div class="cabinet-empty" id="cabinet-empty" hidden>
+        <h3>Аренд пока нет</h3>
+        <p>Когда вы оформите заявку с этим номером, она появится здесь.</p>
+        <a class="cabinet-primary cabinet-link" href="/#catalog">Выбрать ноутбук</a>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="js/cabinet.js"></script>
+</body>
+</html>
