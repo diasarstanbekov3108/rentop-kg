@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Панель менеджера — RENTOP.KG</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/cabinet.css">
+  <link rel="stylesheet" href="css/manager.css">
+</head>
+<body class="cabinet-page">
+  <header class="cabinet-header"><a class="cabinet-brand" href="/" aria-label="На главную RENTOP.KG">RENTOP.<span>KG</span></a><a class="cabinet-back" href="/account">Личный кабинет</a></header>
+  <main class="manager-main">
+    <section class="manager-head"><div><p class="cabinet-eyebrow">ВНУТРЕННЯЯ ПАНЕЛЬ</p><h1>Рабочие заявки</h1><p>Новые заявки, документы и обращения — в одном месте.</p></div><button id="manager-refresh" class="cabinet-action" type="button">Обновить</button></section>
+    <section class="manager-gate" id="manager-gate" hidden><h2>Нужен вход менеджера</h2><p>Войдите в личный кабинет с номером, указанным для менеджера, затем откройте эту страницу снова.</p><a class="cabinet-primary" href="/account">Войти по номеру</a></section>
+    <section id="manager-dashboard" hidden><div class="manager-stats" id="manager-stats"></div><div class="manager-filters"><button class="is-active" data-filter="all">Все</button><button data-filter="new">Новые</button><button data-filter="documents">Документы</button><button data-filter="active">Активные</button></div><div class="manager-orders" id="manager-orders"></div></section>
+    <p class="cabinet-status" id="manager-status" role="status"></p>
+  </main>
+  <script type="module" src="js/manager.js"></script>
+</body>
+</html>
