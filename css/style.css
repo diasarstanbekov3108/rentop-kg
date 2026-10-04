@@ -111,6 +111,30 @@ header {
   color: var(--accent);
 }
 
+.nav-account-auth {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-account-auth a {
+  color: var(--accent);
+}
+
+.nav-account-auth button {
+  border: 0;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.nav-account-auth button:hover {
+  color: var(--accent);
+}
+
 .header-actions {
   display: flex;
   align-items: center;

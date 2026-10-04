@@ -68,6 +68,10 @@ const rentopMascotClose = document.querySelector('.rentop-mascot-close');
 // Burger
 const burger = document.getElementById('burger');
 const nav = document.getElementById('nav');
+const navAccountGuest = document.getElementById('nav-account-guest');
+const navAccountAuth = document.getElementById('nav-account-auth');
+const navAccountGreeting = document.getElementById('nav-account-greeting');
+const navAccountLogout = document.getElementById('nav-account-logout');
 
 // Lightbox
 const lightbox = document.getElementById('lightbox');
@@ -376,10 +380,23 @@ async function getCabinetSession() {
   } catch {
     cabinetSession = null;
   }
+  updateSiteAccountUi();
   return cabinetSession;
 }
 
+function updateSiteAccountUi() {
+  const signedIn = Boolean(cabinetSession?.authenticated);
+  if (navAccountGuest) navAccountGuest.hidden = signedIn;
+  if (navAccountAuth) navAccountAuth.hidden = !signedIn;
+  if (!navAccountGreeting) return;
+  const name = String(cabinetSession?.profile?.full_name || '').trim();
+  const parts = name.split(/\s+/).filter(Boolean);
+  const firstName = parts.length > 1 ? parts[1] : parts[0];
+  navAccountGreeting.textContent = firstName ? `Здравствуйте, ${firstName}!` : 'Личный кабинет';
+}
+
 function updateOrderAuthUi() {
+  updateSiteAccountUi();
   const signedIn = Boolean(cabinetSession?.authenticated);
   const phoneInput = document.getElementById('user-phone');
   if (phoneInput) {
@@ -392,6 +409,22 @@ function updateOrderAuthUi() {
   }
   if (submitBtn && !submitInFlight) submitBtn.textContent = signedIn ? 'Продолжить оформление' : 'Войти и продолжить';
 }
+
+navAccountLogout?.addEventListener('click', async () => {
+  navAccountLogout.disabled = true;
+  try {
+    await fetch('/api/account', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'logout' })
+    });
+  } finally {
+    cabinetSession = null;
+    updateOrderAuthUi();
+    window.location.assign('/');
+  }
+});
 
 function savePendingBooking() {
   if (!currentLaptop) return;

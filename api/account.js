@@ -7,6 +7,7 @@ import { createTelegramApi } from '../server/src/telegram.js';
 const COOKIE = '__Host-rentop_session';
 const OTP_TTL_MS = 10 * 60 * 1000;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const SHORT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const EXTENDABLE_STATUSES = new Set(['issued', 'in_use']);
 const RETURNABLE_STATUSES = new Set(['issued', 'in_use']);
 const DOCUMENT_TYPES = new Set(['identity', 'selfie', 'supporting']);
@@ -156,8 +157,9 @@ export default async function handler(request, response) {
       if (expected.length !== received.length || !timingSafeEqual(expected, received)) { await database.incrementCabinetChallenge(challenge.id, Number(challenge.attempts || 0) + 1); return json(response, 400, { error:'Неверный код. Проверьте SMS и попробуйте снова.' }); }
       await database.consumeCabinetChallenge(challenge.id);
       const raw = randomBytes(32).toString('base64url');
-      await database.createCabinetSession({ phone, token_hash:hash(secret, raw), expires_at:new Date(Date.now()+SESSION_TTL_MS).toISOString(), user_agent:String(request.headers['user-agent'] || '').slice(0, 300), ip:clientIp(request) || null });
-      response.setHeader('Set-Cookie', `${COOKIE}=${raw}; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS/1000)}; HttpOnly; Secure; SameSite=Lax`);
+      const sessionTtl = payload.remember === false ? SHORT_SESSION_TTL_MS : SESSION_TTL_MS;
+      await database.createCabinetSession({ phone, token_hash:hash(secret, raw), expires_at:new Date(Date.now()+sessionTtl).toISOString(), user_agent:String(request.headers['user-agent'] || '').slice(0, 300), ip:clientIp(request) || null });
+      response.setHeader('Set-Cookie', `${COOKIE}=${raw}; Path=/; Max-Age=${Math.floor(sessionTtl/1000)}; HttpOnly; Secure; SameSite=Lax`);
       return json(response, 200, { authenticated:true, ...(await accountData(phone)) });
     }
     return json(response, 400, { error:'Неизвестное действие.' });
