@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { loadConfig } from '../server/src/config.js';
 import { createSupabaseApi } from '../server/src/supabase.js';
 import { createNikitaSmsClient, normalizeKyrgyzPhone } from '../server/src/sms.js';
@@ -11,7 +11,7 @@ const ACTIVE_STATUSES = ['awaiting_payment', 'payment_review', 'confirmed', 'awa
 function readCookie(request, name) { const source = String(request.headers.cookie || ''); return source.split(';').map(v => v.trim()).find(v => v.startsWith(`${name}=`))?.slice(name.length + 1) || ''; }
 function json(response, status, body) { response.status(status).json(body); }
 function hash(secret, value) { return createHmac('sha256', secret).update(value).digest('hex'); }
-function code() { return String(Math.floor(100000 + Math.random() * 900000)); }
+function code() { return String(randomInt(100000, 1_000_000)); }
 function clientIp(request) { return String(request.headers['x-forwarded-for'] || '').split(',')[0].trim(); }
 function allowOrigin(request, response) { const origin = request.headers.origin; if (origin && /^https:\/\/(?:[a-z0-9-]+\.)?rentop(?:\.com\.kg|-[-a-z0-9]+\.vercel\.app)$/i.test(origin)) response.setHeader('Access-Control-Allow-Origin', origin); response.setHeader('Vary', 'Origin'); }
 function label(delivery) { return ({ arca_locker:'ARCHA POINT 24/7', delivery:'Доставка', pickup:'Самовывоз' }[delivery] || 'Уточняется'); }
