@@ -23,7 +23,7 @@ const formatPhone = (value, masked = false) => {
 function bindPhoneMask(input) { if (!input) return; const update = () => { input.value = formatPhone(input.value, true); }; input.addEventListener('focus', update); input.addEventListener('input', update); input.addEventListener('keydown', event => { if (input.selectionStart <= 4 && ['Backspace', 'Delete'].includes(event.key)) event.preventDefault(); }); update(); }
 const message = (text = '', kind = '') => { statusEl.textContent = text; statusEl.className = `cabinet-status${kind ? ` is-${kind}` : ''}`; };
 const request = async (method, payload) => {
-  const response = await fetch('/api/account', { method, credentials: 'same-origin', headers: payload ? { 'content-type': 'application/json' } : {}, body: payload ? JSON.stringify(payload) : undefined });
+  const response = await fetch('/api/account', { method, credentials: 'same-origin', cache: 'no-store', headers: payload ? { 'content-type': 'application/json' } : {}, body: payload ? JSON.stringify(payload) : undefined });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error || 'Не удалось выполнить запрос.');
   return body;
@@ -66,10 +66,14 @@ function requestForm(order) {
   return `<div class="cabinet-request-panel" id="panel-${order.id}" hidden></div>`;
 }
 function panelMarkup(kind, orderId) {
-  if (kind === 'documents') return `<form class="cabinet-inline-form cabinet-documents-form" data-document-upload="true" data-order="${orderId}"><label>Подтвердите данные для заявки</label><p>Файлы увидит только команда Rentop. Допустимы JPG, PNG или PDF до 8 МБ.</p><label>Паспорт или ID-карта <span>обязательно</span><input name="identity" type="file" accept="image/jpeg,image/png,application/pdf" required></label><label>Селфи с документом <span>обязательно</span><input name="selfie" type="file" accept="image/jpeg,image/png" required></label><label>Дополнительный документ <span>если запросит менеджер</span><input name="supporting" type="file" accept="image/jpeg,image/png,application/pdf"></label><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Загрузить документы</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>После загрузки менеджер проверит документы. Затем в этой же карточке появится следующий этап.</p></form>`;
+  if (kind === 'documents') return `<form class="cabinet-inline-form cabinet-documents-form" data-document-upload="true" data-order="${orderId}"><label>Подтвердите данные для заявки</label><p>Документы увидит только команда Rentop для проверки заявки. Допустимы JPG, PNG или PDF до 8 МБ.</p>${fileControl('identity', 'Паспорт или ID-карта', 'обязательно')}${fileControl('selfie', 'Селфи с документом', 'обязательно')}${fileControl('supporting', 'Дополнительный официальный документ', 'необязательно: справка с работы, места жительства или иной документ по запросу менеджера')}<label class="cabinet-document-consent"><input name="documentConsent" type="checkbox" required><span>Согласен(на) на передачу документов команде Rentop для проверки и оформления договора.</span></label><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Загрузить документы</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>После загрузки менеджер проверит документы. Следующий этап появится в этой карточке.</p></form>`;
   if (kind === 'extend') return `<form class="cabinet-inline-form" data-request="extension_request" data-order="${orderId}"><label>На сколько дней продлить?</label><div class="cabinet-inline-row"><input name="days" type="number" min="1" max="30" value="3" required><button class="cabinet-action" type="submit">Отправить запрос</button></div><p>Менеджер проверит доступность и пришлёт сумму к оплате.</p></form>`;
   if (kind === 'return') return `<form class="cabinet-inline-form" data-request="early_return_request" data-order="${orderId}"><label>Коротко опишите причину (необязательно)</label><textarea name="message" maxlength="500" placeholder="Например: изменились планы, хочу вернуть сегодня"></textarea><div class="cabinet-inline-row"><button class="cabinet-action danger" type="submit">Запросить возврат</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>Не кладите ноутбук в ячейку, пока не появится инструкция и новый PIN/QR.</p></form>`;
   return `<form class="cabinet-inline-form" data-request="support_request" data-order="${orderId}"><label>Чем помочь?</label><select name="kind"><option value="rentop">Вопрос к Rentop</option><option value="archa">Проблема с ARCHA POINT</option></select><textarea name="message" minlength="3" maxlength="1000" placeholder="Опишите ситуацию — менеджер увидит сообщение"></textarea><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Отправить обращение</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
+}
+function fileControl(kind, title, hint) {
+  const required = kind === 'identity' || kind === 'selfie' ? 'required' : '';
+  return `<div class="cabinet-file-control"><label for="document-${kind}">${title} <span>${hint}</span></label><input id="document-${kind}" name="${kind}" type="file" accept="image/jpeg,image/png,application/pdf" ${required} hidden><div><button class="cabinet-file-choose" type="button" data-file-trigger="${kind}">Выберите файл</button><button class="cabinet-file-preview" type="button" data-file-preview="${kind}" disabled>Файл не выбран</button></div></div>`;
 }
 
 function showRentals(orders, phone, profile = null) {
@@ -98,6 +102,20 @@ codeForm?.addEventListener('submit', async event => { event.preventDefault(); co
 document.getElementById('change-phone')?.addEventListener('click', () => { codeForm.hidden = true; phoneForm.hidden = false; codeInput.value = ''; message(''); phoneInput.focus(); });
 document.getElementById('cabinet-logout')?.addEventListener('click', async () => { await request('POST', { action:'logout' }).catch(() => {}); dashboard.hidden = true; login.hidden = false; phoneForm.hidden = false; codeForm.hidden = true; phoneInput.value = ''; codeInput.value = ''; pendingPhone = ''; message('Вы вышли из кабинета.'); });
 rentalsEl?.addEventListener('click', event => {
+  const fileTrigger = event.target.closest('[data-file-trigger]');
+  if (fileTrigger) {
+    event.preventDefault();
+    const form = fileTrigger.closest('form');
+    form?.elements[fileTrigger.dataset.fileTrigger]?.click();
+    return;
+  }
+  const filePreview = event.target.closest('[data-file-preview]');
+  if (filePreview && !filePreview.disabled) {
+    const form = filePreview.closest('form');
+    const file = form?.elements[filePreview.dataset.filePreview]?.files?.[0];
+    if (file) window.open(URL.createObjectURL(file), '_blank', 'noopener,noreferrer');
+    return;
+  }
   const button = event.target.closest('[data-panel]');
   if (button) {
     const panel = document.getElementById(`panel-${button.dataset.order}`);
@@ -111,13 +129,22 @@ rentalsEl?.addEventListener('click', event => {
     panel.hidden = true; panel.innerHTML = '';
   }
 });
+rentalsEl?.addEventListener('change', event => {
+  const input = event.target.closest('input[type="file"]');
+  if (!input) return;
+  const preview = input.closest('.cabinet-file-control')?.querySelector('[data-file-preview]');
+  if (!preview) return;
+  const file = input.files?.[0];
+  preview.disabled = !file;
+  preview.textContent = file ? `Открыть: ${file.name}` : 'Файл не выбран';
+});
 rentalsEl?.addEventListener('submit', async event => {
   const documentForm = event.target.closest('[data-document-upload]');
   if (documentForm) {
     event.preventDefault();
     const button = documentForm.querySelector('[type="submit"]');
     const files = ['identity', 'selfie', 'supporting'].map(kind => ({ kind, file:documentForm.elements[kind]?.files?.[0] })).filter(item => item.file);
-    if (files.length < 2) return;
+    if (files.length < 2 || !documentForm.elements.documentConsent?.checked) return;
     button.disabled = true;
     try {
       for (let index = 0; index < files.length; index += 1) {

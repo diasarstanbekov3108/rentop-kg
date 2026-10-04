@@ -15,7 +15,7 @@ const DOCUMENT_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'application/pdf
 const MAX_DOCUMENT_BYTES = 8 * 1024 * 1024;
 
 function readCookie(request, name) { const source = String(request.headers.cookie || ''); return source.split(';').map(v => v.trim()).find(v => v.startsWith(`${name}=`))?.slice(name.length + 1) || ''; }
-function json(response, status, body) { response.status(status).json(body); }
+function json(response, status, body) { response.setHeader('Cache-Control', 'private, no-store, max-age=0'); response.status(status).json(body); }
 function hash(secret, value) { return createHmac('sha256', secret).update(value).digest('hex'); }
 function code() { return String(randomInt(100000, 1_000_000)); }
 function clientIp(request) { return String(request.headers['x-forwarded-for'] || '').split(',')[0].trim(); }
@@ -58,6 +58,22 @@ export default async function handler(request, response) {
     if (!session || session.revoked_at || new Date(session.expires_at) <= now) return null;
     database.touchCabinetSession(session.id).catch(() => {});
     return session;
+  };
+  const notifyDocumentManager = async (order, document) => {
+    try {
+      const signed = await database.createSignedDocumentDownload(document.storage_path);
+      const signedPath = signed.signedURL || signed.signedUrl || signed.url;
+      if (!signedPath) throw new Error('Не удалось получить временную ссылку на документ.');
+      const documentUrl = signedPath.startsWith('http') ? signedPath : `${config.supabaseUrl}/storage/v1${signedPath}`;
+      const kindLabel = ({ identity:'Паспорт или ID-карта', selfie:'Селфи с документом', supporting:'Дополнительный документ' }[document.kind] || 'Документ');
+      await createTelegramApi(config.telegramBotToken).sendDocument(
+        config.adminChatId,
+        documentUrl,
+        `📄 Документ из личного кабинета\nЗаявка ${orderRef(order)}\nТип: ${kindLabel}`
+      );
+    } catch (error) {
+      console.error('Cabinet document Telegram copy failed:', error.message);
+    }
   };
   try {
     if (request.method === 'GET') { const session = await verifySession(); if (!session) return json(response, 200, { authenticated:false }); return json(response, 200, { authenticated:true, ...(await accountData(session.phone)) }); }
@@ -103,6 +119,7 @@ export default async function handler(request, response) {
         }
         const document = await database.registerOrderDocument({ order_id:order.id, kind, storage_path:path, file_name:fileName, content_type:contentType, byte_size:byteSize });
         await database.createEvent({ order_id:order.id, event_type:'customer_uploaded_document_from_cabinet', actor_type:'customer', metadata:{ kind } });
+        await notifyDocumentManager(order, document);
         return json(response, 201, { ok:true, document });
       }
       const laptop = await database.getLaptop(order.laptop_id);

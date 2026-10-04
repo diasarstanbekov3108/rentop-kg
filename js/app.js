@@ -374,7 +374,7 @@ function currentRentalDraft(today = todayIso()) {
 
 async function getCabinetSession() {
   try {
-    const response = await fetch('/api/account', { credentials: 'same-origin' });
+    const response = await fetch('/api/account', { credentials: 'same-origin', cache: 'no-store' });
     const data = await response.json().catch(() => ({}));
     cabinetSession = response.ok && data.authenticated ? data : null;
   } catch {

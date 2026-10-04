@@ -36,6 +36,7 @@ export function createTelegramApi(token) {
     getMe: () => call('getMe', {}),
     setMyCommands: (commands, extra = {}) => call('setMyCommands', { commands, ...extra }),
     sendMessage: (chatId, text, extra = {}) => call('sendMessage', { chat_id: chatId, text, ...extra }),
+    sendDocument: (chatId, document, caption = '', extra = {}) => call('sendDocument', { chat_id: chatId, document, caption, ...extra }),
     sendPhoto,
     createForumTopic: (chatId, name) => call('createForumTopic', { chat_id: chatId, name }),
     closeForumTopic: (chatId, messageThreadId) => call('closeForumTopic', { chat_id: chatId, message_thread_id: messageThreadId }),

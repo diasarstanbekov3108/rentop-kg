@@ -70,6 +70,9 @@ export function createSupabaseApi(config) {
     createSignedDocumentUpload: (path) => storageRequest(`object/upload/sign/rental-documents/${path}`, {
       method: 'POST', body: JSON.stringify({})
     }),
+    createSignedDocumentDownload: (path, expiresIn = 3600) => storageRequest(`object/sign/rental-documents/${path}`, {
+      method: 'POST', body: JSON.stringify({ expiresIn })
+    }),
     updateOrder: (id, patch) => request(`rental_orders?id=eq.${encodeURIComponent(id)}`, {
       method: 'PATCH', body: JSON.stringify(patch)
     }).then((rows) => rows?.[0] || null),
