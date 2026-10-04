@@ -1872,3 +1872,10 @@ section {
     grid-template-columns: 1fr;
   }
 }
+
+.cabinet-order-phone {
+  margin: 8px 0 0;
+  color: #81d9fb;
+  font-size: 13px;
+  font-weight: 700;
+}

@@ -26,6 +26,8 @@ let catalogReady = false;
 let catalogRenderVersion = 0;
 let pendingFilterFrame = null;
 let archaSelectionMode = false;
+let cabinetSession = null;
+const CABINET_BOOKING_KEY = 'rentop-pending-booking-v1';
 
 // Настройки пагинации
 const ITEMS_PER_PAGE = 6;
@@ -54,6 +56,7 @@ const archaLocationField = document.getElementById('archa-location-field');
 const archaLocationInput = document.getElementById('archa-location');
 const rentalAvailabilityMessage = document.getElementById('rental-availability-message');
 const submitBtn = document.getElementById('submitBtn');
+const cabinetOrderPhone = document.getElementById('cabinet-order-phone');
 const archaOrderBtn = document.getElementById('open-archa-order');
 const archaSelectionNotice = document.getElementById('archa-selection-notice');
 const closeArchaSelectionBtn = document.getElementById('close-archa-selection');
@@ -365,6 +368,48 @@ function currentRentalDraft(today = todayIso()) {
   return { startDate, endDate, today, validationError, availabilityError, quote };
 }
 
+async function getCabinetSession() {
+  try {
+    const response = await fetch('/api/account', { credentials: 'same-origin' });
+    const data = await response.json().catch(() => ({}));
+    cabinetSession = response.ok && data.authenticated ? data : null;
+  } catch {
+    cabinetSession = null;
+  }
+  return cabinetSession;
+}
+
+function updateOrderAuthUi() {
+  const signedIn = Boolean(cabinetSession?.authenticated);
+  const phoneInput = document.getElementById('user-phone');
+  if (phoneInput) {
+    phoneInput.hidden = signedIn;
+    phoneInput.required = !signedIn;
+  }
+  if (cabinetOrderPhone) {
+    cabinetOrderPhone.hidden = !signedIn;
+    cabinetOrderPhone.textContent = signedIn ? `Оформляете с номером ${cabinetSession.phone}` : '';
+  }
+  if (submitBtn && !submitInFlight) submitBtn.textContent = signedIn ? 'Продолжить оформление' : 'Войти и продолжить';
+}
+
+function savePendingBooking() {
+  if (!currentLaptop) return;
+  const draft = currentLaptop.category === 'rent' ? currentRentalDraft() : {};
+  sessionStorage.setItem(CABINET_BOOKING_KEY, JSON.stringify({
+    laptopId: currentLaptop.id,
+    deliveryType: deliveryTypeInput?.value || 'delivery',
+    lockerAddress: selectedArchaLocation(),
+    startDate: draft.startDate || '',
+    endDate: draft.endDate || ''
+  }));
+}
+
+function redirectToCabinet() {
+  savePendingBooking();
+  window.location.assign('/account?return=booking');
+}
+
 // ========== MODAL + CALCULATOR ==========
 function openOrderModal(id, { deliveryType = 'delivery' } = {}) {
   currentLaptop = laptops.find(item => item.id === id);
@@ -393,6 +438,7 @@ function openOrderModal(id, { deliveryType = 'delivery' } = {}) {
 
   modal.classList.add('active');
   document.body.style.overflow = 'hidden';
+  updateOrderAuthUi();
 }
 
 function openArchaOrder() {
@@ -693,6 +739,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   filteredLaptops = [...laptops];
   catalogReady = true;
   filterAndSearch();
+  await getCabinetSession();
+  updateOrderAuthUi();
+  const returnToBooking = new URLSearchParams(window.location.search).get('resume_booking') === '1';
+  if (returnToBooking && cabinetSession) {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(CABINET_BOOKING_KEY) || 'null');
+      if (saved?.laptopId) {
+        sessionStorage.removeItem(CABINET_BOOKING_KEY);
+        openOrderModal(Number(saved.laptopId), { deliveryType: saved.deliveryType });
+        if (rentalStartInput && saved.startDate) rentalStartInput.value = saved.startDate;
+        if (rentalEndInput && saved.endDate) rentalEndInput.value = saved.endDate;
+        if (archaLocationInput && saved.lockerAddress) archaLocationInput.value = saved.lockerAddress;
+        updateDeliveryNote();
+        updateCalculator();
+      }
+    } catch {
+      sessionStorage.removeItem(CABINET_BOOKING_KEY);
+    }
+    window.history.replaceState({}, '', window.location.pathname);
+  }
 
   // Кнопка "Показать ещё"
   btnLoadMore?.addEventListener('click', loadMoreLaptops);
@@ -806,14 +872,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     let rental = null;
 
     if (isRent) {
+      if (!cabinetSession) {
+        await getCabinetSession();
+        updateOrderAuthUi();
+      }
+      if (!cabinetSession) {
+        redirectToCabinet();
+        return;
+      }
       clampRentalDates();
       const draft = currentRentalDraft();
       if (draft.validationError || draft.availabilityError) {
         updateCalculator();
         return;
       }
-      if (name.length < 2 || phone.replace(/\D/g, '').length < 12) {
-        showRentalMessage('Укажите имя и полный номер телефона, чтобы сохранить заявку.', 'error');
+      if (name.length < 2) {
+        showRentalMessage('Укажите имя, чтобы сохранить заявку.', 'error');
         return;
       }
 
@@ -837,7 +911,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (hasDateConflict(blockingRentals, currentLaptop.id, draft.startDate, draft.endDate)) {
           updateCatalogView(false);
           submitInFlight = false;
-          if (submitBtn) submitBtn.textContent = 'Продолжить в Telegram';
+          if (submitBtn) submitBtn.textContent = 'Продолжить оформление';
           updateCalculator();
           return;
         }
@@ -851,7 +925,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           body: JSON.stringify({
             laptopId: currentLaptop.id,
             customerName: name,
-            customerPhone: phone,
+            customerPhone: cabinetSession.phone,
             startDate: draft.startDate,
             endDate: draft.endDate,
             deliveryType,
@@ -859,12 +933,17 @@ document.addEventListener('DOMContentLoaded', async () => {
           })
         });
         const result = await response.json().catch(() => ({}));
+        if (response.status === 401 && result.code === 'AUTH_REQUIRED') {
+          cabinetSession = null;
+          redirectToCabinet();
+          return;
+        }
         if (!response.ok || !result.telegramUrl) throw new Error(result.error || 'Не удалось создать заявку.');
         window.location.assign(result.telegramUrl);
         return;
       } catch (error) {
         submitInFlight = false;
-        if (submitBtn) submitBtn.textContent = 'Продолжить в Telegram';
+        if (submitBtn) submitBtn.textContent = 'Продолжить оформление';
         updateCalculator({ text: error.message || 'Не удалось создать заявку.', isError: true });
         return;
       }
@@ -922,22 +1001,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Маска телефона
   const phoneInput = document.getElementById('user-phone');
   if (phoneInput) {
-    phoneInput.addEventListener('focus', () => {
-      if (!phoneInput.value) phoneInput.value = '+996 ';
+    const updatePhoneMask = () => {
+      let digits = phoneInput.value.replace(/\D/g, '');
+      if (digits.startsWith('996')) digits = digits.slice(3);
+      if (digits.startsWith('0')) digits = digits.slice(1);
+      digits = digits.slice(0, 9);
+      const first = digits.slice(0, 3); const second = digits.slice(3, 5); const third = digits.slice(5, 7); const fourth = digits.slice(7, 9);
+      phoneInput.value = `+996${first ? ` (${first}${second ? `) ${second}` : ''}${third ? `-${third}` : ''}${fourth ? `-${fourth}` : ''}` : ' '}`;
+    };
+    phoneInput.addEventListener('focus', updatePhoneMask);
+    phoneInput.addEventListener('input', updatePhoneMask);
+    phoneInput.addEventListener('keydown', (event) => {
+      if (phoneInput.selectionStart <= 4 && ['Backspace', 'Delete'].includes(event.key)) event.preventDefault();
     });
-
-    phoneInput.addEventListener('input', (e) => {
-      let matrix = '+996 (___) __-__-__';
-      let i = 0;
-      let def = matrix.replace(/\D/g, '');
-      let val = e.target.value.replace(/\D/g, '');
-
-      if (def.length >= val.length) val = def;
-
-      e.target.value = matrix.replace(/./g, function (a) {
-        return /[_\d]/.test(a) && i < val.length ? val.charAt(i++) : i >= val.length ? '' : a;
-      });
-    });
+    updatePhoneMask();
   }
 });
 

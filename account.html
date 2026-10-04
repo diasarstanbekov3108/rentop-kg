@@ -32,7 +32,7 @@
       <p class="cabinet-muted">Мы отправим одноразовый код. Пароль не нужен.</p>
       <form id="phone-form" novalidate>
         <label for="cabinet-phone">Номер телефона</label>
-        <input id="cabinet-phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+996 700 000 000" required>
+        <input id="cabinet-phone" type="tel" inputmode="numeric" autocomplete="tel" maxlength="19" value="+996 " placeholder="+996 (___) __-__-__" required>
         <button class="cabinet-primary" type="submit">Получить код</button>
       </form>
       <form id="code-form" novalidate hidden>

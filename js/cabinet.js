@@ -9,12 +9,16 @@ const rentalsEl = document.getElementById('cabinet-rentals');
 const emptyEl = document.getElementById('cabinet-empty');
 let pendingPhone = '';
 
-const formatPhone = (value) => {
-  const digits = String(value || '').replace(/\D/g, '');
-  if (/^996\d{9}$/.test(digits)) return `+${digits}`;
-  if (/^0\d{9}$/.test(digits)) return `+996${digits.slice(1)}`;
-  return '';
+const formatPhone = (value, masked = false) => {
+  let digits = String(value || '').replace(/\D/g, '');
+  if (digits.startsWith('996')) digits = digits.slice(3);
+  if (digits.startsWith('0')) digits = digits.slice(1);
+  digits = digits.slice(0, 9);
+  if (!masked) return digits.length === 9 ? `+996${digits}` : '';
+  const first = digits.slice(0, 3); const second = digits.slice(3, 5); const third = digits.slice(5, 7); const fourth = digits.slice(7, 9);
+  return `+996${first ? ` (${first}${second ? `) ${second}` : ''}${third ? `-${third}` : ''}${fourth ? `-${fourth}` : ''}` : ' '}`;
 };
+function bindPhoneMask(input) { if (!input) return; const update = () => { input.value = formatPhone(input.value, true); }; input.addEventListener('focus', update); input.addEventListener('input', update); input.addEventListener('keydown', event => { if (input.selectionStart <= 4 && ['Backspace', 'Delete'].includes(event.key)) event.preventDefault(); }); update(); }
 const message = (text = '', kind = '') => { statusEl.textContent = text; statusEl.className = `cabinet-status${kind ? ` is-${kind}` : ''}`; };
 const request = async (method, payload) => {
   const response = await fetch('/api/account', { method, credentials: 'same-origin', headers: payload ? { 'content-type': 'application/json' } : {}, body: payload ? JSON.stringify(payload) : undefined });
@@ -31,6 +35,9 @@ function showRentals(orders, phone) {
   document.getElementById('cabinet-greeting').textContent = `Здравствуйте, ${phone.replace('+996', '+996 ')}!`;
   rentalsEl.innerHTML = orders.map(order => `<article class="cabinet-rental"><div class="cabinet-rental-top"><div><h3>${escape(order.laptop_title || 'Ноутбук Rentop')}</h3><p class="cabinet-rental-ref">Заявка ${escape(order.reference)}</p></div><span class="cabinet-badge">${escape(statusName(order.status))}</span></div><div class="cabinet-rental-grid"><div>Срок<strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div>Получение<strong>${escape(order.delivery_label)}</strong></div><div>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div></div></article>`).join('');
   emptyEl.hidden = orders.length !== 0;
+  if (new URLSearchParams(window.location.search).get('return') === 'booking') {
+    window.setTimeout(() => window.location.assign('/?resume_booking=1'), 250);
+  }
 }
 async function loadSession() { try { const data = await request('GET'); if (data.authenticated) showRentals(data.orders || [], data.phone); } catch { /* Silent for guests. */ } }
 
@@ -38,4 +45,5 @@ phoneForm?.addEventListener('submit', async event => { event.preventDefault(); c
 codeForm?.addEventListener('submit', async event => { event.preventDefault(); const code = codeInput.value.replace(/\D/g, ''); if (code.length !== 6) return message('Введите все 6 цифр кода.', 'error'); const button = codeForm.querySelector('button'); button.disabled = true; message('Проверяем код…'); try { const data = await request('POST', { action:'verify_code', phone:pendingPhone, code }); showRentals(data.orders || [], data.phone); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
 document.getElementById('change-phone')?.addEventListener('click', () => { codeForm.hidden = true; phoneForm.hidden = false; codeInput.value = ''; message(''); phoneInput.focus(); });
 document.getElementById('cabinet-logout')?.addEventListener('click', async () => { await request('POST', { action:'logout' }).catch(() => {}); dashboard.hidden = true; login.hidden = false; phoneForm.hidden = false; codeForm.hidden = true; phoneInput.value = ''; codeInput.value = ''; pendingPhone = ''; message('Вы вышли из кабинета.'); });
+bindPhoneMask(phoneInput);
 loadSession();
