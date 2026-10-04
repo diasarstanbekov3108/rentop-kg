@@ -36,6 +36,18 @@ CREATE INDEX IF NOT EXISTS customer_cabinet_sessions_token_idx
   ON public.customer_cabinet_sessions(token_hash)
   WHERE revoked_at IS NULL;
 
+-- Для кабинета номер хранится в едином формате +996XXXXXXXXX. Старые заявки
+-- могли быть записаны с пробелами, скобками или тире, поэтому нормализуем их.
+UPDATE public.rental_orders
+SET customer_phone = CASE
+  WHEN regexp_replace(coalesce(customer_phone, ''), '\\D', '', 'g') ~ '^996[0-9]{9}$'
+    THEN '+' || regexp_replace(customer_phone, '\\D', '', 'g')
+  WHEN regexp_replace(coalesce(customer_phone, ''), '\\D', '', 'g') ~ '^0[0-9]{9}$'
+    THEN '+996' || substr(regexp_replace(customer_phone, '\\D', '', 'g'), 2)
+  ELSE customer_phone
+END
+WHERE customer_phone IS NOT NULL;
+
 CREATE INDEX IF NOT EXISTS rental_orders_customer_phone_idx
   ON public.rental_orders(customer_phone);
 

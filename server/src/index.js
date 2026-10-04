@@ -4,6 +4,7 @@ import { loadConfig } from './config.js';
 import { createSupabaseApi } from './supabase.js';
 import { createTelegramApi } from './telegram.js';
 import { createRentopBot } from './bot.js';
+import { normalizeKyrgyzPhone } from './sms.js';
 
 const config = loadConfig();
 const telegram = createTelegramApi(config.telegramBotToken);
@@ -65,7 +66,7 @@ async function createBooking(request, response) {
   const order = await database.createOrder({
     laptop_id: laptopId,
     customer_name: String(payload.customerName || '').trim() || null,
-    customer_phone: String(payload.customerPhone || '').trim() || null,
+    customer_phone: `+${normalizeKyrgyzPhone(payload.customerPhone)}`,
     rental_start_date: payload.startDate,
     rental_end_date: payload.endDate,
     rental_days: quote.days,

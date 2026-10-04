@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { loadConfig } from '../server/src/config.js';
 import { createSupabaseApi } from '../server/src/supabase.js';
 import { createTelegramApi } from '../server/src/telegram.js';
+import { normalizeKyrgyzPhone } from '../server/src/sms.js';
 
 function quote(laptop, startDate, endDate) {
   const days = Math.round((new Date(`${endDate}T00:00:00Z`) - new Date(`${startDate}T00:00:00Z`)) / 86_400_000);
@@ -33,7 +34,7 @@ export default async function handler(request, response) {
     const order = await database.createOrder({
       laptop_id: laptopId,
       customer_name: String(payload.customerName || '').trim() || null,
-      customer_phone: String(payload.customerPhone || '').trim() || null,
+      customer_phone: `+${normalizeKyrgyzPhone(payload.customerPhone)}`,
       rental_start_date: payload.startDate,
       rental_end_date: payload.endDate,
       rental_days: rental.days,
