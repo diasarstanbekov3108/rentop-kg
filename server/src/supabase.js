@@ -31,6 +31,13 @@ export function createSupabaseApi(config) {
       '&select=id,laptop_id,rental_start_date,rental_end_date,rental_days,status,total_amount,delivery_type,locker_address,created_at,updated_at' +
       `&order=updated_at.desc&limit=${Math.min(Math.max(Number(limit) || 30, 1), 50)}`
     ),
+    listCustomerRequests: (orderId) => request(
+      `rental_order_customer_requests?order_id=eq.${encodeURIComponent(orderId)}` +
+      '&select=id,kind,status,customer_message,requested_days,estimated_amount,proposed_return_date,created_at,updated_at&order=created_at.desc&limit=12'
+    ),
+    createCustomerRequest: (customerRequest) => request('rental_order_customer_requests', {
+      method: 'POST', body: JSON.stringify(customerRequest)
+    }).then((rows) => rows?.[0] || null),
     updateOrder: (id, patch) => request(`rental_orders?id=eq.${encodeURIComponent(id)}`, {
       method: 'PATCH', body: JSON.stringify(patch)
     }).then((rows) => rows?.[0] || null),
