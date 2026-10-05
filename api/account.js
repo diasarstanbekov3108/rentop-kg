@@ -37,7 +37,14 @@ export default async function handler(request, response) {
     const orders = await database.listOrdersByCustomerPhone(phone);
     const laptops = await Promise.all(orders.map(order => database.getLaptop(order.laptop_id)));
     const requests = await Promise.all(orders.map((order) => database.listCustomerRequests(order.id).catch(() => [])));
-    const documents = await Promise.all(orders.map((order) => database.listOrderDocuments(order.id).catch(() => [])));
+    const documents = await Promise.all(orders.map(async (order) => {
+      const items = await database.listOrderDocuments(order.id).catch(() => []);
+      return Promise.all(items.map(async (document) => {
+        const signed = await database.createSignedDocumentDownload(document.storage_path).catch(() => null);
+        const path = signed?.signedURL || signed?.signedUrl || signed?.url || '';
+        return { ...document, view_url:path ? (path.startsWith('http') ? path : `${config.supabaseUrl}/storage/v1${path}`) : '' };
+      }));
+    }));
     return orders.map((order, index) => ({
       ...order,
       laptop_title:laptops[index]?.title || laptops[index]?.name || 'Ноутбук Rentop',

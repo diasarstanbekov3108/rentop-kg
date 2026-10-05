@@ -20,6 +20,7 @@
     <section id="manager-dashboard" hidden><div class="manager-stats" id="manager-stats"></div><div class="manager-toolbar"><label><span>Найти заявку</span><input id="manager-search" type="search" placeholder="Код заявки, клиент, телефон, ноутбук"></label><div class="manager-filters"><button class="is-active" data-filter="all">Все</button><button data-filter="new">Новые</button><button data-filter="documents">Документы</button><button data-filter="active">Активные</button><button data-filter="closed">Завершённые</button></div></div><div class="manager-orders" id="manager-orders"></div></section>
     <p class="cabinet-status" id="manager-status" role="status"></p>
   </main>
+  <div class="cabinet-document-viewer" id="manager-document-viewer" hidden role="dialog" aria-modal="true" aria-label="Просмотр документа"><div class="cabinet-document-viewer-card"><button class="cabinet-document-viewer-close" id="manager-document-viewer-close" type="button" aria-label="Закрыть просмотр">×</button><div id="manager-document-viewer-content"></div></div></div>
   <script type="module" src="js/manager.js"></script>
 </body>
 </html>

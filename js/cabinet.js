@@ -11,7 +11,10 @@ const emptyEl = document.getElementById('cabinet-empty');
 const profileEl = document.getElementById('cabinet-profile');
 const dashboardNotice = document.getElementById('cabinet-dashboard-notice');
 const managerLink = document.getElementById('cabinet-manager-link');
+const documentViewer = document.getElementById('cabinet-document-viewer');
+const documentViewerContent = document.getElementById('cabinet-document-viewer-content');
 let pendingPhone = '';
+let currentPreviewUrl = '';
 
 const formatPhone = (value, masked = false) => {
   let digits = String(value || '').replace(/\D/g, '');
@@ -46,6 +49,26 @@ const statusInfo = (status) => ({
 const date = (value) => value ? new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',year:'numeric'}).format(new Date(`${value}T00:00:00`)) : '—';
 const escape = (value) => String(value || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
+function closeDocumentViewer() {
+  if (!documentViewer) return;
+  documentViewer.hidden = true;
+  if (documentViewerContent) documentViewerContent.innerHTML = '';
+  document.body.style.overflow = '';
+  if (currentPreviewUrl.startsWith('blob:')) URL.revokeObjectURL(currentPreviewUrl);
+  currentPreviewUrl = '';
+}
+
+function openDocumentViewer(url, name = 'Документ', contentType = '') {
+  if (!documentViewer || !documentViewerContent || !url) return;
+  currentPreviewUrl = url;
+  const isPdf = contentType === 'application/pdf' || /\.pdf(?:[?#]|$)/i.test(name);
+  documentViewerContent.innerHTML = isPdf
+    ? `<iframe src="${escape(url)}" title="${escape(name)}"></iframe>`
+    : `<img src="${escape(url)}" alt="${escape(name)}">`;
+  documentViewer.hidden = false;
+  document.body.style.overflow = 'hidden';
+}
+
 function requestLabel(request) {
   if (request.kind === 'extension') return `Продление: +${request.requested_days} дн. до ${date(request.proposed_return_date)}`;
   return 'Досрочный возврат';
@@ -57,7 +80,13 @@ function latestDocuments(order) {
 }
 function documentSummary(order) {
   const latest = latestDocuments(order);
-  const state = (kind, label) => `<span>${latest.has(kind) ? (latest.get(kind).status === 'rejected' ? '↺' : '✓') : '○'} ${label}</span>`;
+  const state = (kind, label) => {
+    const document = latest.get(kind);
+    const text = `${document ? (document.status === 'rejected' ? '↺' : '✓') : '○'} ${label}`;
+    return document?.view_url
+      ? `<button type="button" class="cabinet-doc-chip" data-document-view="${escape(document.view_url)}" data-document-name="${escape(document.file_name || label)}" data-document-type="${escape(document.content_type || '')}">${text}</button>`
+      : `<span>${text}</span>`;
+  };
   return `<div class="cabinet-doc-summary">${state('identity', 'Документ')}${state('selfie', 'Селфи')}${state('supporting', 'Доп. документ')}</div>`;
 }
 function documentMode(order) {
@@ -154,7 +183,12 @@ rentalsEl?.addEventListener('click', event => {
   if (filePreview && !filePreview.disabled) {
     const form = filePreview.closest('form');
     const file = form?.elements[filePreview.dataset.filePreview]?.files?.[0];
-    if (file) window.open(URL.createObjectURL(file), '_blank', 'noopener,noreferrer');
+    if (file) openDocumentViewer(URL.createObjectURL(file), file.name, file.type);
+    return;
+  }
+  const savedDocument = event.target.closest('[data-document-view]');
+  if (savedDocument) {
+    openDocumentViewer(savedDocument.dataset.documentView, savedDocument.dataset.documentName, savedDocument.dataset.documentType);
     return;
   }
   const button = event.target.closest('[data-panel]');
@@ -178,6 +212,9 @@ rentalsEl?.addEventListener('click', event => {
     panel.hidden = true; panel.innerHTML = '';
   }
 });
+document.getElementById('cabinet-document-viewer-close')?.addEventListener('click', closeDocumentViewer);
+documentViewer?.addEventListener('click', event => { if (event.target === documentViewer) closeDocumentViewer(); });
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && !documentViewer?.hidden) closeDocumentViewer(); });
 rentalsEl?.addEventListener('change', event => {
   const input = event.target.closest('input[type="file"]');
   if (!input) return;
