@@ -77,9 +77,11 @@ export function createSupabaseApi(config) {
     createSignedDocumentDownload: (path, expiresIn = 3600) => storageRequest(`object/sign/rental-documents/${path}`, {
       method: 'POST', body: JSON.stringify({ expiresIn })
     }),
+    deleteDocumentFile: (path) => storageRequest(`object/rental-documents/${path}`, { method: 'DELETE' }),
     updateOrder: (id, patch) => request(`rental_orders?id=eq.${encodeURIComponent(id)}`, {
       method: 'PATCH', body: JSON.stringify(patch)
     }).then((rows) => rows?.[0] || null),
+    deleteOrder: (id) => request(`rental_orders?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' }),
     getSession: (orderId) => getOne(`rental_order_bot_sessions?order_id=eq.${encodeURIComponent(orderId)}&select=*`),
     getSessionByUser: (userId) => getOne(`rental_order_bot_sessions?telegram_user_id=eq.${encodeURIComponent(userId)}&select=*&order=updated_at.desc`),
     listOrdersByTelegramUser: (userId, limit = 20) => request(

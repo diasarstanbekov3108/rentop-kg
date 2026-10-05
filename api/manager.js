@@ -4,6 +4,7 @@ import { createSupabaseApi } from '../server/src/supabase.js';
 
 const COOKIE = '__Host-rentop_session';
 const allowedDocumentStates = new Set(['accepted', 'rejected']);
+const removableStatuses = new Set(['draft', 'pending_review', 'awaiting_payment', 'payment_review', 'confirmed', 'awaiting_pickup', 'cancelled', 'rejected']);
 const statusTransitions = Object.freeze({
   awaiting_payment:['confirmed'],
   confirmed:['awaiting_pickup'],
@@ -53,7 +54,7 @@ export default async function handler(request, response) {
       if (!document) return reply(response, 404, { error:'Документ не найден.' });
       const note = String(payload.note || '').trim().slice(0, 500);
       const reviewed = await database.reviewOrderDocument(document.id, { status:state, reviewed_at:new Date().toISOString(), reviewer_note:note || null });
-      await database.createEvent({ order_id:document.order_id, event_type:`manager_${state}_document_from_web`, actor_type:'manager', metadata:{ document_kind:document.kind } });
+      await database.createEvent({ order_id:document.order_id, event_type:`manager_${state}_document_from_web`, actor_type:'manager', metadata:{ document_kind:document.kind, reviewer_note:note || null } }).catch(error => console.error('Manager document audit event failed:', error.message));
       if (state === 'accepted') {
         const documents = await database.listOrderDocuments(document.order_id);
         const latest = new Map();
@@ -62,11 +63,32 @@ export default async function handler(request, response) {
           const order = await database.getOrder(document.order_id);
           if (['draft','pending_review'].includes(order?.status)) {
             await database.updateOrder(order.id, { status:'awaiting_payment' });
-            await database.createEvent({ order_id:order.id, event_type:'documents_accepted_waiting_payment_from_web', actor_type:'manager', metadata:{} });
+            await database.createEvent({ order_id:order.id, event_type:'documents_accepted_waiting_payment_from_web', actor_type:'manager', metadata:{} }).catch(error => console.error('Manager order audit event failed:', error.message));
           }
         }
       }
       return reply(response, 200, { ok:true, document:reviewed });
+    }
+    if (payload.action === 'reject_all_documents') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      const note = String(payload.note || '').trim().slice(0, 500);
+      if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
+      if (note.length < 3) return reply(response, 400, { error:'Укажите причину отклонения для клиента.' });
+      const documents = await database.listOrderDocuments(order.id);
+      const pending = documents.filter(document => document.status === 'pending_review');
+      if (!pending.length) return reply(response, 409, { error:'В этой заявке нет документов на проверке.' });
+      const reviewed = await Promise.all(pending.map(document => database.reviewOrderDocument(document.id, { status:'rejected', reviewed_at:new Date().toISOString(), reviewer_note:note })));
+      await database.createEvent({ order_id:order.id, event_type:'manager_rejected_all_documents_from_web', actor_type:'manager', metadata:{ count:pending.length, reviewer_note:note } }).catch(error => console.error('Manager rejection audit event failed:', error.message));
+      return reply(response, 200, { ok:true, documents:reviewed, note });
+    }
+    if (payload.action === 'delete_test_order') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
+      if (!removableStatuses.has(order.status)) return reply(response, 409, { error:'Активную или завершённую аренду удалять нельзя. Для неё используйте штатный статус.' });
+      const documents = await database.listOrderDocuments(order.id).catch(() => []);
+      for (const document of documents) await database.deleteDocumentFile(document.storage_path);
+      await database.deleteOrder(order.id);
+      return reply(response, 200, { ok:true, deletedOrderId:order.id });
     }
     if (payload.action === 'advance_order') {
       const order = await database.getOrder(String(payload.orderId || ''));
@@ -74,7 +96,7 @@ export default async function handler(request, response) {
       if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
       if (!statusTransitions[order.status]?.includes(nextStatus)) return reply(response, 409, { error:'Этот переход недоступен для текущего статуса заявки.' });
       const updated = await database.updateOrder(order.id, { status:nextStatus });
-      await database.createEvent({ order_id:order.id, event_type:`manager_changed_status_to_${nextStatus}_from_web`, actor_type:'manager', metadata:{ previous_status:order.status } });
+      await database.createEvent({ order_id:order.id, event_type:`manager_changed_status_to_${nextStatus}_from_web`, actor_type:'manager', metadata:{ previous_status:order.status } }).catch(error => console.error('Manager transition audit event failed:', error.message));
       return reply(response, 200, { ok:true, order:updated });
     }
     return reply(response, 400, { error:'Неизвестное действие.' });
