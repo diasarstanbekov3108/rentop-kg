@@ -55,6 +55,7 @@ export default async function handler(request, response) {
       const note = String(payload.note || '').trim().slice(0, 500);
       const reviewed = await database.reviewOrderDocument(document.id, { status:state, reviewed_at:new Date().toISOString(), reviewer_note:note || null });
       await database.createEvent({ order_id:document.order_id, event_type:`manager_${state}_document_from_web`, actor_type:'manager', metadata:{ document_kind:document.kind, reviewer_note:note || null } }).catch(error => console.error('Manager document audit event failed:', error.message));
+      let updatedOrder = null;
       if (state === 'accepted') {
         const documents = await database.listOrderDocuments(document.order_id);
         const latest = new Map();
@@ -62,12 +63,12 @@ export default async function handler(request, response) {
         if (['identity','selfie'].every(kind => latest.get(kind)?.status === 'accepted')) {
           const order = await database.getOrder(document.order_id);
           if (['draft','pending_review'].includes(order?.status)) {
-            await database.updateOrder(order.id, { status:'awaiting_payment' });
+            updatedOrder = await database.updateOrder(order.id, { status:'awaiting_payment', hold_expires_at:new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() });
             await database.createEvent({ order_id:order.id, event_type:'documents_accepted_waiting_payment_from_web', actor_type:'manager', metadata:{} }).catch(error => console.error('Manager order audit event failed:', error.message));
           }
         }
       }
-      return reply(response, 200, { ok:true, document:reviewed });
+      return reply(response, 200, { ok:true, document:reviewed, order:updatedOrder });
     }
     if (payload.action === 'reject_all_documents') {
       const order = await database.getOrder(String(payload.orderId || ''));

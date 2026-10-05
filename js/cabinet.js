@@ -10,7 +10,6 @@ const rentalsEl = document.getElementById('cabinet-rentals');
 const emptyEl = document.getElementById('cabinet-empty');
 const profileEl = document.getElementById('cabinet-profile');
 const dashboardNotice = document.getElementById('cabinet-dashboard-notice');
-const managerLink = document.getElementById('cabinet-manager-link');
 const documentViewer = document.getElementById('cabinet-document-viewer');
 const documentViewerContent = document.getElementById('cabinet-document-viewer-content');
 let pendingPhone = '';
@@ -152,18 +151,11 @@ function showRentals(orders, phone, profile = null) {
     window.setTimeout(() => window.location.assign('/?resume_booking=1'), 250);
   }
 }
-async function loadManagerAccess() {
-  if (!managerLink) return;
-  try {
-    const response = await fetch('/api/manager?access=1', { credentials:'same-origin', cache:'no-store' });
-    managerLink.hidden = !response.ok;
-  } catch { managerLink.hidden = true; }
-}
 async function loadSession() {
   try {
     const data = await request('GET');
     loading.hidden = true;
-    if (data.authenticated) { showRentals(data.orders || [], data.phone, data.profile); loadManagerAccess(); return; }
+    if (data.authenticated) { showRentals(data.orders || [], data.phone, data.profile); return; }
     login.hidden = false;
   } catch {
     loading.hidden = true;

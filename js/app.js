@@ -72,7 +72,6 @@ const navAccountGuest = document.getElementById('nav-account-guest');
 const navAccountAuth = document.getElementById('nav-account-auth');
 const navAccountGreeting = document.getElementById('nav-account-greeting');
 const navAccountLogout = document.getElementById('nav-account-logout');
-const navManagerLink = document.getElementById('nav-manager-link');
 
 // Lightbox
 const lightbox = document.getElementById('lightbox');
@@ -382,22 +381,7 @@ async function getCabinetSession() {
     cabinetSession = null;
   }
   updateSiteAccountUi();
-  loadManagerNavAccess();
   return cabinetSession;
-}
-
-async function loadManagerNavAccess() {
-  if (!navManagerLink) return;
-  if (!cabinetSession?.authenticated) {
-    navManagerLink.hidden = true;
-    return;
-  }
-  try {
-    const response = await fetch('/api/manager?access=1', { credentials: 'same-origin', cache: 'no-store' });
-    navManagerLink.hidden = !response.ok;
-  } catch {
-    navManagerLink.hidden = true;
-  }
 }
 
 function updateSiteAccountUi() {
@@ -444,7 +428,6 @@ navAccountLogout?.addEventListener('click', async () => {
     });
   } finally {
     cabinetSession = null;
-    if (navManagerLink) navManagerLink.hidden = true;
     updateOrderAuthUi();
     window.location.assign('/');
   }
