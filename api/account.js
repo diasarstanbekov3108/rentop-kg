@@ -130,6 +130,7 @@ export default async function handler(request, response) {
         if (latestOfKind && latestOfKind.status !== 'rejected') return json(response, 409, { error:'Этот документ уже отправлен. Дождитесь проверки или запросите исправление.' });
         const document = await database.registerOrderDocument({ order_id:order.id, kind, storage_path:path, file_name:fileName, content_type:contentType, byte_size:byteSize });
         await database.createEvent({ order_id:order.id, event_type:'customer_uploaded_document_from_cabinet', actor_type:'customer', metadata:{ kind } });
+        if (order.status === 'draft') await database.updateOrder(order.id, { status:'pending_review' });
         await notifyDocumentManager(order, document);
         return json(response, 201, { ok:true, document });
       }

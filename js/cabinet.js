@@ -51,7 +51,9 @@ function requestLabel(request) {
   return 'Досрочный возврат';
 }
 function latestDocuments(order) {
-  return new Map((order.documents || []).map(document => [document.kind, document]));
+  const latest = new Map();
+  for (const document of order.documents || []) if (!latest.has(document.kind)) latest.set(document.kind, document);
+  return latest;
 }
 function documentSummary(order) {
   const latest = latestDocuments(order);

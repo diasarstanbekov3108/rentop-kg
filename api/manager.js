@@ -4,6 +4,14 @@ import { createSupabaseApi } from '../server/src/supabase.js';
 
 const COOKIE = '__Host-rentop_session';
 const allowedDocumentStates = new Set(['accepted', 'rejected']);
+const statusTransitions = Object.freeze({
+  awaiting_payment:['confirmed'],
+  confirmed:['awaiting_pickup'],
+  awaiting_pickup:['issued'],
+  issued:['in_use'],
+  return_requested:['returned'],
+  returned:['completed']
+});
 function readCookie(request, name) { const source = String(request.headers.cookie || ''); return source.split(';').map(value => value.trim()).find(value => value.startsWith(`${name}=`))?.slice(name.length + 1) || ''; }
 function hash(secret, value) { return createHmac('sha256', secret).update(value).digest('hex'); }
 function reply(response, status, body) { response.setHeader('Cache-Control', 'private, no-store, max-age=0'); response.status(status).json(body); }
@@ -38,14 +46,37 @@ export default async function handler(request, response) {
     }
     if (request.method !== 'POST') return reply(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
-    if (payload.action !== 'review_document') return reply(response, 400, { error:'Неизвестное действие.' });
-    const state = String(payload.status || '');
-    if (!allowedDocumentStates.has(state)) return reply(response, 400, { error:'Некорректный статус документа.' });
-    const document = await database.getOrderDocument(String(payload.documentId || ''));
-    if (!document) return reply(response, 404, { error:'Документ не найден.' });
-    const note = String(payload.note || '').trim().slice(0, 500);
-    const reviewed = await database.reviewOrderDocument(document.id, { status:state, reviewed_at:new Date().toISOString(), reviewer_note:note || null });
-    await database.createEvent({ order_id:document.order_id, event_type:`manager_${state}_document_from_web`, actor_type:'manager', metadata:{ document_kind:document.kind } });
-    return reply(response, 200, { ok:true, document:reviewed });
+    if (payload.action === 'review_document') {
+      const state = String(payload.status || '');
+      if (!allowedDocumentStates.has(state)) return reply(response, 400, { error:'Некорректный статус документа.' });
+      const document = await database.getOrderDocument(String(payload.documentId || ''));
+      if (!document) return reply(response, 404, { error:'Документ не найден.' });
+      const note = String(payload.note || '').trim().slice(0, 500);
+      const reviewed = await database.reviewOrderDocument(document.id, { status:state, reviewed_at:new Date().toISOString(), reviewer_note:note || null });
+      await database.createEvent({ order_id:document.order_id, event_type:`manager_${state}_document_from_web`, actor_type:'manager', metadata:{ document_kind:document.kind } });
+      if (state === 'accepted') {
+        const documents = await database.listOrderDocuments(document.order_id);
+        const latest = new Map();
+        for (const item of documents) if (!latest.has(item.kind)) latest.set(item.kind, item);
+        if (['identity','selfie'].every(kind => latest.get(kind)?.status === 'accepted')) {
+          const order = await database.getOrder(document.order_id);
+          if (['draft','pending_review'].includes(order?.status)) {
+            await database.updateOrder(order.id, { status:'awaiting_payment' });
+            await database.createEvent({ order_id:order.id, event_type:'documents_accepted_waiting_payment_from_web', actor_type:'manager', metadata:{} });
+          }
+        }
+      }
+      return reply(response, 200, { ok:true, document:reviewed });
+    }
+    if (payload.action === 'advance_order') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      const nextStatus = String(payload.nextStatus || '');
+      if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
+      if (!statusTransitions[order.status]?.includes(nextStatus)) return reply(response, 409, { error:'Этот переход недоступен для текущего статуса заявки.' });
+      const updated = await database.updateOrder(order.id, { status:nextStatus });
+      await database.createEvent({ order_id:order.id, event_type:`manager_changed_status_to_${nextStatus}_from_web`, actor_type:'manager', metadata:{ previous_status:order.status } });
+      return reply(response, 200, { ok:true, order:updated });
+    }
+    return reply(response, 400, { error:'Неизвестное действие.' });
   } catch (error) { console.error('Manager API failed:', error.message); return reply(response, 400, { error:error.message || 'Не удалось загрузить панель менеджера.' }); }
 }
