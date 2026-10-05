@@ -414,6 +414,13 @@ function updateSiteAccountUi() {
 function updateOrderAuthUi() {
   updateSiteAccountUi();
   const signedIn = Boolean(cabinetSession?.authenticated);
+  const nameInput = document.getElementById('user-name');
+  const verifiedName = String(cabinetSession?.profile?.full_name || '').trim();
+  if (nameInput) {
+    if (signedIn && verifiedName) nameInput.value = verifiedName;
+    nameInput.readOnly = Boolean(signedIn && verifiedName);
+    nameInput.title = signedIn && verifiedName ? 'ФИО берётся из личного кабинета. Для исправления откройте личный кабинет.' : '';
+  }
   const phoneInput = document.getElementById('user-phone');
   if (phoneInput) {
     phoneInput.hidden = signedIn;

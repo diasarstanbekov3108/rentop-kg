@@ -23,6 +23,7 @@ function allowOrigin(request, response) { const origin = request.headers.origin;
 function label(delivery) { return ({ arca_locker:'ARCHA POINT 24/7', delivery:'Доставка', pickup:'Самовывоз' }[delivery] || 'Уточняется'); }
 function addDays(isoDate, days) { const date = new Date(`${isoDate}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); }
 function orderRef(order) { return String(order.id || '').slice(0, 8).toUpperCase(); }
+function documentLabel(kind) { return ({ identity:'Паспорт или ID-карта', selfie:'Селфи с документом', supporting:'Официальный подтверждающий документ' }[kind] || 'Документ'); }
 
 export default async function handler(request, response) {
   allowOrigin(request, response);
@@ -72,7 +73,7 @@ export default async function handler(request, response) {
       const signedPath = signed.signedURL || signed.signedUrl || signed.url;
       if (!signedPath) throw new Error('Не удалось получить временную ссылку на документ.');
       const documentUrl = signedPath.startsWith('http') ? signedPath : `${config.supabaseUrl}/storage/v1${signedPath}`;
-      const kindLabel = ({ identity:'Паспорт или ID-карта', selfie:'Селфи с документом', supporting:'Дополнительный документ' }[document.kind] || 'Документ');
+      const kindLabel = documentLabel(document.kind);
       await createTelegramApi(config.telegramBotToken).sendDocument(
         config.adminChatId,
         documentUrl,
@@ -87,7 +88,7 @@ export default async function handler(request, response) {
     if (request.method !== 'POST') return json(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
     if (payload.action === 'logout') { const raw = readCookie(request, COOKIE); if (raw) await database.revokeCabinetSession(hash(secret, raw)); response.setHeader('Set-Cookie', `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`); return json(response, 200, { ok:true }); }
-    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'document_correction_request' || payload.action === 'save_profile' || payload.action === 'extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request') {
+    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'save_profile' || payload.action === 'extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request') {
       const session = await verifySession();
       if (!session) return json(response, 401, { error:'Сессия истекла. Войдите в кабинет снова.', code:'AUTH_REQUIRED' });
       if (payload.action === 'save_profile') {
@@ -99,6 +100,14 @@ export default async function handler(request, response) {
       }
       const order = await database.getOrder(String(payload.orderId || ''));
       if (!order || order.customer_phone !== session.phone) return json(response, 404, { error:'Заявка не найдена.' });
+      if (payload.action === 'accept_offer') {
+        if (order.offer_accepted_at) return json(response, 200, { ok:true, acceptedAt:order.offer_accepted_at });
+        const acceptedAt = new Date().toISOString();
+        const offerVersion = String(config.offerVersion || '2026-09-30').slice(0, 80);
+        await database.updateOrder(order.id, { offer_version:offerVersion, offer_accepted_at:acceptedAt });
+        await database.createEvent({ order_id:order.id, event_type:'offer_accepted_from_cabinet', actor_type:'customer', metadata:{ offer_version:offerVersion } });
+        return json(response, 200, { ok:true, acceptedAt, offerVersion });
+      }
       if (payload.action === 'document_correction_request') {
         const documents = await database.listOrderDocuments(order.id);
         if (!documents.length) return json(response, 400, { error:'Сначала прикрепите документы.' });
@@ -130,6 +139,7 @@ export default async function handler(request, response) {
         const contentType = String(payload.contentType || '').toLowerCase();
         const byteSize = Number(payload.byteSize);
         const fileName = String(payload.fileName || 'document').replace(/[\\/\0]/g, '_').slice(0, 180);
+        if (!order.offer_accepted_at) return json(response, 409, { error:'Перед отправкой документов ознакомьтесь и согласитесь с публичной офертой.' });
         if (!DOCUMENT_TYPES.has(kind) || !path.startsWith(`${order.id}/${kind}/`) || !DOCUMENT_MIME_TYPES.has(contentType) || !Number.isInteger(byteSize) || byteSize < 1 || byteSize > MAX_DOCUMENT_BYTES) {
           return json(response, 400, { error:'Не удалось зарегистрировать документ.' });
         }
