@@ -6,6 +6,7 @@ const COOKIE = '__Host-rentop_session';
 const allowedDocumentStates = new Set(['accepted', 'rejected']);
 const removableStatuses = new Set(['draft', 'pending_review', 'awaiting_payment', 'payment_review', 'confirmed', 'awaiting_pickup', 'cancelled', 'rejected']);
 const statusTransitions = Object.freeze({
+  pending_review:['awaiting_payment'],
   awaiting_payment:['confirmed'],
   confirmed:['awaiting_pickup'],
   awaiting_pickup:['issued'],
@@ -87,7 +88,8 @@ export default async function handler(request, response) {
       if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
       if (!removableStatuses.has(order.status)) return reply(response, 409, { error:'Активную или завершённую аренду удалять нельзя. Для неё используйте штатный статус.' });
       const documents = await database.listOrderDocuments(order.id).catch(() => []);
-      for (const document of documents) await database.deleteDocumentFile(document.storage_path);
+      const cleanup = await Promise.allSettled(documents.map(document => database.deleteDocumentFile(document.storage_path)));
+      cleanup.filter(result => result.status === 'rejected').forEach(result => console.error('Test document cleanup failed:', result.reason?.message || result.reason));
       await database.deleteOrder(order.id);
       return reply(response, 200, { ok:true, deletedOrderId:order.id });
     }
@@ -96,7 +98,9 @@ export default async function handler(request, response) {
       const nextStatus = String(payload.nextStatus || '');
       if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
       if (!statusTransitions[order.status]?.includes(nextStatus)) return reply(response, 409, { error:'Этот переход недоступен для текущего статуса заявки.' });
-      const updated = await database.updateOrder(order.id, { status:nextStatus });
+      const updated = await database.updateOrder(order.id, nextStatus === 'awaiting_payment'
+        ? { status:nextStatus, hold_expires_at:new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() }
+        : { status:nextStatus });
       await database.createEvent({ order_id:order.id, event_type:`manager_changed_status_to_${nextStatus}_from_web`, actor_type:'manager', metadata:{ previous_status:order.status } }).catch(error => console.error('Manager transition audit event failed:', error.message));
       return reply(response, 200, { ok:true, order:updated });
     }
