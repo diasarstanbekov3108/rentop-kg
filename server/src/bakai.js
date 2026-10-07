@@ -39,10 +39,15 @@ async function bankRequest(config, path, options = {}) {
 
 export async function createBakaiToken(config) {
   if (!config.bakai.enabled) throw new Error('Интеграция Bakai ещё не настроена: добавьте логин, пароль и расчётный счёт в Vercel.');
-  const body = await bankRequest(config, '/Auth/Login', {
-    method:'POST',
-    body:JSON.stringify({ login:config.bakai.login, password:config.bakai.password })
-  });
+  let body;
+  try {
+    body = await bankRequest(config, '/Auth/Login', {
+      method:'POST',
+      body:JSON.stringify({ login:config.bakai.login, password:config.bakai.password })
+    });
+  } catch (error) {
+    throw new Error(`Ошибка авторизации Bakai (/Auth/Login): ${error.message}`);
+  }
   if (!body?.token) throw new Error('Bakai не вернул токен авторизации.');
   return body.token;
 }
@@ -53,19 +58,24 @@ export function makePaymentOperationId(orderId) {
 
 export async function generateBakaiQr(config, { operationId, amount, comment, ttlHours = 24 }) {
   const token = await createBakaiToken(config);
-  const body = await bankRequest(config, '/api/Qr/GenerateQRWithComment', {
-    method:'POST',
-    headers:{ Authorization:`Bearer ${token}` },
-    body:JSON.stringify({
-      accountNo:config.bakai.accountNo,
-      currencyId:SOM_CURRENCY_ID,
-      amount:Number(amount),
-      operationID:operationId,
-      comment:String(comment).slice(0, 100),
-      qrTtlUnits:2,
-      qrTtl:Math.max(1, Math.min(Number(ttlHours) || 24, 24))
-    })
-  });
+  let body;
+  try {
+    body = await bankRequest(config, '/api/Qr/GenerateQRWithComment', {
+      method:'POST',
+      headers:{ Authorization:`Bearer ${token}` },
+      body:JSON.stringify({
+        accountNo:config.bakai.accountNo,
+        currencyId:SOM_CURRENCY_ID,
+        amount:Number(amount),
+        operationID:operationId,
+        comment:String(comment).slice(0, 100),
+        qrTtlUnits:2,
+        qrTtl:Math.max(1, Math.min(Number(ttlHours) || 24, 24))
+      })
+    });
+  } catch (error) {
+    throw new Error(`Ошибка создания QR Bakai (GenerateQRWithComment): ${error.message}`);
+  }
   if (!body?.qrLink && !body?.qrImage) throw new Error('Bakai не вернул QR-код или ссылку на оплату.');
   return body;
 }
