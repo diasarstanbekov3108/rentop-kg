@@ -112,8 +112,7 @@ export default async function handler(request, response) {
       if (order.status !== 'awaiting_payment') return reply(response, 409, { error:'QR можно создать только для заявки, ожидающей оплату.' });
       const existing = await database.getOrderPayment(order.id).catch(() => null);
       if (existing?.status === 'paid') return reply(response, 409, { error:'Эта заявка уже оплачена.' });
-      if (existing && new Date(existing.expires_at) > new Date()) return reply(response, 409, { error:'Для этой заявки уже создан активный QR. Не создавайте второй счёт.' });
-      if (existing) return reply(response, 409, { error:'QR для этой заявки уже истёк. Не создавайте новую оплату до добавления штатного перевыпуска счёта.' });
+      if (existing?.status === 'awaiting_payment' && new Date(existing.expires_at) > new Date()) return reply(response, 409, { error:'Для этой заявки уже создан активный QR. Сначала отзовите его, если нужен новый счёт.' });
       const defaultAmount = Number(order.total_amount || 0) + Number(order.deposit_amount || 0);
       const amount = Number(payload.amount || defaultAmount);
       if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) return reply(response, 400, { error:'Укажите корректную сумму оплаты.' });
@@ -136,6 +135,15 @@ export default async function handler(request, response) {
       });
       await database.createEvent({ order_id:order.id, event_type:'bakai_qr_created_from_web', actor_type:'manager', metadata:{ operation_id:operationId, amount } }).catch(error => console.error('Bakai payment audit event failed:', error.message));
       return reply(response, 201, { ok:true, payment });
+    }
+    if (payload.action === 'revoke_bakai_payment') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
+      const payment = await database.getOrderPayment(order.id).catch(() => null);
+      if (!payment || payment.status !== 'awaiting_payment') return reply(response, 409, { error:'Активный QR для этой заявки не найден.' });
+      const revoked = await database.updateOrderPayment(payment.id, { status:'revoked' });
+      await database.createEvent({ order_id:order.id, event_type:'bakai_payment_revoked_from_web', actor_type:'manager', metadata:{ operation_id:payment.operation_id } }).catch(error => console.error('Bakai revocation audit event failed:', error.message));
+      return reply(response, 200, { ok:true, payment:revoked });
     }
     return reply(response, 400, { error:'Неизвестное действие.' });
   } catch (error) { console.error('Manager API failed:', error.message); return reply(response, 400, { error:error.message || 'Не удалось загрузить панель менеджера.' }); }

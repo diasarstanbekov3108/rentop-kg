@@ -59,8 +59,9 @@ function render() {
     const action = nextAction(order.status);
     const pending = order.documents.filter(document => document.status === 'pending_review').length;
     const paymentAmount = Number(order.total_amount || 0) + Number(order.deposit_amount || 0);
-    const paymentAction = order.status === 'awaiting_payment' && !order.payment ? `<button class="secondary" data-create-payment="${order.id}" data-payment-amount="${paymentAmount}">Создать QR на ${paymentAmount.toLocaleString('ru-RU')} сом</button>` : '';
-    const paymentState = order.payment ? `<section class="manager-section"><h3>Оплата Bakai</h3><div class="manager-request">${escape(order.payment.status)} · ${Number(order.payment.amount || 0).toLocaleString('ru-RU')} сом · ${escape(order.payment.operation_id || '')}</div></section>` : '';
+    const hasActivePayment = order.payment?.status === 'awaiting_payment' && new Date(order.payment.expires_at) > new Date();
+    const paymentAction = order.status === 'awaiting_payment' && !hasActivePayment ? `<div class="manager-payment-create"><label>Сумма к оплате, сом<input data-payment-amount type="number" min="1" max="1000000" step="1" value="${paymentAmount}"></label><small>Расчёт сайта: ${paymentAmount.toLocaleString('ru-RU')} сом${Number(order.deposit_amount || 0) ? `, включая залог ${Number(order.deposit_amount).toLocaleString('ru-RU')} сом` : ''}.</small><button class="secondary" data-create-payment="${order.id}">Создать настоящий QR-счёт</button></div>` : '';
+    const paymentState = order.payment ? `<section class="manager-section"><h3>Оплата Bakai</h3><div class="manager-request">${escape(order.payment.status)} · ${Number(order.payment.amount || 0).toLocaleString('ru-RU')} сом · ${escape(order.payment.operation_id || '')}${hasActivePayment ? `<button class="danger manager-payment-revoke" data-revoke-payment="${order.id}">Отозвать QR</button>` : ''}</div>${hasActivePayment ? '<p class="manager-payment-warning">Отзыв уберёт QR из кабинета Rentop. Bakai пока не умеет отменять уже созданный QR на стороне банка.</p>' : ''}</section>` : '';
     return `<article class="manager-order"><div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p></div><span class="manager-status-pill">${escape(statusLabel(order.status))}</span></div><div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда</span><strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(order.delivery_type || '—')}</strong></div><div><span>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></span></div></div><section class="manager-section"><h3>Документы</h3><div class="manager-docs">${order.documents.length ? order.documents.map(documentCard).join('') : '<span class="manager-empty">Документы ещё не загружены</span>'}</div></section>${paymentState}<div class="manager-actions">${pending ? `<button class="secondary" data-reject-all="${order.id}">Отклонить все с причиной</button>` : ''}${paymentAction}${action ? `<button data-order-action="advance" data-order="${order.id}" data-next-status="${action.next}">${action.label}</button>` : ''}${canDelete(order) ? `<button class="danger" data-delete-order="${order.id}">Удалить тестовую заявку</button>` : ''}</div>${order.requests.length ? `<section class="manager-section"><h3>Запросы клиента</h3><div class="manager-requests">${order.requests.map(request => `<div class="manager-request">${escape(request.kind)} · ${escape(request.status)}${request.customer_message ? ` · ${escape(request.customer_message)}` : ''}</div>`).join('')}</div></section>` : ''}</article>`;
   }).join('') : '<div class="manager-empty">По этому фильтру заявок нет.</div>';
 }
@@ -78,9 +79,10 @@ ordersEl.addEventListener('click', async event => {
   const rejectAll = event.target.closest('[data-reject-all]');
   const deleteOrder = event.target.closest('[data-delete-order]');
   const createPayment = event.target.closest('[data-create-payment]');
+  const revokePayment = event.target.closest('[data-revoke-payment]');
   const button = event.target.closest('[data-document], [data-order-action]');
-  if (!rejectAll && !deleteOrder && !createPayment && !button) return;
-  const target = rejectAll || deleteOrder || createPayment || button;
+  if (!rejectAll && !deleteOrder && !createPayment && !revokePayment && !button) return;
+  const target = rejectAll || deleteOrder || createPayment || revokePayment || button;
   if (target.disabled) return;
   let payload;
   let successMessage;
@@ -94,8 +96,15 @@ ordersEl.addEventListener('click', async event => {
     payload = { action:'delete_test_order', orderId:deleteOrder.dataset.deleteOrder };
     successMessage = 'Тестовая заявка удалена.';
   } else if (createPayment) {
-    payload = { action:'create_bakai_payment', orderId:createPayment.dataset.createPayment, amount:Number(createPayment.dataset.paymentAmount) };
+    const amount = Number(createPayment.closest('.manager-order')?.querySelector('[data-payment-amount]')?.value);
+    if (!Number.isFinite(amount) || amount <= 0) { statusEl.textContent = 'Введите корректную сумму в сомах.'; return; }
+    if (!window.confirm(`Создать настоящий QR-счёт Bakai на ${amount.toLocaleString('ru-RU')} сом? Деньги не спишутся сейчас, но QR можно будет оплатить.`)) return;
+    payload = { action:'create_bakai_payment', orderId:createPayment.dataset.createPayment, amount };
     successMessage = 'QR-счёт Bakai создан и показан клиенту в личном кабинете.';
+  } else if (revokePayment) {
+    if (!window.confirm('Отозвать QR из кабинета клиента? Bakai не отменяет уже созданный QR, поэтому поздняя оплата не подтвердит заявку автоматически.')) return;
+    payload = { action:'revoke_bakai_payment', orderId:revokePayment.dataset.revokePayment };
+    successMessage = 'QR отозван из кабинета клиента. При необходимости можно создать новый счёт.';
   } else if (button.dataset.document) {
     const note = button.dataset.status === 'rejected' ? window.prompt('Напишите причину отклонения. Она будет показана клиенту:') : '';
     if (button.dataset.status === 'rejected' && !note?.trim()) return;
@@ -115,6 +124,7 @@ ordersEl.addEventListener('click', async event => {
     if (payload.action === 'review_document') orders.forEach(order => order.documents.forEach(document => { if (document.id === payload.documentId) { document.status = result.document?.status || payload.status; document.reviewer_note = payload.note || document.reviewer_note; if (result.order?.status) order.status = result.order.status; } }));
     if (payload.action === 'advance_order') { const order = orders.find(item => item.id === payload.orderId); if (order) order.status = result.order?.status || payload.nextStatus; }
     if (payload.action === 'create_bakai_payment') { const order = orders.find(item => item.id === payload.orderId); if (order) order.payment = result.payment; }
+    if (payload.action === 'revoke_bakai_payment') { const order = orders.find(item => item.id === payload.orderId); if (order) order.payment = result.payment; }
     statusEl.textContent = successMessage;
     render();
     window.setTimeout(load, 900);

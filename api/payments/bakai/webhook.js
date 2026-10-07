@@ -36,6 +36,10 @@ export default async function handler(request, response) {
     if (!payment) return reply(response, 404, { error:'Payment not found.' });
     if (Math.round(Number(payment.amount) * 100) !== Math.round(amount * 100)) return reply(response, 400, { error:'Unexpected amount.' });
     if (payment.status === 'paid') return reply(response, 200, { ok:true, duplicate:true });
+    if (payment.status !== 'awaiting_payment') {
+      await database.createEvent({ order_id:payment.order_id, event_type:'bakai_payment_received_after_revocation', actor_type:'bank', metadata:{ operation_id:operationId, payment_status:payment.status, amount } }).catch(error => console.error('Bakai revoked payment audit event failed:', error.message));
+      return reply(response, 200, { ok:true, ignored:true });
+    }
 
     const now = new Date().toISOString();
     const bankElqrId = String(payload.elqrID || payload.elqrId || payload.qrTransactionID || '').trim() || null;

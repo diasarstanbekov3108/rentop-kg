@@ -33,6 +33,8 @@ const request = async (method, payload) => {
   return body;
 };
 const statusInfo = (status) => ({
+  draft:{ title:'Нужны документы', text:'Отправьте документы и подтвердите условия аренды, чтобы менеджер мог проверить заявку.', step:1 },
+  pending_review:{ title:'Проверяем документы', text:'Документы получены. Менеджер проверяет их перед созданием счёта.', step:1 },
   awaiting_payment:{ title:'Ожидает оплаты', text:'Оплатите счёт в этом кабинете. После банковского подтверждения менеджер подготовит выдачу.', step:1 },
   payment_review:{ title:'Проверяем оплату', text:'Менеджер проверяет поступление оплаты.', step:2 },
   confirmed:{ title:'Заявка подтверждена', text:'Ноутбук готовится к выдаче.', step:2 },
@@ -81,7 +83,8 @@ function documentSummary(order) {
   const latest = latestDocuments(order);
   const state = (kind, label) => {
     const document = latest.get(kind);
-    const text = `${document ? (document.status === 'rejected' ? '↺' : '✓') : '○'} ${label}`;
+    const symbol = !document ? '○' : document.status === 'rejected' ? '↺' : document.status === 'accepted' ? '✓' : '⌛';
+    const text = `${symbol} ${label}`;
     return document?.view_url
       ? `<button type="button" class="cabinet-doc-chip" data-document-view="${escape(document.view_url)}" data-document-name="${escape(document.file_name || label)}" data-document-type="${escape(document.content_type || '')}">${text}</button>`
       : `<span>${text}</span>`;
@@ -96,6 +99,7 @@ function documentMode(order) {
   const rejected = required.filter(kind => latest.get(kind)?.status === 'rejected');
   if (rejected.length) return { mode:'replacement', kinds:rejected };
   if (missing.length) return { mode:'upload', kinds:missing };
+  if (required.every(kind => latest.get(kind)?.status === 'accepted')) return { mode:'approved', kinds:[] };
   return { mode:'submitted', kinds:[] };
 }
 function paymentPanel(order) {
@@ -103,6 +107,7 @@ function paymentPanel(order) {
   if (order.status !== 'awaiting_payment') return '';
   if (!payment) return `<div class="cabinet-payment waiting"><strong>Готовим способ оплаты</strong><p>Менеджер формирует защищённый QR-счёт. Обновите страницу через несколько минут — платить по реквизитам в переписке не нужно.</p></div>`;
   if (payment.status === 'paid') return `<div class="cabinet-payment success"><strong>Оплата получена</strong><p>Банк подтвердил платёж. Мы готовим следующий шаг выдачи.</p></div>`;
+  if (['revoked', 'expired', 'failed'].includes(payment.status)) return `<div class="cabinet-payment waiting"><strong>Счёт обновляется</strong><p>Предыдущий QR больше не используйте. Менеджер подготовит новый защищённый счёт, если оплата ещё нужна.</p></div>`;
   const rawImage = String(payment.qr_image_with_frame || payment.qr_image || '');
   const image = rawImage && !rawImage.startsWith('data:') && !rawImage.startsWith('http') ? `data:image/png;base64,${rawImage}` : rawImage;
   const expires = payment.expires_at ? new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(payment.expires_at)) : '—';
@@ -113,8 +118,9 @@ function actionPanel(order) {
   const openExtension = order.requests?.find(request => request.kind === 'extension' && ['open','in_progress'].includes(request.status));
   const openReturn = order.requests?.find(request => request.kind === 'early_return' && ['open','in_progress'].includes(request.status));
   const docState = documentMode(order);
-  const documentText = docState.mode === 'submitted' ? 'Документы на проверке' : docState.mode === 'replacement' ? 'Заменить документ' : 'Документы и договор';
+  const documentText = docState.mode === 'approved' ? 'Документы проверены' : docState.mode === 'submitted' ? 'Документы на проверке' : docState.mode === 'replacement' ? 'Заменить документ' : 'Документы и договор';
   const documents = `<button class="cabinet-action secondary" data-panel="documents" data-document-mode="${docState.mode}" data-document-kinds="${docState.kinds.join(',')}" data-order="${order.id}">${documentText}</button>`;
+  if (docState.mode === 'upload') return `<div class="cabinet-documents-cta"><strong>Следующий шаг — документы</strong><p>Прикрепите паспорт/ID и селфи с документом. Без проверки документов счёт на оплату не создаётся.</p>${documents}</div><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>`;
   if (openExtension || openReturn) return `${documents}<div class="cabinet-request-state">⌛ ${escape(requestLabel(openExtension || openReturn))}: ожидает решения менеджера</div>`;
   if (!canAct) return `${documents}<div class="cabinet-action-disabled">Продление и досрочный возврат станут доступны после выдачи ноутбука.</div><button class="cabinet-action secondary" data-panel="support" data-order="${order.id}">Нужна помощь</button>`;
   return `<div class="cabinet-actions">${documents}<button class="cabinet-action" data-panel="extend" data-order="${order.id}">Продлить аренду</button><button class="cabinet-action secondary" data-panel="return" data-order="${order.id}">Вернуть раньше</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button></div>`;
@@ -124,6 +130,7 @@ function requestForm(order) {
 }
 function panelMarkup(kind, orderId, documentState = {}) {
   if (kind === 'documents') {
+    if (documentState.mode === 'approved') return `<div class="cabinet-document-wait is-approved"><strong>Документы проверены</strong><p>Спасибо. Заявка перешла к оплате или подготовке выдачи — следующий шаг показан выше.</p></div>`;
     if (documentState.mode === 'submitted') return `<div class="cabinet-document-wait"><strong>Документы отправлены</strong><p>Ваша заявка обрабатывается. Ожидайте ответа менеджера — повторная отправка заблокирована.</p><button class="cabinet-action ghost" type="button" data-document-correction="${orderId}">Я отправил(а) неверный документ</button></div>`;
     const replacement = documentState.mode === 'replacement';
     const kinds = replacement ? String(documentState.kinds || '').split(',').filter(Boolean) : ['identity', 'selfie', 'supporting'];
