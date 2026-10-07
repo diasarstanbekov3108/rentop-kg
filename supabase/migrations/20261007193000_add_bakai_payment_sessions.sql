@@ -31,7 +31,10 @@ ALTER TABLE public.rental_orders
   DROP CONSTRAINT IF EXISTS rental_orders_payment_channel_allowed;
 ALTER TABLE public.rental_orders
   ADD CONSTRAINT rental_orders_payment_channel_allowed
-  CHECK (payment_channel IS NULL OR payment_channel IN ('mbank', 'synbank', 'bakai'));
+  CHECK (
+    payment_channel IS NULL
+    OR char_length(btrim(payment_channel)) BETWEEN 1 AND 64
+  );
 
 ALTER TABLE public.rental_order_payments ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.rental_order_payments FROM PUBLIC, anon, authenticated;
