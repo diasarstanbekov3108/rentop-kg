@@ -2,9 +2,17 @@ import { randomBytes } from 'node:crypto';
 
 const SOM_CURRENCY_ID = 417;
 
+function safeDetails(value) {
+  if (!value || typeof value !== 'object') return '';
+  const blocked = /password|token|authorization|account/i;
+  const clean = Object.fromEntries(Object.entries(value).map(([key, item]) => [key, blocked.test(key) ? '[скрыто]' : item]));
+  try { return JSON.stringify(clean).slice(0, 700); } catch { return ''; }
+}
+
 function bankError(response, body) {
   const message = body?.message || body?.error || body?.title || `Bakai API returned ${response.status}`;
-  return new Error(`Bakai: ${message}`);
+  const details = safeDetails(body?.errors || body?.detail ? { detail:body.detail, errors:body.errors } : body);
+  return new Error(`Bakai: ${message}${details ? ` · ${details}` : ''}`);
 }
 
 async function bankRequest(config, path, options = {}) {
