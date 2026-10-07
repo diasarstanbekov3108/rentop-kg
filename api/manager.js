@@ -95,6 +95,19 @@ export default async function handler(request, response) {
       await database.deleteOrder(order.id);
       return reply(response, 200, { ok:true, deletedOrderId:order.id });
     }
+    if (payload.action === 'clear_test_orders') {
+      const orders = await database.listRecentOrders(100);
+      const testOrders = orders.filter(order => removableStatuses.has(order.status));
+      const deletedOrderIds = [];
+      for (const order of testOrders) {
+        const documents = await database.listOrderDocuments(order.id).catch(() => []);
+        const cleanup = await Promise.allSettled(documents.map(document => database.deleteDocumentFile(document.storage_path)));
+        cleanup.filter(result => result.status === 'rejected').forEach(result => console.error('Bulk test document cleanup failed:', result.reason?.message || result.reason));
+        await database.deleteOrder(order.id);
+        deletedOrderIds.push(order.id);
+      }
+      return reply(response, 200, { ok:true, deletedOrderIds, preserved:orders.length - deletedOrderIds.length });
+    }
     if (payload.action === 'advance_order') {
       const order = await database.getOrder(String(payload.orderId || ''));
       const nextStatus = String(payload.nextStatus || '');

@@ -11,6 +11,7 @@ const managerCodeForm = document.getElementById('manager-code-form');
 const managerPhoneInput = document.getElementById('manager-phone');
 const managerCodeInput = document.getElementById('manager-code');
 const managerLoginStatus = document.getElementById('manager-login-status');
+const clearTestsButton = document.getElementById('manager-clear-tests');
 let orders = [];
 let filter = 'all';
 let pendingManagerPhone = '';
@@ -70,6 +71,21 @@ async function load() { statusEl.textContent = 'Загружаем заявки�
 function setFilter(nextFilter) { filter = nextFilter; document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item.dataset.filter === filter)); render(); }
 
 document.getElementById('manager-refresh').addEventListener('click', load);
+clearTestsButton?.addEventListener('click', async () => {
+  const count = orders.filter(canDelete).length;
+  if (!count) { statusEl.textContent = 'Безопасных тестовых заявок для удаления нет.'; return; }
+  if (!window.confirm(`Удалить ${count} тестовых заявок и их прикреплённые документы? Активные, выданные и завершённые аренды останутся.`)) return;
+  clearTestsButton.disabled = true;
+  const original = clearTestsButton.textContent;
+  clearTestsButton.textContent = 'Очищаем…';
+  try {
+    const result = await api('POST', { action:'clear_test_orders' });
+    const removed = new Set(result.deletedOrderIds || []);
+    orders = orders.filter(order => !removed.has(order.id));
+    statusEl.textContent = `Удалено тестовых заявок: ${removed.size}. Сохранено активных/завершённых: ${result.preserved}.`;
+    render();
+  } catch (error) { statusEl.textContent = error.message; } finally { clearTestsButton.disabled = false; clearTestsButton.textContent = original; }
+});
 document.querySelector('.manager-filters').addEventListener('click', event => { const button = event.target.closest('[data-filter]'); if (button) setFilter(button.dataset.filter); });
 statsEl.addEventListener('click', event => { const button = event.target.closest('[data-filter]'); if (button) setFilter(button.dataset.filter); });
 searchInput?.addEventListener('input', render);
