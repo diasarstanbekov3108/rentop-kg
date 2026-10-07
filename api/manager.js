@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { loadConfig } from '../server/src/config.js';
 import { createSupabaseApi } from '../server/src/supabase.js';
+import { generateBakaiQr, makePaymentOperationId } from '../server/src/bakai.js';
 
 const COOKIE = '__Host-rentop_session';
 const allowedDocumentStates = new Set(['accepted', 'rejected']);
@@ -32,17 +33,18 @@ export default async function handler(request, response) {
       if (String(request.query?.access || '') === '1') return reply(response, 200, { manager:true });
       const orders = await database.listRecentOrders(50);
       const hydrated = await Promise.all(orders.map(async order => {
-        const [laptop, documents, requests] = await Promise.all([
+        const [laptop, documents, requests, payment] = await Promise.all([
           database.getLaptop(order.laptop_id),
           database.listOrderDocuments(order.id).catch(() => []),
-          database.listCustomerRequests(order.id).catch(() => [])
+          database.listCustomerRequests(order.id).catch(() => []),
+          database.getOrderPayment(order.id).catch(() => null)
         ]);
         const documentsWithLinks = await Promise.all(documents.map(async document => {
           const signed = await database.createSignedDocumentDownload(document.storage_path).catch(() => null);
           const path = signed?.signedURL || signed?.signedUrl || signed?.url || '';
           return { ...document, view_url:path ? (path.startsWith('http') ? path : `${config.supabaseUrl}/storage/v1${path}`) : '' };
         }));
-        return { ...order, laptop_title:laptop?.title || laptop?.name || 'Ноутбук Rentop', documents:documentsWithLinks, requests };
+        return { ...order, laptop_title:laptop?.title || laptop?.name || 'Ноутбук Rentop', documents:documentsWithLinks, requests, payment };
       }));
       return reply(response, 200, { authenticated:true, managerPhone:session.phone, orders:hydrated });
     }
@@ -103,6 +105,37 @@ export default async function handler(request, response) {
         : { status:nextStatus });
       await database.createEvent({ order_id:order.id, event_type:`manager_changed_status_to_${nextStatus}_from_web`, actor_type:'manager', metadata:{ previous_status:order.status } }).catch(error => console.error('Manager transition audit event failed:', error.message));
       return reply(response, 200, { ok:true, order:updated });
+    }
+    if (payload.action === 'create_bakai_payment') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
+      if (order.status !== 'awaiting_payment') return reply(response, 409, { error:'QR можно создать только для заявки, ожидающей оплату.' });
+      const existing = await database.getOrderPayment(order.id).catch(() => null);
+      if (existing?.status === 'paid') return reply(response, 409, { error:'Эта заявка уже оплачена.' });
+      if (existing && new Date(existing.expires_at) > new Date()) return reply(response, 409, { error:'Для этой заявки уже создан активный QR. Не создавайте второй счёт.' });
+      if (existing) return reply(response, 409, { error:'QR для этой заявки уже истёк. Не создавайте новую оплату до добавления штатного перевыпуска счёта.' });
+      const defaultAmount = Number(order.total_amount || 0) + Number(order.deposit_amount || 0);
+      const amount = Number(payload.amount || defaultAmount);
+      if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) return reply(response, 400, { error:'Укажите корректную сумму оплаты.' });
+      const operationId = makePaymentOperationId(order.id);
+      const reference = String(order.id).slice(0, 8).toUpperCase();
+      const comment = `Rentop ${reference}`;
+      const qr = await generateBakaiQr(config, { operationId, amount, comment, ttlHours:24 });
+      const payment = await database.createOrderPayment({
+        order_id:order.id,
+        provider:'bakai',
+        operation_id:operationId,
+        amount,
+        currency_id:417,
+        comment,
+        qr_image:qr.qrImage || null,
+        qr_image_with_frame:qr.qrImageWithFrame || null,
+        qr_link:qr.qrLink || null,
+        status:'awaiting_payment',
+        expires_at:new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      });
+      await database.createEvent({ order_id:order.id, event_type:'bakai_qr_created_from_web', actor_type:'manager', metadata:{ operation_id:operationId, amount } }).catch(error => console.error('Bakai payment audit event failed:', error.message));
+      return reply(response, 201, { ok:true, payment });
     }
     return reply(response, 400, { error:'Неизвестное действие.' });
   } catch (error) { console.error('Manager API failed:', error.message); return reply(response, 400, { error:error.message || 'Не удалось загрузить панель менеджера.' }); }

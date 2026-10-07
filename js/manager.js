@@ -58,7 +58,10 @@ function render() {
   ordersEl.innerHTML = list.length ? list.map(order => {
     const action = nextAction(order.status);
     const pending = order.documents.filter(document => document.status === 'pending_review').length;
-    return `<article class="manager-order"><div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p></div><span class="manager-status-pill">${escape(statusLabel(order.status))}</span></div><div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда</span><strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(order.delivery_type || '—')}</strong></div><div><span>Сумма</span><strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div></div><section class="manager-section"><h3>Документы</h3><div class="manager-docs">${order.documents.length ? order.documents.map(documentCard).join('') : '<span class="manager-empty">Документы ещё не загружены</span>'}</div></section><div class="manager-actions">${pending ? `<button class="secondary" data-reject-all="${order.id}">Отклонить все с причиной</button>` : ''}${action ? `<button data-order-action="advance" data-order="${order.id}" data-next-status="${action.next}">${action.label}</button>` : ''}${canDelete(order) ? `<button class="danger" data-delete-order="${order.id}">Удалить тестовую заявку</button>` : ''}</div>${order.requests.length ? `<section class="manager-section"><h3>Запросы клиента</h3><div class="manager-requests">${order.requests.map(request => `<div class="manager-request">${escape(request.kind)} · ${escape(request.status)}${request.customer_message ? ` · ${escape(request.customer_message)}` : ''}</div>`).join('')}</div></section>` : ''}</article>`;
+    const paymentAmount = Number(order.total_amount || 0) + Number(order.deposit_amount || 0);
+    const paymentAction = order.status === 'awaiting_payment' && !order.payment ? `<button class="secondary" data-create-payment="${order.id}" data-payment-amount="${paymentAmount}">Создать QR на ${paymentAmount.toLocaleString('ru-RU')} сом</button>` : '';
+    const paymentState = order.payment ? `<section class="manager-section"><h3>Оплата Bakai</h3><div class="manager-request">${escape(order.payment.status)} · ${Number(order.payment.amount || 0).toLocaleString('ru-RU')} сом · ${escape(order.payment.operation_id || '')}</div></section>` : '';
+    return `<article class="manager-order"><div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p></div><span class="manager-status-pill">${escape(statusLabel(order.status))}</span></div><div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда</span><strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(order.delivery_type || '—')}</strong></div><div><span>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></span></div></div><section class="manager-section"><h3>Документы</h3><div class="manager-docs">${order.documents.length ? order.documents.map(documentCard).join('') : '<span class="manager-empty">Документы ещё не загружены</span>'}</div></section>${paymentState}<div class="manager-actions">${pending ? `<button class="secondary" data-reject-all="${order.id}">Отклонить все с причиной</button>` : ''}${paymentAction}${action ? `<button data-order-action="advance" data-order="${order.id}" data-next-status="${action.next}">${action.label}</button>` : ''}${canDelete(order) ? `<button class="danger" data-delete-order="${order.id}">Удалить тестовую заявку</button>` : ''}</div>${order.requests.length ? `<section class="manager-section"><h3>Запросы клиента</h3><div class="manager-requests">${order.requests.map(request => `<div class="manager-request">${escape(request.kind)} · ${escape(request.status)}${request.customer_message ? ` · ${escape(request.customer_message)}` : ''}</div>`).join('')}</div></section>` : ''}</article>`;
   }).join('') : '<div class="manager-empty">По этому фильтру заявок нет.</div>';
 }
 
@@ -74,9 +77,10 @@ ordersEl.addEventListener('click', async event => {
   if (preview) return openDocumentViewer(preview.dataset.documentView, preview.dataset.documentName, preview.dataset.documentType);
   const rejectAll = event.target.closest('[data-reject-all]');
   const deleteOrder = event.target.closest('[data-delete-order]');
+  const createPayment = event.target.closest('[data-create-payment]');
   const button = event.target.closest('[data-document], [data-order-action]');
-  if (!rejectAll && !deleteOrder && !button) return;
-  const target = rejectAll || deleteOrder || button;
+  if (!rejectAll && !deleteOrder && !createPayment && !button) return;
+  const target = rejectAll || deleteOrder || createPayment || button;
   if (target.disabled) return;
   let payload;
   let successMessage;
@@ -89,6 +93,9 @@ ordersEl.addEventListener('click', async event => {
     if (!window.confirm('Удалить эту тестовую заявку вместе с её документами? Действие нельзя отменить.')) return;
     payload = { action:'delete_test_order', orderId:deleteOrder.dataset.deleteOrder };
     successMessage = 'Тестовая заявка удалена.';
+  } else if (createPayment) {
+    payload = { action:'create_bakai_payment', orderId:createPayment.dataset.createPayment, amount:Number(createPayment.dataset.paymentAmount) };
+    successMessage = 'QR-счёт Bakai создан и показан клиенту в личном кабинете.';
   } else if (button.dataset.document) {
     const note = button.dataset.status === 'rejected' ? window.prompt('Напишите причину отклонения. Она будет показана клиенту:') : '';
     if (button.dataset.status === 'rejected' && !note?.trim()) return;
@@ -107,6 +114,7 @@ ordersEl.addEventListener('click', async event => {
     if (payload.action === 'reject_all_documents') orders.forEach(order => { if (order.id === payload.orderId) order.documents.forEach(document => { if (document.status === 'pending_review') { document.status = 'rejected'; document.reviewer_note = payload.note; } }); });
     if (payload.action === 'review_document') orders.forEach(order => order.documents.forEach(document => { if (document.id === payload.documentId) { document.status = result.document?.status || payload.status; document.reviewer_note = payload.note || document.reviewer_note; if (result.order?.status) order.status = result.order.status; } }));
     if (payload.action === 'advance_order') { const order = orders.find(item => item.id === payload.orderId); if (order) order.status = result.order?.status || payload.nextStatus; }
+    if (payload.action === 'create_bakai_payment') { const order = orders.find(item => item.id === payload.orderId); if (order) order.payment = result.payment; }
     statusEl.textContent = successMessage;
     render();
     window.setTimeout(load, 900);

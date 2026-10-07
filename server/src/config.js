@@ -59,6 +59,14 @@ export function loadConfig(env = process.env) {
     customerOtpHmacSecret: env.CUSTOMER_OTP_HMAC_SECRET || '',
     managerPhone: String(env.RENTOP_MANAGER_PHONE || '').replace(/[^0-9+]/g, ''),
     offerVersion: env.OFFER_VERSION || 'draft-2026-09-25',
-    offerUrl: env.OFFER_URL || ''
+    offerUrl: env.OFFER_URL || '',
+    bakai: {
+      baseUrl: (env.BAKAI_API_BASE_URL || 'https://openbanking-api.bakai.kg').replace(/\/$/, ''),
+      login: env.BAKAI_API_LOGIN || '',
+      password: env.BAKAI_API_PASSWORD || '',
+      accountNo: String(env.BAKAI_ACCOUNT_NO || '').trim(),
+      webhookBearerToken: env.BAKAI_WEBHOOK_BEARER_TOKEN || '',
+      enabled: Boolean(env.BAKAI_API_LOGIN && env.BAKAI_API_PASSWORD && env.BAKAI_ACCOUNT_NO)
+    }
   });
 }

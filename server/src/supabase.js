@@ -47,6 +47,14 @@ export function createSupabaseApi(config) {
       '&select=id,laptop_id,rental_start_date,rental_end_date,rental_days,status,total_amount,delivery_type,locker_address,created_at,updated_at' +
       `&order=updated_at.desc&limit=${Math.min(Math.max(Number(limit) || 30, 1), 50)}`
     ),
+    getOrderPayment: (orderId) => getOne(`rental_order_payments?order_id=eq.${encodeURIComponent(orderId)}&select=*&limit=1`),
+    getPaymentByOperationId: (operationId) => getOne(`rental_order_payments?operation_id=eq.${encodeURIComponent(operationId)}&select=*&limit=1`),
+    createOrderPayment: (payment) => request('rental_order_payments', {
+      method:'POST', body:JSON.stringify(payment)
+    }).then((rows) => rows?.[0] || null),
+    updateOrderPayment: (id, patch) => request(`rental_order_payments?id=eq.${encodeURIComponent(id)}`, {
+      method:'PATCH', body:JSON.stringify(patch)
+    }).then((rows) => rows?.[0] || null),
     getCustomerProfile: (phone) => getOne(`customer_profiles?phone=eq.${encodeURIComponent(phone)}&select=phone,full_name,updated_at&limit=1`),
     saveCustomerProfile: (profile) => request('customer_profiles?on_conflict=phone', {
       method: 'POST',

@@ -46,13 +46,24 @@ export default async function handler(request, response) {
         return { ...document, view_url:path ? (path.startsWith('http') ? path : `${config.supabaseUrl}/storage/v1${path}`) : '' };
       }));
     }));
+    const payments = await Promise.all(orders.map((order) => database.getOrderPayment(order.id).catch(() => null)));
     return orders.map((order, index) => ({
       ...order,
       laptop_title:laptops[index]?.title || laptops[index]?.name || 'Ноутбук Rentop',
       reference: orderRef(order),
       delivery_label:label(order.delivery_type),
       requests:requests[index],
-      documents:documents[index]
+      documents:documents[index],
+      payment:payments[index] && {
+        amount:payments[index].amount,
+        currency_id:payments[index].currency_id,
+        qr_image:payments[index].qr_image,
+        qr_image_with_frame:payments[index].qr_image_with_frame,
+        qr_link:payments[index].qr_link,
+        status:payments[index].status,
+        expires_at:payments[index].expires_at,
+        paid_at:payments[index].paid_at
+      }
     }));
   };
   const accountData = async (phone) => ({
