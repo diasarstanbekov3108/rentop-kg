@@ -63,7 +63,7 @@ function render() {
     const hasActivePayment = order.payment?.status === 'awaiting_payment' && new Date(order.payment.expires_at) > new Date();
     const paymentAction = order.status === 'awaiting_payment' && !hasActivePayment ? `<div class="manager-payment-create"><label>Сумма к оплате, сом<input data-payment-amount type="number" min="1" max="1000000" step="1" value="${paymentAmount}"></label><small>Расчёт сайта: ${paymentAmount.toLocaleString('ru-RU')} сом${Number(order.deposit_amount || 0) ? `, включая залог ${Number(order.deposit_amount).toLocaleString('ru-RU')} сом` : ''}.</small><button class="secondary" data-create-payment="${order.id}">Создать настоящий QR-счёт</button></div>` : '';
     const paymentState = order.payment ? `<section class="manager-section"><h3>Оплата Bakai</h3><div class="manager-request">${escape(order.payment.status)} · ${Number(order.payment.amount || 0).toLocaleString('ru-RU')} сом · ${escape(order.payment.operation_id || '')}${hasActivePayment ? `<button class="danger manager-payment-revoke" data-revoke-payment="${order.id}">Отозвать QR</button>` : ''}</div>${hasActivePayment ? '<p class="manager-payment-warning">Отзыв уберёт QR из кабинета Rentop. Bakai пока не умеет отменять уже созданный QR на стороне банка.</p>' : ''}</section>` : '';
-    return `<article class="manager-order"><div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p></div><span class="manager-status-pill">${escape(statusLabel(order.status))}</span></div><div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда</span><strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(order.delivery_type || '—')}</strong></div><div><span>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></span></div></div><section class="manager-section"><h3>Документы</h3><div class="manager-docs">${order.documents.length ? order.documents.map(documentCard).join('') : '<span class="manager-empty">Документы ещё не загружены</span>'}</div></section>${paymentState}<div class="manager-actions">${pending ? `<button class="secondary" data-reject-all="${order.id}">Отклонить все с причиной</button>` : ''}${paymentAction}${action ? `<button data-order-action="advance" data-order="${order.id}" data-next-status="${action.next}">${action.label}</button>` : ''}${canDelete(order) ? `<button class="danger" data-delete-order="${order.id}">Удалить тестовую заявку</button>` : ''}</div>${order.requests.length ? `<section class="manager-section"><h3>Запросы клиента</h3><div class="manager-requests">${order.requests.map(request => `<div class="manager-request">${escape(request.kind)} · ${escape(request.status)}${request.customer_message ? ` · ${escape(request.customer_message)}` : ''}</div>`).join('')}</div></section>` : ''}</article>`;
+    return `<article class="manager-order"><div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p></div><span class="manager-status-pill">${escape(statusLabel(order.status))}</span></div><div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда</span><strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(order.delivery_type || '—')}</strong></div><div><span>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></span></div></div><section class="manager-section"><h3>Документы</h3><div class="manager-docs">${order.documents.length ? order.documents.map(documentCard).join('') : '<span class="manager-empty">Документы ещё не загружены</span>'}</div></section>${paymentState}<div class="manager-actions">${pending ? `<button class="secondary" data-reject-all="${order.id}">Отклонить все с причиной</button>` : ''}${paymentAction}${action ? `<button data-order-action="advance" data-order="${order.id}" data-next-status="${action.next}">${action.label}</button>` : ''}${canDelete(order) ? `<button class="danger" data-delete-order="${order.id}">Удалить тестовую заявку</button>` : ''}</div><p class="manager-order-feedback" data-order-feedback="${order.id}" hidden></p>${order.requests.length ? `<section class="manager-section"><h3>Запросы клиента</h3><div class="manager-requests">${order.requests.map(request => `<div class="manager-request">${escape(request.kind)} · ${escape(request.status)}${request.customer_message ? ` · ${escape(request.customer_message)}` : ''}</div>`).join('')}</div></section>` : ''}</article>`;
   }).join('') : '<div class="manager-empty">По этому фильтру заявок нет.</div>';
 }
 
@@ -100,6 +100,8 @@ ordersEl.addEventListener('click', async event => {
   if (!rejectAll && !deleteOrder && !createPayment && !revokePayment && !button) return;
   const target = rejectAll || deleteOrder || createPayment || revokePayment || button;
   if (target.disabled) return;
+  const feedback = target.closest('.manager-order')?.querySelector('[data-order-feedback]');
+  const showFeedback = (text, type = '') => { if (!feedback) return; feedback.textContent = text; feedback.className = `manager-order-feedback${type ? ` is-${type}` : ''}`; feedback.hidden = !text; };
   let payload;
   let successMessage;
   if (rejectAll) {
@@ -133,6 +135,7 @@ ordersEl.addEventListener('click', async event => {
   target.disabled = true;
   const original = target.textContent;
   target.textContent = createPayment ? 'Создаём QR…' : 'Сохраняем…';
+  if (createPayment) showFeedback('Отправляем запрос в Bakai…');
   try {
     const result = await api('POST', payload);
     if (payload.action === 'delete_test_order') orders = orders.filter(order => order.id !== payload.orderId);
@@ -142,9 +145,10 @@ ordersEl.addEventListener('click', async event => {
     if (payload.action === 'create_bakai_payment') { const order = orders.find(item => item.id === payload.orderId); if (order) order.payment = result.payment; }
     if (payload.action === 'revoke_bakai_payment') { const order = orders.find(item => item.id === payload.orderId); if (order) order.payment = result.payment; }
     statusEl.textContent = successMessage;
+    showFeedback(successMessage, 'success');
     render();
     window.setTimeout(load, 900);
-  } catch (error) { statusEl.textContent = error.message; target.disabled = false; target.textContent = original; }
+  } catch (error) { statusEl.textContent = error.message; showFeedback(error.message, 'error'); target.disabled = false; target.textContent = original; }
 });
 document.getElementById('manager-document-viewer-close')?.addEventListener('click', closeDocumentViewer);
 documentViewer?.addEventListener('click', event => { if (event.target === documentViewer) closeDocumentViewer(); });
