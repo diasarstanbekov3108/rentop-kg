@@ -132,7 +132,7 @@ ordersEl.addEventListener('click', async event => {
   }
   target.disabled = true;
   const original = target.textContent;
-  target.textContent = 'Сохраняем…';
+  target.textContent = createPayment ? 'Создаём QR…' : 'Сохраняем…';
   try {
     const result = await api('POST', payload);
     if (payload.action === 'delete_test_order') orders = orders.filter(order => order.id !== payload.orderId);

@@ -8,13 +8,25 @@ function bankError(response, body) {
 }
 
 async function bankRequest(config, path, options = {}) {
-  const response = await fetch(`${config.bakai.baseUrl}${path}`, {
-    ...options,
-    headers: { 'content-type':'application/json', ...(options.headers || {}) }
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw bankError(response, body);
-  return body;
+  const controller = new AbortController();
+  // Keep below the default Vercel serverless limit so the manager receives
+  // a useful error instead of a terminated request and a frozen button.
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const response = await fetch(`${config.bakai.baseUrl}${path}`, {
+      ...options,
+      signal:controller.signal,
+      headers: { 'content-type':'application/json', ...(options.headers || {}) }
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw bankError(response, body);
+    return body;
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error(`Bakai не ответил за 8 секунд на ${path}. Проверьте доступ API у Банка и повторите позже.`);
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export async function createBakaiToken(config) {
