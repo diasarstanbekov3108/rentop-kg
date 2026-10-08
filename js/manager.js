@@ -12,6 +12,8 @@ const managerPhoneInput = document.getElementById('manager-phone');
 const managerCodeInput = document.getElementById('manager-code');
 const managerLoginStatus = document.getElementById('manager-login-status');
 const clearTestsButton = document.getElementById('manager-clear-tests');
+const testBakaiButton = document.getElementById('manager-test-bakai');
+const bakaiCheck = document.getElementById('manager-bakai-check');
 let orders = [];
 let filter = 'all';
 let pendingManagerPhone = '';
@@ -31,6 +33,7 @@ function phoneDigits(value) { let digits = String(value || '').replace(/\D/g, ''
 function normalizePhone(value) { const digits = phoneDigits(value); return digits.length === 9 ? `+996${digits}` : ''; }
 function formatPhone(value) { const digits = phoneDigits(value); return `+996${digits ? ` (${digits.slice(0, 3)}${digits.length > 3 ? ')' : ''}${digits.length > 3 ? ` ${digits.slice(3, 5)}` : ''}${digits.length > 5 ? `-${digits.slice(5, 7)}` : ''}${digits.length > 7 ? `-${digits.slice(7, 9)}` : ''}` : ' '}`; }
 function loginMessage(text = '', type = '') { if (!managerLoginStatus) return; managerLoginStatus.textContent = text; managerLoginStatus.className = `cabinet-status${type ? ` is-${type}` : ''}`; }
+function bakaiMessage(text = '', type = '') { if (!bakaiCheck) return; bakaiCheck.textContent = text; bakaiCheck.className = `manager-bakai-check${type ? ` is-${type}` : ''}`; bakaiCheck.hidden = !text; }
 
 function visibleOrders() {
   const query = String(searchInput?.value || '').trim().toLowerCase();
@@ -71,6 +74,21 @@ async function load() { statusEl.textContent = 'Загружаем заявки�
 function setFilter(nextFilter) { filter = nextFilter; document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item.dataset.filter === filter)); render(); }
 
 document.getElementById('manager-refresh').addEventListener('click', load);
+testBakaiButton?.addEventListener('click', async () => {
+  testBakaiButton.disabled = true;
+  const original = testBakaiButton.textContent;
+  testBakaiButton.textContent = 'Проверяем…';
+  bakaiMessage('Запрашиваем токен Bakai. QR и платёж не создаются.');
+  try {
+    const result = await api('POST', { action:'check_bakai_connection' });
+    bakaiMessage(result.message || 'Авторизация Bakai успешна.', 'success');
+  } catch (error) {
+    bakaiMessage(error.message, 'error');
+  } finally {
+    testBakaiButton.disabled = false;
+    testBakaiButton.textContent = original;
+  }
+});
 clearTestsButton?.addEventListener('click', async () => {
   const count = orders.filter(canDelete).length;
   if (!count) { statusEl.textContent = 'Безопасных тестовых заявок для удаления нет.'; return; }
