@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 const SOM_CURRENCY_ID = 417;
 
 function safeDetails(value) {
+  if (typeof value === 'string') return value.slice(0, 700);
   if (!value || typeof value !== 'object') return '';
   const blocked = /password|token|authorization|account/i;
   const clean = Object.fromEntries(Object.entries(value).map(([key, item]) => [key, blocked.test(key) ? '[скрыто]' : item]));
@@ -10,8 +11,8 @@ function safeDetails(value) {
 }
 
 function bankError(response, body) {
-  const message = body?.message || body?.error || body?.title || `Bakai API returned ${response.status}`;
-  const details = safeDetails(body?.errors || body?.detail ? { detail:body.detail, errors:body.errors } : body);
+  const message = typeof body === 'string' ? body : body?.message || body?.error || body?.title || `Bakai API returned ${response.status}`;
+  const details = typeof body === 'string' ? '' : safeDetails(body?.errors || body?.detail ? { detail:body.detail, errors:body.errors } : body);
   return new Error(`Bakai: ${message}${details ? ` · ${details}` : ''}`);
 }
 
@@ -26,7 +27,11 @@ async function bankRequest(config, path, options = {}) {
       signal:controller.signal,
       headers: { 'content-type':'application/json', ...(options.headers || {}) }
     });
-    const body = await response.json().catch(() => ({}));
+    const rawBody = await response.text();
+    let body = {};
+    if (rawBody) {
+      try { body = JSON.parse(rawBody); } catch { body = rawBody.trim(); }
+    }
     if (!response.ok) throw bankError(response, body);
     return body;
   } catch (error) {
