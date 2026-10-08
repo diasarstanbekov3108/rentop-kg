@@ -62,11 +62,13 @@ export function loadConfig(env = process.env) {
     offerUrl: env.OFFER_URL || '',
     bakai: {
       baseUrl: (env.BAKAI_API_BASE_URL || 'https://openbanking-api.bakai.kg').replace(/\/$/, ''),
-      login: env.BAKAI_API_LOGIN || '',
-      password: env.BAKAI_API_PASSWORD || '',
+      // Values are copied from the one-time PDF in Bakai Business. Trim only
+      // accidental line breaks/spaces introduced while pasting into Vercel.
+      login: String(env.BAKAI_API_LOGIN || '').trim(),
+      password: String(env.BAKAI_API_PASSWORD || '').trim(),
       accountNo: String(env.BAKAI_ACCOUNT_NO || '').trim(),
       webhookBearerToken: env.BAKAI_WEBHOOK_BEARER_TOKEN || '',
-      enabled: Boolean(env.BAKAI_API_LOGIN && env.BAKAI_API_PASSWORD && env.BAKAI_ACCOUNT_NO)
+      enabled: Boolean(String(env.BAKAI_API_LOGIN || '').trim() && String(env.BAKAI_API_PASSWORD || '').trim() && env.BAKAI_ACCOUNT_NO)
     }
   });
 }
