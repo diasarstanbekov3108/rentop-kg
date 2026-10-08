@@ -65,7 +65,10 @@ export async function generateBakaiQr(config, { operationId, amount, comment, tt
   const token = await createBakaiToken(config);
   let body;
   try {
-    body = await bankRequest(config, '/api/Qr/GenerateQRWithComment', {
+    // The enabled Bakai Business service is the regular "Создание QR-кода
+    // для оплаты". Its documented endpoint is GenerateQR; operationID is
+    // enough to reconcile the webhook with the Rentop order.
+    body = await bankRequest(config, '/api/Qr/GenerateQR', {
       method:'POST',
       headers:{ Authorization:`Bearer ${token}` },
       body:JSON.stringify({
@@ -73,13 +76,12 @@ export async function generateBakaiQr(config, { operationId, amount, comment, tt
         currencyId:SOM_CURRENCY_ID,
         amount:Number(amount),
         operationID:operationId,
-        comment:String(comment).slice(0, 100),
         qrTtlUnits:2,
         qrTtl:Math.max(1, Math.min(Number(ttlHours) || 24, 24))
       })
     });
   } catch (error) {
-    throw new Error(`Ошибка создания QR Bakai (GenerateQRWithComment): ${error.message}`);
+    throw new Error(`Ошибка создания QR Bakai (GenerateQR): ${error.message}`);
   }
   if (!body?.qrLink && !body?.qrImage) throw new Error('Bakai не вернул QR-код или ссылку на оплату.');
   return body;
