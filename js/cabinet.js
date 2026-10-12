@@ -12,8 +12,13 @@ const profileEl = document.getElementById('cabinet-profile');
 const dashboardNotice = document.getElementById('cabinet-dashboard-notice');
 const documentViewer = document.getElementById('cabinet-document-viewer');
 const documentViewerContent = document.getElementById('cabinet-document-viewer-content');
+const paymentDialog = document.getElementById('cabinet-payment-dialog');
+const paymentDialogQr = document.getElementById('cabinet-payment-dialog-qr');
+const paymentDialogAmount = document.getElementById('cabinet-payment-dialog-amount');
+const paymentDialogExpiry = document.getElementById('cabinet-payment-dialog-expiry');
 let pendingPhone = '';
 let currentPreviewUrl = '';
+let paymentByOrder = new Map();
 
 const formatPhone = (value, masked = false) => {
   let digits = String(value || '').replace(/\D/g, '');
@@ -70,6 +75,26 @@ function openDocumentViewer(url, name = 'Документ', contentType = '') {
   document.body.style.overflow = 'hidden';
 }
 
+function openPaymentDialog(payment) {
+  if (!paymentDialog || !paymentDialogQr || !payment) return;
+  const rawImage = String(payment.qr_image_with_frame || payment.qr_image || '');
+  const image = rawImage && !rawImage.startsWith('data:') && !rawImage.startsWith('http') ? `data:image/png;base64,${rawImage}` : rawImage;
+  if (!image) return;
+  const expires = payment.expires_at ? new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}).format(new Date(payment.expires_at)) : '—';
+  paymentDialogQr.src = image;
+  paymentDialogAmount.textContent = `${Number(payment.amount || 0).toLocaleString('ru-RU')} сом`;
+  paymentDialogExpiry.textContent = `Счёт действует до ${expires}`;
+  paymentDialog.hidden = false;
+  document.body.style.overflow = 'hidden';
+}
+
+function closePaymentDialog() {
+  if (!paymentDialog) return;
+  paymentDialog.hidden = true;
+  if (paymentDialogQr) paymentDialogQr.removeAttribute('src');
+  document.body.style.overflow = '';
+}
+
 function requestLabel(request) {
   if (request.kind === 'extension') return `Продление: +${request.requested_days} дн. до ${date(request.proposed_return_date)}`;
   return 'Досрочный возврат';
@@ -113,7 +138,7 @@ function paymentPanel(order) {
   const rawImage = String(payment.qr_image_with_frame || payment.qr_image || '');
   const image = rawImage && !rawImage.startsWith('data:') && !rawImage.startsWith('http') ? `data:image/png;base64,${rawImage}` : rawImage;
   const expires = payment.expires_at ? new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(payment.expires_at)) : '—';
-  return `<section class="cabinet-payment"><div><strong>Оплата аренды</strong><span>${Number(payment.amount || 0).toLocaleString('ru-RU')} сом · до ${escape(expires)}</span></div>${image ? `<img src="${escape(image)}" alt="QR-код для оплаты аренды">` : ''}<p>${image ? 'Отсканируйте QR в банковском приложении. Это банковский QR, а не страница оплаты в браузере.' : 'Банк создал ссылку на QR. Откройте её в поддерживаемом банковском приложении или попросите менеджера перевыпустить счёт.'} Не переводите сумму вручную на другие реквизиты.</p>${documentNotice}${payment.qr_link && !image ? `<a class="cabinet-action cabinet-payment-link" href="${escape(payment.qr_link)}" target="_blank" rel="noopener">Открыть в банковском приложении</a>` : ''}</section>`;
+  return `<section class="cabinet-payment"><div><strong>Оплата аренды</strong><span>${Number(payment.amount || 0).toLocaleString('ru-RU')} сом · до ${escape(expires)}</span></div><p>${image ? 'Счёт создан Банком. Нажмите «Оплатить по QR» — код откроется крупно прямо на сайте.' : 'Банк создал ссылку на QR. Откройте её в поддерживаемом банковском приложении или попросите менеджера перевыпустить счёт.'} Не переводите сумму вручную на другие реквизиты.</p>${documentNotice}${image ? `<button class="cabinet-action cabinet-payment-open" type="button" data-open-payment="${escape(order.id)}">Оплатить по QR</button>` : ''}${payment.qr_link && !image ? `<a class="cabinet-action cabinet-payment-link" href="${escape(payment.qr_link)}" target="_blank" rel="noopener">Открыть в банковском приложении</a>` : ''}</section>`;
 }
 function actionPanel(order) {
   const canAct = ['issued', 'in_use'].includes(order.status);
@@ -153,6 +178,7 @@ function fileControl(kind) {
 }
 
 function showRentals(orders, phone, profile = null) {
+  paymentByOrder = new Map(orders.filter(order => order.payment).map(order => [String(order.id), order.payment]));
   login.hidden = true; dashboard.hidden = false;
   const fullName = String(profile?.full_name || '').trim();
   document.getElementById('cabinet-greeting').textContent = fullName ? `Здравствуйте, ${fullName.split(' ')[1] || fullName}!` : 'Здравствуйте!';
@@ -188,6 +214,11 @@ codeForm?.addEventListener('submit', async event => { event.preventDefault(); co
 document.getElementById('change-phone')?.addEventListener('click', () => { codeForm.hidden = true; phoneForm.hidden = false; codeInput.value = ''; message(''); phoneInput.focus(); });
 document.getElementById('cabinet-logout')?.addEventListener('click', async () => { await request('POST', { action:'logout' }).catch(() => {}); dashboard.hidden = true; login.hidden = false; phoneForm.hidden = false; codeForm.hidden = true; phoneInput.value = ''; codeInput.value = ''; pendingPhone = ''; message('Вы вышли из кабинета.'); });
 rentalsEl?.addEventListener('click', event => {
+  const paymentButton = event.target.closest('[data-open-payment]');
+  if (paymentButton) {
+    openPaymentDialog(paymentByOrder.get(String(paymentButton.dataset.openPayment)));
+    return;
+  }
   const offerButton = event.target.closest('[data-open-offer]');
   if (offerButton) {
     openDocumentViewer('/offer', 'Публичная оферта Rentop KG', 'text/html');
@@ -235,7 +266,9 @@ rentalsEl?.addEventListener('click', event => {
 });
 document.getElementById('cabinet-document-viewer-close')?.addEventListener('click', closeDocumentViewer);
 documentViewer?.addEventListener('click', event => { if (event.target === documentViewer) closeDocumentViewer(); });
-document.addEventListener('keydown', event => { if (event.key === 'Escape' && !documentViewer?.hidden) closeDocumentViewer(); });
+document.getElementById('cabinet-payment-dialog-close')?.addEventListener('click', closePaymentDialog);
+paymentDialog?.addEventListener('click', event => { if (event.target === paymentDialog) closePaymentDialog(); });
+document.addEventListener('keydown', event => { if (event.key !== 'Escape') return; if (!documentViewer?.hidden) closeDocumentViewer(); if (!paymentDialog?.hidden) closePaymentDialog(); });
 rentalsEl?.addEventListener('change', event => {
   const input = event.target.closest('input[type="file"]');
   if (!input) return;

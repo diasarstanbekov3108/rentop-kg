@@ -67,6 +67,17 @@
   <div class="cabinet-document-viewer" id="cabinet-document-viewer" hidden role="dialog" aria-modal="true" aria-label="Просмотр документа">
     <div class="cabinet-document-viewer-card"><button class="cabinet-document-viewer-close" id="cabinet-document-viewer-close" type="button" aria-label="Закрыть просмотр">×</button><div id="cabinet-document-viewer-content"></div></div>
   </div>
+  <div class="cabinet-payment-dialog" id="cabinet-payment-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="cabinet-payment-dialog-title">
+    <div class="cabinet-payment-dialog-card">
+      <button class="cabinet-document-viewer-close" id="cabinet-payment-dialog-close" type="button" aria-label="Закрыть оплату">×</button>
+      <p class="cabinet-eyebrow">ЗАЩИЩЁННАЯ ОПЛАТА</p>
+      <h2 id="cabinet-payment-dialog-title">Оплата аренды</h2>
+      <p class="cabinet-payment-dialog-amount" id="cabinet-payment-dialog-amount"></p>
+      <img id="cabinet-payment-dialog-qr" alt="QR-код для оплаты через банковское приложение">
+      <p class="cabinet-payment-dialog-help">Откройте банковское приложение на телефоне → «Оплата по QR» → отсканируйте этот код. Сумму вручную переводить не нужно.</p>
+      <p class="cabinet-payment-dialog-expiry" id="cabinet-payment-dialog-expiry"></p>
+    </div>
+  </div>
   <script type="module" src="js/cabinet.js"></script>
 </body>
 </html>
