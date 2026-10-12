@@ -2,6 +2,11 @@ import { randomBytes } from 'node:crypto';
 
 const SOM_CURRENCY_ID = 417;
 
+function responseValue(body, ...names) {
+  const wanted = new Set(names.map((name) => name.toLowerCase()));
+  return Object.entries(body || {}).find(([key]) => wanted.has(key.toLowerCase()))?.[1] || null;
+}
+
 function safeDetails(value) {
   if (typeof value === 'string') return value.slice(0, 700);
   if (!value || typeof value !== 'object') return '';
@@ -81,6 +86,9 @@ export async function generateBakaiQr(config, { operationId, amount, comment, tt
   } catch (error) {
     throw new Error(`Ошибка создания QR Bakai (GenerateQR): ${error.message}`);
   }
-  if (!body?.qrLink && !body?.qrImage) throw new Error('Bakai не вернул QR-код или ссылку на оплату.');
-  return body;
+  const qrImage = responseValue(body, 'qrImage', 'QRImage', 'qr_image');
+  const qrImageWithFrame = responseValue(body, 'qrImageWithFrame', 'QRImageWithFrame', 'qr_image_with_frame');
+  const qrLink = responseValue(body, 'qrLink', 'QRLink', 'qr_link');
+  if (!qrLink && !qrImage && !qrImageWithFrame) throw new Error('Bakai не вернул QR-код или ссылку на оплату.');
+  return { ...body, qrImage, qrImageWithFrame, qrLink };
 }
