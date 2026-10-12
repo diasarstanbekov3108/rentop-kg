@@ -13,6 +13,14 @@ function reply(response, status, body) {
   return response.status(status).json(body);
 }
 
+function sameAccount(left, right) {
+  const normalize = value => String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+  const expected = normalize(left);
+  const received = normalize(right);
+  if (!expected || !received) return false;
+  return expected === received || expected.replace(/^KGS/, '') === received.replace(/^KGS/, '');
+}
+
 export default async function handler(request, response) {
   if (request.method !== 'POST') {
     response.setHeader('Allow', 'POST');
@@ -20,8 +28,11 @@ export default async function handler(request, response) {
   }
   let config;
   try { config = loadConfig(); } catch { return reply(response, 503, { error:'Service unavailable.' }); }
-  const received = String(request.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
-  if (!config.bakai.webhookBearerToken || !equal(received, config.bakai.webhookBearerToken)) return reply(response, 401, { error:'Unauthorized.' });
+  const received = String(request.headers.authorization || '').replace(/^(?:Bearer\s+)+/i, '').trim();
+  if (!config.bakai.webhookBearerToken || !equal(received, config.bakai.webhookBearerToken)) {
+    console.warn('Bakai webhook rejected: bearer token does not match the configured secret.');
+    return reply(response, 401, { error:'Unauthorized.' });
+  }
 
   try {
     const payload = request.body && typeof request.body === 'object' ? request.body : {};
@@ -29,7 +40,7 @@ export default async function handler(request, response) {
     const state = String(payload.operationState || '').toLowerCase();
     const amount = Number(payload.amount);
     if (!operationId || state !== 'success' || !Number.isFinite(amount) || amount <= 0) return reply(response, 400, { error:'Invalid payment payload.' });
-    if (config.bakai.accountNo && String(payload.accountNo || '') !== config.bakai.accountNo) return reply(response, 400, { error:'Unexpected account.' });
+    if (config.bakai.accountNo && !sameAccount(payload.accountNo, config.bakai.accountNo)) return reply(response, 400, { error:'Unexpected account.' });
 
     const database = createSupabaseApi(config);
     const payment = await database.getPaymentByOperationId(operationId);
