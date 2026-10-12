@@ -19,6 +19,8 @@ const paymentDialogExpiry = document.getElementById('cabinet-payment-dialog-expi
 let pendingPhone = '';
 let currentPreviewUrl = '';
 let paymentByOrder = new Map();
+let paymentPollingTimer = null;
+let activePaymentOrderId = '';
 
 const formatPhone = (value, masked = false) => {
   let digits = String(value || '').replace(/\D/g, '');
@@ -93,6 +95,20 @@ function closePaymentDialog() {
   paymentDialog.hidden = true;
   if (paymentDialogQr) paymentDialogQr.removeAttribute('src');
   document.body.style.overflow = '';
+  activePaymentOrderId = '';
+  if (paymentPollingTimer) window.clearInterval(paymentPollingTimer);
+  paymentPollingTimer = null;
+}
+
+function watchPayment(orderId) {
+  if (paymentPollingTimer) window.clearInterval(paymentPollingTimer);
+  activePaymentOrderId = String(orderId);
+  paymentPollingTimer = window.setInterval(async () => {
+    try {
+      const fresh = await request('GET');
+      if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile);
+    } catch { /* The customer can continue scanning; the next poll will retry. */ }
+  }, 8000);
 }
 
 function requestLabel(request) {
@@ -140,6 +156,18 @@ function paymentPanel(order) {
   const expires = payment.expires_at ? new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(payment.expires_at)) : '—';
   return `<section class="cabinet-payment"><div><strong>Оплата аренды</strong><span>${Number(payment.amount || 0).toLocaleString('ru-RU')} сом · до ${escape(expires)}</span></div><p>${image ? 'Счёт создан Банком. Нажмите «Оплатить по QR» — код откроется крупно прямо на сайте.' : 'Банк создал ссылку на QR. Откройте её в поддерживаемом банковском приложении или попросите менеджера перевыпустить счёт.'} Не переводите сумму вручную на другие реквизиты.</p>${documentNotice}${image ? `<button class="cabinet-action cabinet-payment-open" type="button" data-open-payment="${escape(order.id)}">Оплатить по QR</button>` : ''}${payment.qr_link && !image ? `<a class="cabinet-action cabinet-payment-link" href="${escape(payment.qr_link)}" target="_blank" rel="noopener">Открыть в банковском приложении</a>` : ''}</section>`;
 }
+function pickupInstruction(order) {
+  if (order.delivery_type !== 'arca_locker') return '';
+  const location = order.locker_address || 'локация, выбранная при оформлении';
+  const copy = {
+    awaiting_payment:'Оплатите QR-счёт. После подтверждения Банка менеджер подготовит ноутбук и передаст заявку в ARCHA POINT.',
+    confirmed:'Оплата подтверждена. Rentop готовит ноутбук и резервирует ячейку в ARCHA POINT. Пока не приезжайте к постамату: дождитесь кода доступа.',
+    awaiting_pickup:'Ноутбук готовится к выдаче. Когда ARCHA POINT подтвердит ячейку, PIN или QR для открытия появится в инструкции от Rentop.',
+    issued:'Выдача отмечена. Если ноутбук ещё не получили или возникла проблема с ячейкой, сразу напишите в поддержку.',
+    in_use:'Ноутбук получен. Для продления или возврата используйте действия ниже.'
+  }[order.status] || 'Rentop координирует выдачу через ARCHA POINT.';
+  return `<section class="cabinet-pickup-instruction"><strong>Получение через ARCHA POINT 24/7</strong><p class="cabinet-pickup-location">${escape(location)}</p><p>${copy}</p><ol><li>Возьмите документ, указанный в заявке.</li><li>Открывайте ячейку только по PIN или QR, который выдаст Rentop/ARCHA POINT.</li><li>Осмотрите комплектность ноутбука при получении и сразу сообщите о проблеме.</li></ol></section>`;
+}
 function actionPanel(order) {
   const canAct = ['issued', 'in_use'].includes(order.status);
   const openExtension = order.requests?.find(request => request.kind === 'extension' && ['open','in_progress'].includes(request.status));
@@ -179,6 +207,7 @@ function fileControl(kind) {
 
 function showRentals(orders, phone, profile = null) {
   paymentByOrder = new Map(orders.filter(order => order.payment).map(order => [String(order.id), order.payment]));
+  if (activePaymentOrderId && paymentByOrder.get(activePaymentOrderId)?.status !== 'awaiting_payment') closePaymentDialog();
   login.hidden = true; dashboard.hidden = false;
   const fullName = String(profile?.full_name || '').trim();
   document.getElementById('cabinet-greeting').textContent = fullName ? `Здравствуйте, ${fullName.split(' ')[1] || fullName}!` : 'Здравствуйте!';
@@ -190,7 +219,7 @@ function showRentals(orders, phone, profile = null) {
   if (created) dashboardNotice.textContent = 'Заявка создана и уже появилась в кабинете. Следующий шаг покажем здесь.';
   rentalsEl.innerHTML = orders.map(order => {
     const state = statusInfo(order.status);
-    return `<article class="cabinet-rental" data-rental="${order.id}"><div class="cabinet-rental-top"><div><h3>${escape(order.laptop_title || 'Ноутбук Rentop')}</h3><p class="cabinet-rental-ref">Заявка ${escape(order.reference)}</p></div><span class="cabinet-badge">${escape(state.title)}</span></div><div class="cabinet-progress" aria-label="Этап ${state.step} из 5"><span class="is-done"></span><span class="${state.step >= 2 ? 'is-done' : ''}"></span><span class="${state.step >= 3 ? 'is-done' : ''}"></span><span class="${state.step >= 4 ? 'is-done' : ''}"></span><span class="${state.step >= 5 ? 'is-done' : ''}"></span></div><p class="cabinet-next-step">${escape(state.text)}</p>${documentSummary(order)}<div class="cabinet-rental-grid"><div>Срок<strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div>Получение<strong>${escape(order.delivery_label)}</strong></div><div>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div></div>${paymentPanel(order)}${actionPanel(order)}${requestForm(order)}</article>`;
+    return `<article class="cabinet-rental" data-rental="${order.id}"><div class="cabinet-rental-top"><div><h3>${escape(order.laptop_title || 'Ноутбук Rentop')}</h3><p class="cabinet-rental-ref">Заявка ${escape(order.reference)}</p></div><span class="cabinet-badge">${escape(state.title)}</span></div><div class="cabinet-progress" aria-label="Этап ${state.step} из 5"><span class="is-done"></span><span class="${state.step >= 2 ? 'is-done' : ''}"></span><span class="${state.step >= 3 ? 'is-done' : ''}"></span><span class="${state.step >= 4 ? 'is-done' : ''}"></span><span class="${state.step >= 5 ? 'is-done' : ''}"></span></div><p class="cabinet-next-step">${escape(state.text)}</p>${documentSummary(order)}<div class="cabinet-rental-grid"><div>Срок<strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div>Получение<strong>${escape(order.delivery_label)}</strong></div><div>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div></div>${pickupInstruction(order)}${paymentPanel(order)}${actionPanel(order)}${requestForm(order)}</article>`;
   }).join('');
   emptyEl.hidden = orders.length !== 0;
   if (new URLSearchParams(window.location.search).get('return') === 'booking') {
@@ -217,6 +246,7 @@ rentalsEl?.addEventListener('click', event => {
   const paymentButton = event.target.closest('[data-open-payment]');
   if (paymentButton) {
     openPaymentDialog(paymentByOrder.get(String(paymentButton.dataset.openPayment)));
+    watchPayment(paymentButton.dataset.openPayment);
     return;
   }
   const offerButton = event.target.closest('[data-open-offer]');
