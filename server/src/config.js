@@ -62,13 +62,12 @@ export function loadConfig(env = process.env) {
     offerUrl: env.OFFER_URL || '',
     bakai: {
       baseUrl: (env.BAKAI_API_BASE_URL || 'https://openbanking-api.bakai.kg').replace(/\/$/, ''),
-      // Values are copied from the one-time PDF in Bakai Business. Trim only
-      // accidental line breaks/spaces introduced while pasting into Vercel.
-      login: String(env.BAKAI_API_LOGIN || '').trim(),
-      password: String(env.BAKAI_API_PASSWORD || '').trim(),
+      // Login/password from Bakai Business are used once in Swagger to obtain
+      // this bearer token. The application must never try to consume them again.
+      apiToken: String(env.BAKAI_API_TOKEN || '').trim(),
       accountNo: String(env.BAKAI_ACCOUNT_NO || '').trim(),
       webhookBearerToken: env.BAKAI_WEBHOOK_BEARER_TOKEN || '',
-      enabled: Boolean(String(env.BAKAI_API_LOGIN || '').trim() && String(env.BAKAI_API_PASSWORD || '').trim() && env.BAKAI_ACCOUNT_NO)
+      enabled: Boolean(String(env.BAKAI_API_TOKEN || '').trim() && env.BAKAI_ACCOUNT_NO)
     }
   });
 }

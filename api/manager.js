@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { loadConfig } from '../server/src/config.js';
 import { createSupabaseApi } from '../server/src/supabase.js';
-import { createBakaiToken, generateBakaiQr, makePaymentOperationId } from '../server/src/bakai.js';
+import { verifyBakaiToken, generateBakaiQr, makePaymentOperationId } from '../server/src/bakai.js';
 
 const COOKIE = '__Host-rentop_session';
 const allowedDocumentStates = new Set(['accepted', 'rejected']);
@@ -109,8 +109,8 @@ export default async function handler(request, response) {
       return reply(response, 200, { ok:true, deletedOrderIds, preserved:orders.length - deletedOrderIds.length });
     }
     if (payload.action === 'check_bakai_connection') {
-      await createBakaiToken(config);
-      return reply(response, 200, { ok:true, message:'Авторизация Bakai успешна. Логин, пароль и доступ к API принимаются Банком.' });
+      await verifyBakaiToken(config);
+      return reply(response, 200, { ok:true, message:'Токен Bakai принят. Доступ к API подтверждён.' });
     }
     if (payload.action === 'advance_order') {
       const order = await database.getOrder(String(payload.orderId || ''));

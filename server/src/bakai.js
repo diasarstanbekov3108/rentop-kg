@@ -42,19 +42,22 @@ async function bankRequest(config, path, options = {}) {
   }
 }
 
-export async function createBakaiToken(config) {
-  if (!config.bakai.enabled) throw new Error('Интеграция Bakai ещё не настроена: добавьте логин, пароль и расчётный счёт в Vercel.');
-  let body;
+export function getBakaiToken(config) {
+  if (!config.bakai.enabled) throw new Error('Интеграция Bakai ещё не настроена: добавьте BAKAI_API_TOKEN и расчётный счёт в Vercel.');
+  return config.bakai.apiToken;
+}
+
+export async function verifyBakaiToken(config) {
+  const token = getBakaiToken(config);
   try {
-    body = await bankRequest(config, '/Auth/Login', {
-      method:'POST',
-      body:JSON.stringify({ login:config.bakai.login, password:config.bakai.password })
+    await bankRequest(config, '/api/Directory/GetRateDirectory', {
+      method:'GET',
+      headers:{ Authorization:`Bearer ${token}` }
     });
   } catch (error) {
-    throw new Error(`Ошибка авторизации Bakai (/Auth/Login): ${error.message}`);
+    throw new Error(`Ошибка проверки токена Bakai: ${error.message}`);
   }
-  if (!body?.token) throw new Error('Bakai не вернул токен авторизации.');
-  return body.token;
+  return token;
 }
 
 export function makePaymentOperationId(orderId) {
@@ -62,7 +65,7 @@ export function makePaymentOperationId(orderId) {
 }
 
 export async function generateBakaiQr(config, { operationId, amount, comment, ttlHours = 24 }) {
-  const token = await createBakaiToken(config);
+  const token = getBakaiToken(config);
   let body;
   try {
     // The enabled Bakai Business service is the regular "Создание QR-кода
