@@ -110,7 +110,7 @@ export default async function handler(request, response) {
     }
     if (payload.action === 'check_bakai_connection') {
       await verifyBakaiToken(config);
-      return reply(response, 200, { ok:true, message:'Токен Bakai принят. Доступ к API подтверждён.' });
+      return reply(response, 200, { ok:true, message:'Токен Bakai сохранён. Для проверки доступа создайте тестовый QR на 1 сом.' });
     }
     if (payload.action === 'advance_order') {
       const order = await database.getOrder(String(payload.orderId || ''));

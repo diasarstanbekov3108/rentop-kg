@@ -49,14 +49,9 @@ export function getBakaiToken(config) {
 
 export async function verifyBakaiToken(config) {
   const token = getBakaiToken(config);
-  try {
-    await bankRequest(config, '/api/Directory/GetRateDirectory', {
-      method:'GET',
-      headers:{ Authorization:`Bearer ${token}` }
-    });
-  } catch (error) {
-    throw new Error(`Ошибка проверки токена Bakai: ${error.message}`);
-  }
+  // Bakai grants a token only the scopes of the selected external service.
+  // Calling an unrelated directory endpoint makes a valid QR-only token look
+  // invalid with 401. QR creation is the authoritative safe validation.
   return token;
 }
 
