@@ -120,6 +120,30 @@ GRANT SELECT, INSERT ON TABLE public.rental_order_feedback TO service_role;
 CREATE INDEX IF NOT EXISTS rental_orders_archa_workflow_idx
   ON public.rental_orders(status, locker_status, updated_at DESC);
 
+-- Every operational stage that has reserved or issued a physical laptop must
+-- block the same dates in the public availability calendar. Otherwise a
+-- laptop could be shown as free while it is waiting in an ARCHA POINT cell or
+-- while an incident is being resolved.
+CREATE OR REPLACE VIEW public.laptop_availability
+WITH (security_barrier = true, security_invoker = false) AS
+SELECT
+  laptop_id,
+  rental_start_date,
+  rental_end_date,
+  status,
+  hold_expires_at
+FROM public.rental_orders
+WHERE status IN (
+  'confirmed', 'awaiting_archa_reservation', 'awaiting_locker_loading',
+  'awaiting_pickup', 'issued', 'in_use', 'return_requested',
+  'awaiting_return_reservation', 'awaiting_return_dropoff', 'returned', 'incident'
+)
+OR (
+  status = 'awaiting_payment'
+  AND hold_expires_at IS NOT NULL
+  AND hold_expires_at > now()
+);
+
 COMMENT ON COLUMN public.rental_orders.locker_loading_code IS
   'Служебный код ARCHA POINT для закладки устройства. Не передавать клиенту.';
 COMMENT ON COLUMN public.rental_orders.pickup_pin IS
