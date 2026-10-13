@@ -162,6 +162,26 @@ export default async function handler(request, response) {
       await database.createEvent({ order_id:order.id, event_type:'bakai_payment_revoked_from_web', actor_type:'manager', metadata:{ operation_id:payment.operation_id } }).catch(error => console.error('Bakai revocation audit event failed:', error.message));
       return reply(response, 200, { ok:true, payment:revoked });
     }
+    if (payload.action === 'confirm_bakai_payment_manually') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
+      const payment = await database.getOrderPayment(order.id).catch(() => null);
+      if (!payment || payment.status !== 'awaiting_payment') return reply(response, 409, { error:'Для этой заявки нет активного QR-счёта, ожидающего оплаты.' });
+      const reference = String(payload.reference || '').trim().slice(0, 200);
+      if (reference.length < 3) return reply(response, 400, { error:'Укажите номер банковской операции или понятную служебную пометку.' });
+      const now = new Date().toISOString();
+      const updatedPayment = await database.updateOrderPayment(payment.id, {
+        status:'paid',
+        bank_transaction_id:reference,
+        bank_payload:{ source:'manager_manual_confirmation', reference },
+        paid_at:now
+      });
+      const updatedOrder = order.status === 'awaiting_payment'
+        ? await database.updateOrder(order.id, { status:'confirmed', payment_channel:'bakai_manual_review', payment_receipt_received_at:now, payment_confirmed_at:now })
+        : order;
+      await database.createEvent({ order_id:order.id, event_type:'bakai_payment_manually_confirmed_from_web', actor_type:'manager', metadata:{ operation_id:payment.operation_id, reference, amount:payment.amount } }).catch(error => console.error('Manual Bakai payment audit event failed:', error.message));
+      return reply(response, 200, { ok:true, payment:updatedPayment, order:updatedOrder });
+    }
     return reply(response, 400, { error:'Неизвестное действие.' });
   } catch (error) { console.error('Manager API failed:', error.message); return reply(response, 400, { error:error.message || 'Не удалось загрузить панель менеджера.' }); }
 }
