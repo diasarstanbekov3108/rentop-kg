@@ -238,6 +238,29 @@ async function loadSession() {
   }
 }
 
+document.getElementById('cabinet-refresh')?.addEventListener('click', async event => {
+  const button = event.currentTarget;
+  const initialText = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Обновляем…';
+  try {
+    const fresh = await request('GET');
+    if (fresh.authenticated) {
+      showRentals(fresh.orders || [], fresh.phone, fresh.profile);
+      message('Заявки обновлены.', 'success');
+    } else {
+      dashboard.hidden = true;
+      login.hidden = false;
+      message('Сессия закончилась. Войдите повторно.', 'error');
+    }
+  } catch (error) {
+    message(error.message || 'Не удалось обновить заявки. Попробуйте ещё раз.', 'error');
+  } finally {
+    button.disabled = false;
+    button.textContent = initialText;
+  }
+});
+
 phoneForm?.addEventListener('submit', async event => { event.preventDefault(); const phone = formatPhone(phoneInput.value); if (!phone) return message('Введите номер Кыргызстана: +996XXXXXXXXX.', 'error'); const button = phoneForm.querySelector('button'); button.disabled = true; message('Отправляем код…'); try { await request('POST', { action:'request_code', phone }); pendingPhone = phone; phoneForm.hidden = true; codeForm.hidden = false; codeInput.focus(); message('Код отправлен. Введите 6 цифр из SMS.', 'success'); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
 codeForm?.addEventListener('submit', async event => { event.preventDefault(); const code = codeInput.value.replace(/\D/g, ''); if (code.length !== 6) return message('Введите все 6 цифр кода.', 'error'); const button = codeForm.querySelector('button'); button.disabled = true; message('Проверяем код…'); try { const remember = document.getElementById('cabinet-remember')?.checked !== false; const data = await request('POST', { action:'verify_code', phone:pendingPhone, code, remember }); showRentals(data.orders || [], data.phone, data.profile); message(''); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
 document.getElementById('change-phone')?.addEventListener('click', () => { codeForm.hidden = true; phoneForm.hidden = false; codeInput.value = ''; message(''); phoneInput.focus(); });
