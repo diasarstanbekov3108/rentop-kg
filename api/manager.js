@@ -2,23 +2,27 @@ import { createHmac } from 'node:crypto';
 import { loadConfig } from '../server/src/config.js';
 import { createSupabaseApi } from '../server/src/supabase.js';
 import { verifyBakaiToken, generateBakaiQr, makePaymentOperationId } from '../server/src/bakai.js';
+import { createNikitaSmsClient } from '../server/src/sms.js';
 
 const COOKIE = '__Host-rentop_session';
 const allowedDocumentStates = new Set(['accepted', 'rejected']);
 const removableStatuses = new Set(['draft', 'pending_review', 'awaiting_payment', 'payment_review', 'confirmed', 'awaiting_pickup', 'cancelled', 'rejected']);
 const statusTransitions = Object.freeze({
   pending_review:['awaiting_payment'],
-  awaiting_payment:['confirmed'],
-  confirmed:['awaiting_pickup'],
-  awaiting_pickup:['issued'],
-  issued:['in_use'],
   return_requested:['returned'],
+  awaiting_return_dropoff:['returned'],
   returned:['completed']
 });
 function readCookie(request, name) { const source = String(request.headers.cookie || ''); return source.split(';').map(value => value.trim()).find(value => value.startsWith(`${name}=`))?.slice(name.length + 1) || ''; }
 function hash(secret, value) { return createHmac('sha256', secret).update(value).digest('hex'); }
 function reply(response, status, body) { response.setHeader('Cache-Control', 'private, no-store, max-age=0'); response.status(status).json(body); }
 function samePhone(a, b) { return String(a || '').replace(/\D/g, '') === String(b || '').replace(/\D/g, ''); }
+function archaMessage(order, laptop, mode = 'issue') {
+  const reference = String(order.id || '').slice(0, 8).toUpperCase();
+  const location = mode === 'return' ? order.return_locker_address : order.locker_address;
+  const title = mode === 'return' ? 'ВОЗВРАТ RENTOP.KG' : 'ВЫДАЧА RENTOP.KG';
+  return `${title}\nЗаявка: ${reference}\nФИО: ${order.customer_name || '—'}\nТелефон: ${order.customer_phone || '—'}\nПостамат: ${location || '—'}\nНоутбук: ${laptop?.title || laptop?.name || '—'}\n${mode === 'return' ? 'Просим зарезервировать ячейку возврата и направить клиенту SMS-код доступа.' : `Срок аренды: ${order.rental_start_date || '—'} — ${order.rental_end_date || '—'}\nПросим зарезервировать ячейку и направить данные для закладки устройства.`}`;
+}
 
 export default async function handler(request, response) {
   let config;
@@ -117,10 +121,74 @@ export default async function handler(request, response) {
       const nextStatus = String(payload.nextStatus || '');
       if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
       if (!statusTransitions[order.status]?.includes(nextStatus)) return reply(response, 409, { error:'Этот переход недоступен для текущего статуса заявки.' });
+      if (nextStatus === 'returned') {
+        const documents = await database.listOrderDocuments(order.id);
+        const returnVideo = documents.find(document => document.kind === 'return_video');
+        if (returnVideo?.status !== 'accepted') return reply(response, 409, { error:'До отметки возврата менеджер должен принять видео состояния устройства при возврате.' });
+      }
       const updated = await database.updateOrder(order.id, nextStatus === 'awaiting_payment'
         ? { status:nextStatus, hold_expires_at:new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() }
         : { status:nextStatus });
       await database.createEvent({ order_id:order.id, event_type:`manager_changed_status_to_${nextStatus}_from_web`, actor_type:'manager', metadata:{ previous_status:order.status } }).catch(error => console.error('Manager transition audit event failed:', error.message));
+      return reply(response, 200, { ok:true, order:updated });
+    }
+    if (payload.action === 'prepare_archa_handoff') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      if (!order || order.delivery_type !== 'arca_locker') return reply(response, 400, { error:'Эта заявка не использует ARCHA POINT.' });
+      if (order.status !== 'confirmed') return reply(response, 409, { error:'Заявку можно передать в ARCHA POINT только после подтверждения оплаты.' });
+      const laptop = await database.getLaptop(order.laptop_id);
+      const now = new Date().toISOString();
+      const updated = await database.updateOrder(order.id, { status:'awaiting_archa_reservation', locker_status:'reservation_requested', archa_handoff_sent_at:now });
+      await database.createEvent({ order_id:order.id, event_type:'manager_prepared_archa_issue_handoff_from_web', actor_type:'manager', metadata:{ locker:order.locker_address } });
+      return reply(response, 200, { ok:true, order:updated, message:archaMessage(order, laptop) });
+    }
+    if (payload.action === 'record_archa_reservation') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      const loadingCode = String(payload.loadingCode || '').trim().slice(0, 200);
+      const reference = String(payload.reference || '').trim().slice(0, 200);
+      if (!order || order.status !== 'awaiting_archa_reservation') return reply(response, 409, { error:'Для этой заявки сейчас не ожидается резервирование ячейки.' });
+      if (loadingCode.length < 3) return reply(response, 400, { error:'Введите код закладки от ARCHA POINT.' });
+      const updated = await database.updateOrder(order.id, { status:'awaiting_locker_loading', locker_status:'reserved', locker_loading_code:loadingCode, locker_loading_reference:reference || null });
+      await database.createEvent({ order_id:order.id, event_type:'manager_recorded_archa_reservation_from_web', actor_type:'manager', metadata:{ has_reference:Boolean(reference) } });
+      return reply(response, 200, { ok:true, order:updated });
+    }
+    if (payload.action === 'mark_locker_loaded') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      if (!order || order.status !== 'awaiting_locker_loading') return reply(response, 409, { error:'Сначала получите и сохраните код закладки ARCHA POINT.' });
+      const now = new Date().toISOString();
+      const updated = await database.updateOrder(order.id, { status:'awaiting_pickup', locker_status:'loaded', locker_loaded_at:now });
+      await database.createEvent({ order_id:order.id, event_type:'manager_marked_locker_loaded_from_web', actor_type:'manager', metadata:{} });
+      return reply(response, 200, { ok:true, order:updated });
+    }
+    if (payload.action === 'mark_archa_access_sent' || payload.action === 'send_manual_pickup_code') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      if (!order || order.status !== 'awaiting_pickup') return reply(response, 409, { error:'Сначала ноутбук должен быть помещён в ячейку.' });
+      const now = new Date().toISOString();
+      let patch = { locker_status:'access_sent', customer_access_sent_at:now };
+      if (payload.action === 'send_manual_pickup_code') {
+        const code = String(payload.code || '').trim().slice(0, 120);
+        if (code.length < 3) return reply(response, 400, { error:'Введите код доступа, полученный у ARCHA POINT.' });
+        if (!config.nikitaSms.enabled) return reply(response, 503, { error:'Nikita SMS не настроен: нельзя безопасно отправить ручной код клиенту.' });
+        await createNikitaSmsClient(config.nikitaSms).send({ phone:order.customer_phone, text:`RENTOP.KG: код доступа к постамату ARCHA POINT: ${code}. Не передавайте его третьим лицам.` });
+        patch = { ...patch, pickup_pin:code };
+      }
+      const updated = await database.updateOrder(order.id, patch);
+      await database.createEvent({ order_id:order.id, event_type:payload.action === 'send_manual_pickup_code' ? 'manager_sent_manual_archa_pickup_code_from_web' : 'manager_confirmed_archa_pickup_sms_from_web', actor_type:'manager', metadata:{} });
+      return reply(response, 200, { ok:true, order:updated });
+    }
+    if (payload.action === 'prepare_archa_return_handoff') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      if (!order || order.status !== 'awaiting_return_reservation' || order.return_method !== 'arca_locker') return reply(response, 409, { error:'Нет активного запроса на возврат через постамат.' });
+      const laptop = await database.getLaptop(order.laptop_id);
+      await database.createEvent({ order_id:order.id, event_type:'manager_prepared_archa_return_handoff_from_web', actor_type:'manager', metadata:{ locker:order.return_locker_address } });
+      return reply(response, 200, { ok:true, message:archaMessage(order, laptop, 'return') });
+    }
+    if (payload.action === 'mark_return_access_sent') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      if (!order || order.status !== 'awaiting_return_reservation') return reply(response, 409, { error:'Нет ожидающего резервирования возврата.' });
+      const now = new Date().toISOString();
+      const updated = await database.updateOrder(order.id, { status:'awaiting_return_dropoff', locker_status:'return_access_sent', return_access_sent_at:now });
+      await database.createEvent({ order_id:order.id, event_type:'manager_confirmed_archa_return_sms_from_web', actor_type:'manager', metadata:{} });
       return reply(response, 200, { ok:true, order:updated });
     }
     if (payload.action === 'create_bakai_payment') {

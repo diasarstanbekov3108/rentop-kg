@@ -21,6 +21,13 @@ let currentPreviewUrl = '';
 let paymentByOrder = new Map();
 let paymentPollingTimer = null;
 let activePaymentOrderId = '';
+let supportWhatsappUrl = '';
+const ARCHA_LOCATIONS = [
+  { value:'Bishkek Park — Киевская улица, 148, этаж B2', hours:'ежедневно 10:00–22:00', map:'https://2gis.kg/bishkek/search/%D0%9F%D0%BE%D1%81%D1%82%D0%B0%D0%BC%D0%B0%D1%82%D1%8B/rubricId/95584/firm/70000001092731465/74.589874%2C42.874488' },
+  { value:'Гипермаркет «Азия» — ул. Максима Горького, 1/2а', hours:'круглосуточно', map:'https://2gis.kg/bishkek/firm/70000001092731520' },
+  { value:'ТЦ DK — ул. Нуркамала Жетикашкаевой, 29', hours:'ежедневно 08:00–21:00', map:'https://2gis.kg/bishkek/geo/70000001092731290' },
+  { value:'ТРЦ Tommi Mall — ул. Аалы Токомбаева, 17/2', hours:'круглосуточно', map:'https://2gis.kg/bishkek/geo/70000001092731396' }
+];
 
 const formatPhone = (value, masked = false) => {
   let digits = String(value || '').replace(/\D/g, '');
@@ -44,11 +51,15 @@ const statusInfo = (status) => ({
   pending_review:{ title:'Проверяем документы', text:'Документы получены. Менеджер проверяет их перед созданием счёта.', step:1 },
   awaiting_payment:{ title:'Ожидает оплаты', text:'Оплатите счёт в этом кабинете. После банковского подтверждения менеджер подготовит выдачу.', step:1 },
   payment_review:{ title:'Проверяем оплату', text:'Менеджер проверяет поступление оплаты.', step:2 },
-  confirmed:{ title:'Заявка подтверждена', text:'Ноутбук готовится к выдаче.', step:2 },
-  awaiting_pickup:{ title:'Готовится к выдаче', text:'Мы подготовим PIN/QR и покажем его здесь.', step:3 },
-  issued:{ title:'Ноутбук выдан', text:'Подтвердите получение, если ещё не сделали этого.', step:4 },
+  confirmed:{ title:'Оплата подтверждена', text:'Менеджер передаёт заявку в ARCHA POINT для резервирования ячейки.', step:2 },
+  awaiting_archa_reservation:{ title:'Резервируем ячейку', text:'ARCHA POINT готовит ячейку. Пока не приезжайте к постамату.', step:2 },
+  awaiting_locker_loading:{ title:'Готовим закладку', text:'Ячейка зарезервирована. Менеджер помещает ноутбук, зарядку и комплект в постамат.', step:3 },
+  awaiting_pickup:{ title:'Готово к получению', text:'Ноутбук помещён в ячейку. Проверьте SMS от ARCHA POINT с кодом доступа.', step:3 },
+  issued:{ title:'Ожидаем подтверждение получения', text:'Подтвердите получение только после того, как заберёте ноутбук из ячейки.', step:4 },
   in_use:{ title:'Аренда активна', text:'Здесь можно продлить аренду или начать возврат.', step:4 },
-  return_requested:{ title:'Возврат оформляется', text:'Менеджер подготовит дальнейшие инструкции и доступ к ячейке.', step:5 },
+  return_requested:{ title:'Возврат оформляется', text:'Менеджер подтвердит выбранный способ возврата и пришлёт дальнейшие инструкции.', step:5 },
+  awaiting_return_reservation:{ title:'Резервируем ячейку возврата', text:'ARCHA POINT готовит ячейку для возврата. Дождитесь SMS с кодом.', step:5 },
+  awaiting_return_dropoff:{ title:'Можно вернуть ноутбук', text:'Проверьте инструкцию, снимите видео состояния и положите устройство в назначенную ячейку.', step:5 },
   returned:{ title:'Возврат на проверке', text:'Мы проверяем технику и сообщим о завершении.', step:5 },
   completed:{ title:'Аренда завершена', text:'Спасибо, что выбрали Rentop.', step:5 },
   cancelled:{ title:'Заявка отменена', text:'Эти даты снова доступны для бронирования.', step:0 },
@@ -56,6 +67,7 @@ const statusInfo = (status) => ({
 }[status] || { title:'Заявка обрабатывается', text:'Мы сообщим, когда потребуется действие.', step:1 });
 const date = (value) => value ? new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',year:'numeric'}).format(new Date(`${value}T00:00:00`)) : '—';
 const escape = (value) => String(value || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const archaLocation = (value) => ARCHA_LOCATIONS.find(location => location.value === value) || null;
 
 function closeDocumentViewer() {
   if (!documentViewer) return;
@@ -70,9 +82,10 @@ function openDocumentViewer(url, name = 'Документ', contentType = '') {
   if (!documentViewer || !documentViewerContent || !url) return;
   currentPreviewUrl = url;
   const isFrame = contentType === 'application/pdf' || contentType === 'text/html' || /\.pdf(?:[?#]|$)/i.test(name);
-  documentViewerContent.innerHTML = isFrame
-    ? `<iframe src="${escape(url)}" title="${escape(name)}"></iframe>`
-    : `<img src="${escape(url)}" alt="${escape(name)}">`;
+  const isVideo = contentType.startsWith('video/') || /\.(?:mp4|mov)(?:[?#]|$)/i.test(name);
+  documentViewerContent.innerHTML = isVideo
+    ? `<video controls preload="metadata" src="${escape(url)}">Ваш браузер не поддерживает просмотр видео.</video>`
+    : isFrame ? `<iframe src="${escape(url)}" title="${escape(name)}"></iframe>` : `<img src="${escape(url)}" alt="${escape(name)}">`;
   documentViewer.hidden = false;
   document.body.style.overflow = 'hidden';
 }
@@ -106,7 +119,7 @@ function watchPayment(orderId) {
   paymentPollingTimer = window.setInterval(async () => {
     try {
       const fresh = await request('GET');
-      if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile);
+      if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl);
     } catch { /* The customer can continue scanning; the next poll will retry. */ }
   }, 8000);
 }
@@ -131,7 +144,7 @@ function documentSummary(order) {
       : `<span>${text}</span>`;
   };
   const reasons = [...latest.values()].filter(document => document.status === 'rejected' && document.reviewer_note).map(document => `<li><strong>${escape(({ identity:'Документ', selfie:'Селфи', supporting:'Подтверждение' }[document.kind] || 'Документ'))}:</strong> ${escape(document.reviewer_note)}</li>`).join('');
-  return `<div class="cabinet-doc-summary">${state('identity', 'Документ')}${state('selfie', 'Селфи')}${state('supporting', 'Подтверждение')}</div>${reasons ? `<div class="cabinet-document-reasons"><strong>Нужно исправить</strong><ul>${reasons}</ul></div>` : ''}`;
+  return `<div class="cabinet-doc-summary">${state('identity', 'Документ')}${state('selfie', 'Селфи')}${state('supporting', 'Подтверждение')}${state('issue_video', 'Видео до получения')}${state('return_video', 'Видео возврата')}</div>${reasons ? `<div class="cabinet-document-reasons"><strong>Нужно исправить</strong><ul>${reasons}</ul></div>` : ''}`;
 }
 function documentMode(order) {
   const latest = latestDocuments(order);
@@ -159,27 +172,34 @@ function paymentPanel(order) {
 function pickupInstruction(order) {
   if (order.delivery_type !== 'arca_locker') return '';
   const location = order.locker_address || 'локация, выбранная при оформлении';
+  const point = archaLocation(location);
   const copy = {
     awaiting_payment:'Оплатите QR-счёт. После подтверждения Банка менеджер подготовит ноутбук и передаст заявку в ARCHA POINT.',
-    confirmed:'Оплата подтверждена. Rentop готовит ноутбук и резервирует ячейку в ARCHA POINT. Пока не приезжайте к постамату: дождитесь кода доступа.',
-    awaiting_pickup:'Ноутбук готовится к выдаче. Когда ARCHA POINT подтвердит ячейку, PIN или QR для открытия появится в инструкции от Rentop.',
-    issued:'Выдача отмечена. Если ноутбук ещё не получили или возникла проблема с ячейкой, сразу напишите в поддержку.',
+    confirmed:'Оплата подтверждена. Rentop передаёт заявку в ARCHA POINT. Пока не приезжайте к постамату: дождитесь следующего статуса.',
+    awaiting_archa_reservation:'ARCHA POINT резервирует ячейку. Мы сообщим, когда менеджер сможет разместить ноутбук.',
+    awaiting_locker_loading:'Ячейка готова. Менеджер размещает ноутбук в постамате и проверяет комплектацию.',
+    awaiting_pickup:'Ноутбук помещён в ячейку. ARCHA POINT отправляет SMS-код на номер из заявки. Если код не пришёл, сразу сообщите нам.',
+    issued:'Подтвердите получение только после того, как заберёте ноутбук из ячейки.',
     in_use:'Ноутбук получен. Для продления или возврата используйте действия ниже.'
   }[order.status] || 'Rentop координирует выдачу через ARCHA POINT.';
-  return `<section class="cabinet-pickup-instruction"><strong>Получение через ARCHA POINT 24/7</strong><p class="cabinet-pickup-location">${escape(location)}</p><p>${copy}</p><ol><li>Возьмите документ, указанный в заявке.</li><li>Открывайте ячейку только по PIN или QR, который выдаст Rentop/ARCHA POINT.</li><li>Осмотрите комплектность ноутбука при получении и сразу сообщите о проблеме.</li></ol></section>`;
+  return `<section class="cabinet-pickup-instruction"><strong>Получение через ARCHA POINT</strong><p class="cabinet-pickup-location">${escape(location)}${point ? ` · ${escape(point.hours)}` : ''}</p>${point ? `<a class="cabinet-map-link" href="${escape(point.map)}" target="_blank" rel="noopener">Открыть маршрут в 2ГИС ↗</a>` : ''}<p>${copy}</p><ol><li>До получения снимите короткое видео состояния ячейки и комплекта.</li><li>Открывайте ячейку только по SMS-коду ARCHA POINT или инструкции менеджера.</li><li>Осмотрите ноутбук, зарядку и комплектность сразу. При проблеме не подтверждайте получение — откройте обращение.</li></ol></section>`;
 }
 function actionPanel(order) {
-  const canAct = ['issued', 'in_use'].includes(order.status);
+  const canAct = order.status === 'in_use';
   const openExtension = order.requests?.find(request => request.kind === 'extension' && ['open','in_progress'].includes(request.status));
   const openReturn = order.requests?.find(request => request.kind === 'early_return' && ['open','in_progress'].includes(request.status));
   const docState = documentMode(order);
   const documentText = docState.mode === 'approved' ? 'Документы проверены' : docState.mode === 'submitted' ? 'Документы на проверке' : docState.mode === 'replacement' ? 'Заменить документ' : 'Документы и договор';
   const documents = `<button class="cabinet-action secondary" data-panel="documents" data-document-mode="${docState.mode}" data-document-kinds="${docState.kinds.join(',')}" data-order="${order.id}">${documentText}</button>`;
-  if (docState.mode === 'upload') return `<div class="cabinet-documents-cta"><strong>Следующий шаг — документы</strong><p>Прикрепите паспорт/ID и селфи с документом. Без проверки документов счёт на оплату не создаётся.</p>${documents}</div><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>`;
-  if (docState.mode === 'approved') return `<div class="cabinet-action-disabled">Продление и досрочный возврат станут доступны после выдачи ноутбука.</div><button class="cabinet-action secondary" data-panel="support" data-order="${order.id}">Нужна помощь</button>`;
-  if (openExtension || openReturn) return `${documents}<div class="cabinet-request-state">⌛ ${escape(requestLabel(openExtension || openReturn))}: ожидает решения менеджера</div>`;
-  if (!canAct) return `${documents}<div class="cabinet-action-disabled">Продление и досрочный возврат станут доступны после выдачи ноутбука.</div><button class="cabinet-action secondary" data-panel="support" data-order="${order.id}">Нужна помощь</button>`;
-  return `<div class="cabinet-actions">${documents}<button class="cabinet-action" data-panel="extend" data-order="${order.id}">Продлить аренду</button><button class="cabinet-action secondary" data-panel="return" data-order="${order.id}">Вернуть раньше</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button></div>`;
+  const whatsapp = supportWhatsappUrl ? `<a class="cabinet-action ghost" href="${escape(supportWhatsappUrl)}?text=${encodeURIComponent(`Здравствуйте! Нужна помощь по заявке ${order.reference}.`)}" target="_blank" rel="noopener">Написать в WhatsApp</a>` : '';
+  if (docState.mode === 'upload') return `<div class="cabinet-documents-cta"><strong>Следующий шаг — документы</strong><p>Прикрепите паспорт/ID и селфи с документом. Без проверки документов счёт на оплату не создаётся.</p>${documents}</div><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
+  if (docState.mode === 'approved') return `<div class="cabinet-action-disabled">Продление и досрочный возврат станут доступны после выдачи ноутбука.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
+  if (order.status === 'awaiting_pickup') return `${documents}<div class="cabinet-request-state">До получения снимите короткое видео состояния комплекта. Ноутбук должен быть помещён в ячейку, а SMS-код — прийти от ARCHA POINT.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="issue-video" data-order="${order.id}">Прикрепить видео до получения</button><button class="cabinet-action" data-confirm-pickup="${order.id}">Я получил(а) ноутбук</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Код не пришёл / проблема с постаматом</button></div>`;
+  if (order.status === 'awaiting_return_dropoff') return `${documents}<div class="cabinet-request-state">Снимите видео состояния ноутбука, зарядки и комплекта до помещения в ячейку. Затем используйте SMS-код ARCHA POINT.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="return-video" data-order="${order.id}">Прикрепить видео возврата</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Проблема с возвратом</button></div>`;
+  if (openExtension || openReturn) return `${documents}<div class="cabinet-request-state">⌛ ${escape(requestLabel(openExtension || openReturn))}: ожидает решения менеджера</div><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>`;
+  if (order.status === 'completed') return `${documents}${order.feedback ? '<div class="cabinet-request-state">Спасибо — ваш отзыв уже получен.</div>' : '<div class="cabinet-actions"><button class="cabinet-action" data-panel="feedback" data-order="' + order.id + '">Оставить отзыв</button><button class="cabinet-action ghost" data-panel="support" data-order="' + order.id + '">Предложить улучшение</button></div>'}`;
+  if (!canAct) return `${documents}<div class="cabinet-action-disabled">Продление и досрочный возврат станут доступны после выдачи ноутбука.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
+  return `<div class="cabinet-actions">${documents}<button class="cabinet-action" data-panel="extend" data-order="${order.id}">Продлить аренду</button><button class="cabinet-action secondary" data-panel="return" data-order="${order.id}">Вернуть раньше</button><button class="cabinet-action ghost" data-panel="comment" data-order="${order.id}">Комментарий к заказу</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
 }
 function requestForm(order) {
   return `<div class="cabinet-request-panel" id="panel-${order.id}" hidden></div>`;
@@ -195,9 +215,16 @@ function panelMarkup(kind, orderId, documentState = {}) {
     const warnings = replacement ? '' : `<div class="cabinet-safety-notice"><strong>Важно о документах и технике</strong><p>Подделка, использование чужих или заведомо недостоверных документов может повлечь ответственность по законодательству Кыргызской Республики. Rentop проверяет документы до выдачи.</p><p>На выдаваемом оборудовании установлены средства контроля местонахождения и целостности, включая GPS-трекеры и гарантийные пломбы. Несанкционированное вскрытие, нарушение пломб или попытка отключить средства контроля считаются нарушением правил эксплуатации и могут повлечь штраф, возмещение ущерба и обращение в уполномоченные органы.</p></div>`;
     return `<form class="cabinet-inline-form cabinet-documents-form" data-document-upload="true" data-document-replacement="${replacement ? '1' : ''}" data-required-kinds="${requiredKinds.join(',')}" data-order="${orderId}"><label>${replacement ? 'Прикрепите исправленный документ' : 'Подтвердите данные для заявки'}</label><p>${replacement ? 'Менеджер открыл замену для отмеченного файла. После повторной загрузки заявка снова уйдёт на проверку.' : 'Документы увидит только команда Rentop для проверки заявки. Допустимы JPG, PNG или PDF до 8 МБ.'}</p>${kinds.map(fileControl).join('')}${offer}${warnings}<label class="cabinet-document-consent"><input name="documentConsent" type="checkbox" required><span>Согласен(на) на передачу документов команде Rentop исключительно для проверки заявки и оформления договора.</span></label><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">${replacement ? 'Отправить замену' : 'Отправить на проверку'}</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>После отправки повторная загрузка будет заблокирована до решения менеджера.</p></form>`;
   }
+  if (kind === 'issue-video' || kind === 'return-video') {
+    const documentKind = kind === 'issue-video' ? 'issue_video' : 'return_video';
+    const title = kind === 'issue-video' ? 'Видео до получения' : 'Видео возврата';
+    return `<form class="cabinet-inline-form cabinet-evidence-form" data-document-upload="true" data-evidence-upload="true" data-required-kinds="${documentKind}" data-order="${orderId}"><label>${title}</label><p>Снимите короткое непрерывное видео: ноутбук, экран, корпус, зарядку и комплект. Допустимы MP4 или MOV до 50 МБ.</p><input name="${documentKind}" type="file" accept="video/mp4,video/quicktime" required><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Отправить на проверку</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
+  }
   if (kind === 'extend') return `<form class="cabinet-inline-form" data-request="extension_request" data-order="${orderId}"><label>На сколько дней продлить?</label><div class="cabinet-inline-row"><input name="days" type="number" min="1" max="30" value="3" required><button class="cabinet-action" type="submit">Отправить запрос</button></div><p>Менеджер проверит доступность и пришлёт сумму к оплате.</p></form>`;
-  if (kind === 'return') return `<form class="cabinet-inline-form" data-request="early_return_request" data-order="${orderId}"><label>Коротко опишите причину (необязательно)</label><textarea name="message" maxlength="500" placeholder="Например: изменились планы, хочу вернуть сегодня"></textarea><div class="cabinet-inline-row"><button class="cabinet-action danger" type="submit">Запросить возврат</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>Не кладите ноутбук в ячейку, пока не появится инструкция и новый PIN/QR.</p></form>`;
-  return `<form class="cabinet-inline-form" data-request="support_request" data-order="${orderId}"><label>Чем помочь?</label><select name="kind"><option value="rentop">Вопрос к Rentop</option><option value="archa">Проблема с ARCHA POINT</option></select><textarea name="message" minlength="3" maxlength="1000" placeholder="Опишите ситуацию — менеджер увидит сообщение"></textarea><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Отправить обращение</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
+  if (kind === 'return') return `<form class="cabinet-inline-form" data-request="early_return_request" data-order="${orderId}"><label>Как вам удобнее вернуть ноутбук?</label><select name="returnMethod" required><option value="">Выберите способ</option><option value="arca_locker">Через постамат ARCHA POINT</option><option value="courier">Заказать курьера Rentop</option><option value="warehouse">Привезти на склад Rentop</option></select><div class="cabinet-return-locker" hidden><label>Выберите постамат возврата</label><select name="returnLockerAddress"><option value="">Выберите постамат</option>${ARCHA_LOCATIONS.map(location => `<option value="${escape(location.value)}">${escape(location.value)} · ${escape(location.hours)}</option>`).join('')}</select></div><label>Коротко опишите причину (необязательно)</label><textarea name="message" maxlength="500" placeholder="Например: изменились планы, хочу вернуть сегодня"></textarea><div class="cabinet-inline-row"><button class="cabinet-action danger" type="submit">Запросить возврат</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>Перед возвратом снимите короткое видео состояния ноутбука и комплекта. Не кладите устройство в ячейку, пока не придёт инструкция.</p></form>`;
+  if (kind === 'comment') return `<form class="cabinet-inline-form" data-request="save_order_comment" data-order="${orderId}"><label>Комментарий к заказу</label><textarea name="message" minlength="3" maxlength="1000" placeholder="Например: прошу проверить зарядку, нужен переходник или есть вопрос по комплектности"></textarea><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Сохранить комментарий</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>Комментарий увидит менеджер Rentop при подготовке заказа.</p></form>`;
+  if (kind === 'feedback') return `<form class="cabinet-inline-form" data-request="submit_feedback" data-order="${orderId}"><label>Спасибо, что выбрали Rentop</label><select name="rating"><option value="">Оценка — по желанию</option><option value="5">5 — отлично</option><option value="4">4 — хорошо</option><option value="3">3 — нормально</option><option value="2">2 — есть проблемы</option><option value="1">1 — плохо</option></select><label>Ваш отзыв</label><textarea name="review" maxlength="1500" placeholder="Что вам понравилось?"></textarea><label>Предложение по улучшению</label><textarea name="suggestion" maxlength="1500" placeholder="Что сделать удобнее?"></textarea><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Отправить отзыв</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
+  return `<form class="cabinet-inline-form" data-request="support_request" data-order="${orderId}"><label>Что случилось?</label><select name="kind"><option value="rentop">Вопрос к Rentop</option><option value="archa_code_missing">Не пришёл код ARCHA POINT</option><option value="archa_locker_issue">Постамат не открывается или не выдаёт ноутбук</option><option value="archa">Другая проблема с ARCHA POINT</option><option value="rental_issue">Проблема с ноутбуком или комплектностью</option></select><textarea name="message" minlength="3" maxlength="1000" placeholder="Опишите ситуацию — менеджер увидит сообщение"></textarea><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Отправить обращение</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
 }
 function fileControl(kind) {
   const [title, hint] = ({ identity:['Паспорт или ID-карта', 'обязательно'], selfie:['Селфи с документом', 'обязательно'], supporting:['Официальное подтверждение', 'необязательно: выберите тип документа ниже'] }[kind] || ['Документ', '']);
@@ -205,7 +232,8 @@ function fileControl(kind) {
   return `<div class="cabinet-file-control"><label for="document-${kind}">${title} <span>${hint}</span></label>${typeChoice}<input id="document-${kind}" name="${kind}" type="file" accept="image/jpeg,image/png,application/pdf" hidden><div><button class="cabinet-file-choose" type="button" data-file-trigger="${kind}">Выберите файл</button><button class="cabinet-file-preview" type="button" data-file-preview="${kind}" disabled>Файл не выбран</button></div></div>`;
 }
 
-function showRentals(orders, phone, profile = null) {
+function showRentals(orders, phone, profile = null, whatsappUrl = '') {
+  supportWhatsappUrl = whatsappUrl || '';
   paymentByOrder = new Map(orders.filter(order => order.payment).map(order => [String(order.id), order.payment]));
   if (activePaymentOrderId && paymentByOrder.get(activePaymentOrderId)?.status !== 'awaiting_payment') closePaymentDialog();
   login.hidden = true; dashboard.hidden = false;
@@ -230,7 +258,7 @@ async function loadSession() {
   try {
     const data = await request('GET');
     loading.hidden = true;
-    if (data.authenticated) { showRentals(data.orders || [], data.phone, data.profile); return; }
+    if (data.authenticated) { showRentals(data.orders || [], data.phone, data.profile, data.whatsappUrl); return; }
     login.hidden = false;
   } catch {
     loading.hidden = true;
@@ -246,7 +274,7 @@ document.getElementById('cabinet-refresh')?.addEventListener('click', async even
   try {
     const fresh = await request('GET');
     if (fresh.authenticated) {
-      showRentals(fresh.orders || [], fresh.phone, fresh.profile);
+      showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl);
       message('Заявки обновлены.', 'success');
     } else {
       dashboard.hidden = true;
@@ -262,7 +290,7 @@ document.getElementById('cabinet-refresh')?.addEventListener('click', async even
 });
 
 phoneForm?.addEventListener('submit', async event => { event.preventDefault(); const phone = formatPhone(phoneInput.value); if (!phone) return message('Введите номер Кыргызстана: +996XXXXXXXXX.', 'error'); const button = phoneForm.querySelector('button'); button.disabled = true; message('Отправляем код…'); try { await request('POST', { action:'request_code', phone }); pendingPhone = phone; phoneForm.hidden = true; codeForm.hidden = false; codeInput.focus(); message('Код отправлен. Введите 6 цифр из SMS.', 'success'); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
-codeForm?.addEventListener('submit', async event => { event.preventDefault(); const code = codeInput.value.replace(/\D/g, ''); if (code.length !== 6) return message('Введите все 6 цифр кода.', 'error'); const button = codeForm.querySelector('button'); button.disabled = true; message('Проверяем код…'); try { const remember = document.getElementById('cabinet-remember')?.checked !== false; const data = await request('POST', { action:'verify_code', phone:pendingPhone, code, remember }); showRentals(data.orders || [], data.phone, data.profile); message(''); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
+codeForm?.addEventListener('submit', async event => { event.preventDefault(); const code = codeInput.value.replace(/\D/g, ''); if (code.length !== 6) return message('Введите все 6 цифр кода.', 'error'); const button = codeForm.querySelector('button'); button.disabled = true; message('Проверяем код…'); try { const remember = document.getElementById('cabinet-remember')?.checked !== false; const data = await request('POST', { action:'verify_code', phone:pendingPhone, code, remember }); showRentals(data.orders || [], data.phone, data.profile, data.whatsappUrl); message(''); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
 document.getElementById('change-phone')?.addEventListener('click', () => { codeForm.hidden = true; phoneForm.hidden = false; codeInput.value = ''; message(''); phoneInput.focus(); });
 document.getElementById('cabinet-logout')?.addEventListener('click', async () => { await request('POST', { action:'logout' }).catch(() => {}); dashboard.hidden = true; login.hidden = false; phoneForm.hidden = false; codeForm.hidden = true; phoneInput.value = ''; codeInput.value = ''; pendingPhone = ''; message('Вы вышли из кабинета.'); });
 rentalsEl?.addEventListener('click', event => {
@@ -296,6 +324,15 @@ rentalsEl?.addEventListener('click', event => {
     openDocumentViewer(savedDocument.dataset.documentView, savedDocument.dataset.documentName, savedDocument.dataset.documentType);
     return;
   }
+  const pickupConfirm = event.target.closest('[data-confirm-pickup]');
+  if (pickupConfirm) {
+    if (!window.confirm('Подтвердите только после того, как вы забрали ноутбук из ячейки и проверили комплектность.')) return;
+    pickupConfirm.disabled = true;
+    request('POST', { action:'confirm_pickup', orderId:pickupConfirm.dataset.confirmPickup })
+      .then(async result => { message(result.message, 'success'); const fresh = await request('GET'); if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl); })
+      .catch(error => { message(error.message, 'error'); pickupConfirm.disabled = false; });
+    return;
+  }
   const button = event.target.closest('[data-panel]');
   if (button) {
     const panel = document.getElementById(`panel-${button.dataset.order}`);
@@ -323,6 +360,12 @@ document.getElementById('cabinet-payment-dialog-close')?.addEventListener('click
 paymentDialog?.addEventListener('click', event => { if (event.target === paymentDialog) closePaymentDialog(); });
 document.addEventListener('keydown', event => { if (event.key !== 'Escape') return; if (!documentViewer?.hidden) closeDocumentViewer(); if (!paymentDialog?.hidden) closePaymentDialog(); });
 rentalsEl?.addEventListener('change', event => {
+  const returnMethod = event.target.closest('select[name="returnMethod"]');
+  if (returnMethod) {
+    const locker = returnMethod.closest('form')?.querySelector('.cabinet-return-locker');
+    if (locker) locker.hidden = returnMethod.value !== 'arca_locker';
+    return;
+  }
   const input = event.target.closest('input[type="file"]');
   if (!input) return;
   const preview = input.closest('.cabinet-file-control')?.querySelector('[data-file-preview]');
@@ -337,9 +380,10 @@ rentalsEl?.addEventListener('submit', async event => {
     event.preventDefault();
     const button = documentForm.querySelector('[type="submit"]');
     const requiredKinds = String(documentForm.dataset.requiredKinds || '').split(',').filter(Boolean);
-    const files = ['identity', 'selfie', 'supporting'].map(kind => ({ kind, file:documentForm.elements[kind]?.files?.[0] })).filter(item => item.file);
+    const files = ['identity', 'selfie', 'supporting', 'issue_video', 'return_video'].map(kind => ({ kind, file:documentForm.elements[kind]?.files?.[0] })).filter(item => item.file);
     const isReplacement = documentForm.dataset.documentReplacement === '1';
-    if (!requiredKinds.every(kind => files.some(item => item.kind === kind)) || !documentForm.elements.documentConsent?.checked || (!isReplacement && !documentForm.elements.offerConsent?.checked)) return;
+    const isEvidence = documentForm.dataset.evidenceUpload === 'true';
+    if (!requiredKinds.every(kind => files.some(item => item.kind === kind)) || (!isEvidence && (!documentForm.elements.documentConsent?.checked || (!isReplacement && !documentForm.elements.offerConsent?.checked)))) return;
     const supporting = files.find(item => item.kind === 'supporting');
     if (supporting && !documentForm.elements.supportingType?.value) return message('Выберите, какой официальный документ вы прикрепляете.', 'error');
     button.disabled = true;
@@ -350,7 +394,8 @@ rentalsEl?.addEventListener('submit', async event => {
         const selectedType = kind === 'supporting' ? documentForm.elements.supportingType.value : '';
         const fileName = selectedType ? `${selectedType} — ${file.name}` : file.name;
         button.textContent = `Загружаем ${index + 1}/${files.length}…`;
-        if (!['image/jpeg', 'image/png', 'application/pdf'].includes(file.type) || file.size > 8 * 1024 * 1024) throw new Error('Допустимы JPG, PNG или PDF размером до 8 МБ.');
+        const isVideo = ['video/mp4', 'video/quicktime'].includes(file.type);
+        if (!['image/jpeg', 'image/png', 'application/pdf', 'video/mp4', 'video/quicktime'].includes(file.type) || file.size > (isVideo ? 50 : 8) * 1024 * 1024) throw new Error('Допустимы JPG, PNG, PDF до 8 МБ или короткое видео MP4/MOV до 50 МБ.');
         const ticket = await request('POST', { action:'create_document_upload', orderId:documentForm.dataset.order, kind, fileName, contentType:file.type, byteSize:file.size });
         const upload = await fetch(ticket.uploadUrl, { method:'PUT', headers:{ Authorization:`Bearer ${ticket.token}`, 'x-upsert':'false', 'content-type':file.type }, body:file });
         if (!upload.ok) throw new Error('Не удалось загрузить файл. Проверьте соединение и попробуйте снова.');
@@ -358,11 +403,11 @@ rentalsEl?.addEventListener('submit', async event => {
       }
       message('Документы загружены. Менеджер проверит их и сообщит следующий шаг.', 'success');
       const fresh = await request('GET');
-      if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile);
+      if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl);
     } catch (error) {
       const output = documentForm.querySelector('.cabinet-form-error') || document.createElement('p');
       output.className = 'cabinet-form-error'; output.textContent = error.message; documentForm.append(output);
-      button.disabled = false; button.textContent = 'Загрузить документы';
+      button.disabled = false; button.textContent = isEvidence ? 'Отправить на проверку' : 'Загрузить документы';
     }
     return;
   }
@@ -373,10 +418,10 @@ rentalsEl?.addEventListener('submit', async event => {
   button.disabled = true; button.textContent = 'Отправляем…';
   const data = new FormData(form);
   try {
-    const result = await request('POST', { action:form.dataset.request, orderId:form.dataset.order, days:data.get('days'), kind:data.get('kind'), message:data.get('message') });
+    const result = await request('POST', { action:form.dataset.request, orderId:form.dataset.order, days:data.get('days'), kind:data.get('kind'), message:data.get('message'), returnMethod:data.get('returnMethod'), returnLockerAddress:data.get('returnLockerAddress'), rating:data.get('rating'), review:data.get('review'), suggestion:data.get('suggestion') });
     message(result.message || 'Запрос отправлен.', 'success');
     const fresh = await request('GET');
-    if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile);
+    if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl);
   } catch (error) {
     const output = form.querySelector('.cabinet-form-error') || document.createElement('p');
     output.className = 'cabinet-form-error'; output.textContent = error.message; form.append(output);
@@ -390,7 +435,7 @@ profileEl?.addEventListener('submit', async event => {
   try {
     await request('POST', { action:'save_profile', fullName:new FormData(form).get('fullName') });
     const fresh = await request('GET');
-    if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile);
+    if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl);
   } catch (error) {
     const output = document.createElement('p'); output.className = 'cabinet-form-error'; output.textContent = error.message; form.append(output); button.disabled = false;
   }

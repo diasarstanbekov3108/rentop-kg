@@ -58,6 +58,7 @@ export function loadConfig(env = process.env) {
     offerOtpHmacSecret: env.OFFER_OTP_HMAC_SECRET || '',
     customerOtpHmacSecret: env.CUSTOMER_OTP_HMAC_SECRET || '',
     managerPhone: String(env.RENTOP_MANAGER_PHONE || '').replace(/[^0-9+]/g, ''),
+    rentopWhatsappPhone: String(env.RENTOP_WHATSAPP_PHONE || '').replace(/\D/g, ''),
     offerVersion: env.OFFER_VERSION || 'draft-2026-09-25',
     offerUrl: env.OFFER_URL || '',
     bakai: {

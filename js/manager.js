@@ -20,14 +20,14 @@ let pendingManagerPhone = '';
 
 const escape = value => String(value || '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' }[char]));
 const date = value => value ? new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }).format(new Date(value)) : '—';
-const statusLabel = status => ({ draft:'Новая заявка', pending_review:'Проверка документов', awaiting_payment:'Ожидает оплаты', payment_review:'Проверка оплаты', confirmed:'Оплата подтверждена', awaiting_pickup:'Готовится к выдаче', issued:'Выдана', in_use:'Активна', return_requested:'Возврат', returned:'Проверка возврата', completed:'Завершена', cancelled:'Отменена', rejected:'Отклонена' }[status] || status || 'Новая');
-const docLabel = kind => ({ identity:'Документ', selfie:'Селфи', supporting:'Подтверждение' }[kind] || 'Документ');
-const canDelete = order => ['draft', 'pending_review', 'awaiting_payment', 'payment_review', 'confirmed', 'awaiting_pickup', 'cancelled', 'rejected'].includes(order.status);
+const statusLabel = status => ({ draft:'Новая заявка', pending_review:'Проверка документов', awaiting_payment:'Ожидает оплаты', payment_review:'Проверка оплаты', confirmed:'Оплата подтверждена', awaiting_archa_reservation:'Резервируем ячейку', awaiting_locker_loading:'Ожидает закладки', awaiting_pickup:'Готово к получению', issued:'Ожидаем подтверждение', in_use:'Активна', return_requested:'Возврат', awaiting_return_reservation:'Резервируем возврат', awaiting_return_dropoff:'Ожидаем возврат в ячейку', returned:'Проверка возврата', completed:'Завершена', cancelled:'Отменена', rejected:'Отклонена' }[status] || status || 'Новая');
+const docLabel = kind => ({ identity:'Документ', selfie:'Селфи', supporting:'Подтверждение', issue_video:'Видео до получения', return_video:'Видео возврата' }[kind] || 'Документ');
+const canDelete = order => ['draft', 'pending_review', 'awaiting_payment', 'payment_review', 'confirmed', 'awaiting_archa_reservation', 'awaiting_locker_loading', 'awaiting_pickup', 'cancelled', 'rejected'].includes(order.status);
 const deliveryLabel = order => order.delivery_type === 'arca_locker' ? 'ARCHA POINT 24/7' : order.delivery_type === 'delivery' ? 'Доставка' : order.delivery_type === 'pickup' ? 'Самовывоз' : 'Уточняется';
-const nextAction = order => ({ pending_review:{ next:'awaiting_payment', label:'Перевести к оплате' }, confirmed:{ next:'awaiting_pickup', label:'Ноутбук подготовлен' }, awaiting_pickup:{ next:'issued', label:'Отметить выдачу' }, issued:{ next:'in_use', label:'Подтвердить получение' }, return_requested:{ next:'returned', label:'Техника получена' }, returned:{ next:'completed', label:'Завершить аренду' } })[order.status] || null;
+const nextAction = order => ({ pending_review:{ next:'awaiting_payment', label:'Перевести к оплате' }, return_requested:{ next:'returned', label:'Техника получена' }, awaiting_return_dropoff:{ next:'returned', label:'Техника возвращена в ячейку' }, returned:{ next:'completed', label:'Завершить аренду' } })[order.status] || null;
 
 function closeDocumentViewer() { if (!documentViewer) return; documentViewer.hidden = true; if (documentViewerContent) documentViewerContent.innerHTML = ''; document.body.style.overflow = ''; }
-function openDocumentViewer(url, name = 'Документ', contentType = '') { if (!documentViewer || !documentViewerContent || !url) return; const isPdf = contentType === 'application/pdf' || /\.pdf(?:[?#]|$)/i.test(name); documentViewerContent.innerHTML = isPdf ? `<iframe src="${escape(url)}" title="${escape(name)}"></iframe>` : `<img src="${escape(url)}" alt="${escape(name)}">`; documentViewer.hidden = false; document.body.style.overflow = 'hidden'; }
+function openDocumentViewer(url, name = 'Документ', contentType = '') { if (!documentViewer || !documentViewerContent || !url) return; const isPdf = contentType === 'application/pdf' || /\.pdf(?:[?#]|$)/i.test(name); const isVideo = contentType.startsWith('video/') || /\.(?:mp4|mov)(?:[?#]|$)/i.test(name); documentViewerContent.innerHTML = isVideo ? `<video controls preload="metadata" src="${escape(url)}">Ваш браузер не поддерживает просмотр видео.</video>` : isPdf ? `<iframe src="${escape(url)}" title="${escape(name)}"></iframe>` : `<img src="${escape(url)}" alt="${escape(name)}">`; documentViewer.hidden = false; document.body.style.overflow = 'hidden'; }
 async function api(method = 'GET', payload) { const response = await fetch('/api/manager', { method, credentials:'same-origin', cache:'no-store', headers:payload ? { 'content-type':'application/json' } : {}, body:payload ? JSON.stringify(payload) : undefined }); const data = await response.json().catch(() => ({})); if (!response.ok) { const error = new Error(data.error || 'Не удалось загрузить панель.'); error.status = response.status; throw error; } return data; }
 async function accountApi(payload) { const response = await fetch('/api/account', { method:'POST', credentials:'same-origin', headers:{ 'content-type':'application/json' }, body:JSON.stringify(payload) }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || 'Не удалось выполнить вход.'); return data; }
 function phoneDigits(value) { let digits = String(value || '').replace(/\D/g, ''); if (digits.startsWith('996')) digits = digits.slice(3); if (digits.startsWith('0')) digits = digits.slice(1); return digits.slice(0, 9); }
@@ -40,9 +40,9 @@ function visibleOrders() {
   const query = String(searchInput?.value || '').trim().toLowerCase();
   return orders.filter(order => {
     if (query && !`${order.id} ${order.customer_name} ${order.customer_phone} ${order.laptop_title}`.toLowerCase().includes(query)) return false;
-    if (filter === 'new') return ['draft','pending_review','awaiting_payment','payment_review','confirmed','awaiting_pickup'].includes(order.status);
+    if (filter === 'new') return ['draft','pending_review','awaiting_payment','payment_review','confirmed','awaiting_archa_reservation','awaiting_locker_loading','awaiting_pickup','awaiting_return_reservation','awaiting_return_dropoff'].includes(order.status);
     if (filter === 'documents') return order.documents.some(document => document.status === 'pending_review');
-    if (filter === 'active') return ['issued','in_use','return_requested','returned'].includes(order.status);
+    if (filter === 'active') return ['in_use','return_requested','awaiting_return_reservation','awaiting_return_dropoff','returned'].includes(order.status);
     if (filter === 'closed') return ['completed','cancelled','rejected'].includes(order.status);
     return true;
   });
@@ -58,12 +58,20 @@ function lockerInstruction(order) {
   const location = order.locker_address || 'локация не выбрана';
   return `<section class="manager-section manager-locker-instruction"><h3>Инструкция выдачи через ARCHA POINT</h3><p><strong>Точка клиента:</strong> ${escape(location)}</p><ol><li>После статуса «Оплата подтверждена» проверьте ноутбук, зарядку и комплектность.</li><li>Передайте ARCHA POINT только ФИО, телефон, модель, даты и выбранную точку — документы клиента не передаются.</li><li>Дождитесь номера ячейки и PIN/QR от ARCHA POINT. До этого не обещайте клиенту немедленную выдачу.</li><li>Только после подготовки ячейки переведите заявку в «Готовится к выдаче» и отправьте клиенту инструкцию.</li></ol></section>`;
 }
+function archaControls(order) {
+  if (order.delivery_type === 'arca_locker' && order.status === 'confirmed') return `<button class="secondary" data-prepare-archa="${order.id}">Подготовить сообщение для ARCHA POINT</button>`;
+  if (order.status === 'awaiting_archa_reservation') return `<div class="manager-payment-create"><label>Код закладки ARCHA POINT<input data-archa-loading-code type="text" maxlength="200" placeholder="Код для менеджера"></label><label>Номер ячейки / комментарий<input data-archa-reference type="text" maxlength="200" placeholder="Необязательно"></label><button class="secondary" data-record-archa-reservation="${order.id}">Сохранить резерв ячейки</button></div>`;
+  if (order.status === 'awaiting_locker_loading') return `<button class="secondary" data-mark-locker-loaded="${order.id}">Ноутбук помещён в ячейку</button>`;
+  if (order.status === 'awaiting_pickup') return `<div class="manager-actions"><button class="secondary" data-archa-sms-sent="${order.id}">ARCHA отправил SMS-код</button><button class="secondary" data-manual-pickup-code="${order.id}">Отправить код клиенту вручную</button></div>`;
+  if (order.status === 'awaiting_return_reservation') return `<div class="manager-actions"><button class="secondary" data-prepare-archa-return="${order.id}">Подготовить сообщение о возврате</button><button class="secondary" data-return-sms-sent="${order.id}">ARCHA отправил код возврата</button></div>`;
+  return '';
+}
 
 function render() {
   const list = visibleOrders();
   const pendingDocs = orders.reduce((total, order) => total + order.documents.filter(document => document.status === 'pending_review').length, 0);
-  const active = orders.filter(order => ['issued','in_use','return_requested','returned'].includes(order.status)).length;
-  const fresh = orders.filter(order => ['draft','pending_review','awaiting_payment','payment_review','confirmed','awaiting_pickup'].includes(order.status)).length;
+  const active = orders.filter(order => ['in_use','return_requested','awaiting_return_reservation','awaiting_return_dropoff','returned'].includes(order.status)).length;
+  const fresh = orders.filter(order => ['draft','pending_review','awaiting_payment','payment_review','confirmed','awaiting_archa_reservation','awaiting_locker_loading','awaiting_pickup'].includes(order.status)).length;
   statsEl.innerHTML = [[orders.length,'Всего заявок','all'],[fresh,'В работе','new'],[pendingDocs,'Документы на проверке','documents'],[active,'Активные аренды','active']].map(([value,label,key]) => `<button class="manager-stat ${filter === key ? 'is-active' : ''}" type="button" data-filter="${key}"><span>${label}</span><strong>${value}</strong></button>`).join('');
   ordersEl.innerHTML = list.length ? list.map(order => {
     const action = nextAction(order);
@@ -74,7 +82,8 @@ function render() {
     const paymentMismatch = ['confirmed','awaiting_pickup','issued','in_use'].includes(order.status) && order.payment?.status === 'awaiting_payment' ? '<p class="manager-payment-warning">Банк ещё не подтвердил этот QR. Не выдавайте ноутбук: статус заявки был изменён вручную, а оплата не зафиксирована webhook-ом.</p>' : '';
     const manualPaymentAction = hasActivePayment ? `<button class="secondary manager-payment-manual" data-manual-payment="${order.id}">Подтвердить оплату вручную</button>` : '';
     const paymentState = order.payment ? `<section class="manager-section"><h3>Оплата Bakai</h3><div class="manager-request">${escape(order.payment.status)} · ${Number(order.payment.amount || 0).toLocaleString('ru-RU')} сом · ${escape(order.payment.operation_id || '')}${hasActivePayment ? `<button class="danger manager-payment-revoke" data-revoke-payment="${order.id}">Отозвать QR</button>` : ''}</div>${hasActivePayment ? '<p class="manager-payment-warning">Используйте ручное подтверждение только после проверки поступления в Bakai Business. Отзыв уберёт QR из кабинета Rentop, но не отменяет его в Банке.</p>' : ''}${paymentMismatch}</section>` : '';
-    return `<article class="manager-order"><div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p></div><span class="manager-status-pill">${escape(statusLabel(order.status))}</span></div><div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда</span><strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(deliveryLabel(order))}${order.locker_address ? `<br><small>${escape(order.locker_address)}</small>` : ''}</strong></div><div><span>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></span></div></div><section class="manager-section"><h3>Документы</h3><div class="manager-docs">${order.documents.length ? order.documents.map(documentCard).join('') : '<span class="manager-empty">Документы ещё не загружены</span>'}</div></section>${paymentState}${lockerInstruction(order)}<div class="manager-actions">${pending ? `<button class="secondary" data-reject-all="${order.id}">Отклонить все с причиной</button>` : ''}${paymentAction}${manualPaymentAction}${action ? `<button data-order-action="advance" data-order="${order.id}" data-next-status="${action.next}">${action.label}</button>` : ''}${canDelete(order) ? `<button class="danger" data-delete-order="${order.id}">Удалить тестовую заявку</button>` : ''}</div><p class="manager-order-feedback" data-order-feedback="${order.id}" hidden></p>${order.requests.length ? `<section class="manager-section"><h3>Запросы клиента</h3><div class="manager-requests">${order.requests.map(request => `<div class="manager-request">${escape(request.kind)} · ${escape(request.status)}${request.customer_message ? ` · ${escape(request.customer_message)}` : ''}</div>`).join('')}</div></section>` : ''}</article>`;
+    const customerNote = order.customer_note ? `<section class="manager-section"><h3>Комментарий клиента</h3><div class="manager-request">${escape(order.customer_note)}</div></section>` : '';
+    return `<article class="manager-order"><div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p></div><span class="manager-status-pill ${escape(order.status)}">${escape(statusLabel(order.status))}</span></div><div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда</span><strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(deliveryLabel(order))}${order.locker_address ? `<br><small>${escape(order.locker_address)}</small>` : ''}</strong></div><div><span>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></span></div></div><section class="manager-section"><h3>Документы</h3><div class="manager-docs">${order.documents.length ? order.documents.map(documentCard).join('') : '<span class="manager-empty">Документы ещё не загружены</span>'}</div></section>${customerNote}${paymentState}${lockerInstruction(order)}<div class="manager-actions">${pending ? `<button class="secondary" data-reject-all="${order.id}">Отклонить все с причиной</button>` : ''}${paymentAction}${manualPaymentAction}${archaControls(order)}${action ? `<button data-order-action="advance" data-order="${order.id}" data-next-status="${action.next}">${action.label}</button>` : ''}${canDelete(order) ? `<button class="danger" data-delete-order="${order.id}">Удалить тестовую заявку</button>` : ''}</div><p class="manager-order-feedback" data-order-feedback="${order.id}" hidden></p>${order.requests.length ? `<section class="manager-section"><h3>Запросы клиента</h3><div class="manager-requests">${order.requests.map(request => `<div class="manager-request">${escape(request.kind)} · ${escape(request.status)}${request.return_method ? ` · ${escape(request.return_method)}` : ''}${request.return_locker_address ? ` · ${escape(request.return_locker_address)}` : ''}${request.customer_message ? ` · ${escape(request.customer_message)}` : ''}</div>`).join('')}</div></section>` : ''}</article>`;
   }).join('') : '<div class="manager-empty">По этому фильтру заявок нет.</div>';
 }
 
@@ -123,9 +132,16 @@ ordersEl.addEventListener('click', async event => {
   const createPayment = event.target.closest('[data-create-payment]');
   const revokePayment = event.target.closest('[data-revoke-payment]');
   const manualPayment = event.target.closest('[data-manual-payment]');
+  const prepareArcha = event.target.closest('[data-prepare-archa]');
+  const recordArchaReservation = event.target.closest('[data-record-archa-reservation]');
+  const markLockerLoaded = event.target.closest('[data-mark-locker-loaded]');
+  const archaSmsSent = event.target.closest('[data-archa-sms-sent]');
+  const manualPickupCode = event.target.closest('[data-manual-pickup-code]');
+  const prepareArchaReturn = event.target.closest('[data-prepare-archa-return]');
+  const returnSmsSent = event.target.closest('[data-return-sms-sent]');
   const button = event.target.closest('[data-document], [data-order-action]');
-  if (!rejectAll && !deleteOrder && !createPayment && !revokePayment && !manualPayment && !button) return;
-  const target = rejectAll || deleteOrder || createPayment || revokePayment || manualPayment || button;
+  if (!rejectAll && !deleteOrder && !createPayment && !revokePayment && !manualPayment && !prepareArcha && !recordArchaReservation && !markLockerLoaded && !archaSmsSent && !manualPickupCode && !prepareArchaReturn && !returnSmsSent && !button) return;
+  const target = rejectAll || deleteOrder || createPayment || revokePayment || manualPayment || prepareArcha || recordArchaReservation || markLockerLoaded || archaSmsSent || manualPickupCode || prepareArchaReturn || returnSmsSent || button;
   if (target.disabled) return;
   const feedback = target.closest('.manager-order')?.querySelector('[data-order-feedback]');
   const showFeedback = (text, type = '') => { if (!feedback) return; feedback.textContent = text; feedback.className = `manager-order-feedback${type ? ` is-${type}` : ''}`; feedback.hidden = !text; };
@@ -156,6 +172,35 @@ ordersEl.addEventListener('click', async event => {
     if (!window.confirm('Подтвердить оплату вручную? QR исчезнет у клиента, а заявка перейдёт к подготовке выдачи.')) return;
     payload = { action:'confirm_bakai_payment_manually', orderId:manualPayment.dataset.manualPayment, reference:reference.trim() };
     successMessage = 'Оплата подтверждена вручную и зафиксирована в журнале.';
+  } else if (prepareArcha) {
+    payload = { action:'prepare_archa_handoff', orderId:prepareArcha.dataset.prepareArcha };
+    successMessage = 'Сообщение для ARCHA POINT подготовлено.';
+  } else if (recordArchaReservation) {
+    const card = recordArchaReservation.closest('.manager-order');
+    const loadingCode = card?.querySelector('[data-archa-loading-code]')?.value?.trim();
+    const reference = card?.querySelector('[data-archa-reference]')?.value?.trim();
+    if (!loadingCode) { showFeedback('Введите код закладки, который прислал ARCHA POINT.', 'error'); return; }
+    payload = { action:'record_archa_reservation', orderId:recordArchaReservation.dataset.recordArchaReservation, loadingCode, reference };
+    successMessage = 'Резерв ячейки сохранён. Можно закладывать ноутбук.';
+  } else if (markLockerLoaded) {
+    if (!window.confirm('Подтвердите только после фактической закладки ноутбука, зарядки и комплекта в ячейку.')) return;
+    payload = { action:'mark_locker_loaded', orderId:markLockerLoaded.dataset.markLockerLoaded };
+    successMessage = 'Закладка зафиксирована. Ожидаем SMS-код клиенту от ARCHA POINT.';
+  } else if (archaSmsSent) {
+    payload = { action:'mark_archa_access_sent', orderId:archaSmsSent.dataset.archaSmsSent };
+    successMessage = 'Отметили: ARCHA POINT отправил клиенту SMS-код.';
+  } else if (manualPickupCode) {
+    const code = window.prompt('Введите код получения, подтверждённый у ARCHA POINT. Он будет отправлен клиенту по SMS через Rentop:');
+    if (!code?.trim()) return;
+    if (!window.confirm('Отправить этот код клиенту по SMS? Убедитесь, что он получен у ARCHA POINT и относится к этой заявке.')) return;
+    payload = { action:'send_manual_pickup_code', orderId:manualPickupCode.dataset.manualPickupCode, code:code.trim() };
+    successMessage = 'Код отправлен клиенту по SMS и зафиксирован в журнале.';
+  } else if (prepareArchaReturn) {
+    payload = { action:'prepare_archa_return_handoff', orderId:prepareArchaReturn.dataset.prepareArchaReturn };
+    successMessage = 'Сообщение о возврате для ARCHA POINT подготовлено.';
+  } else if (returnSmsSent) {
+    payload = { action:'mark_return_access_sent', orderId:returnSmsSent.dataset.returnSmsSent };
+    successMessage = 'Отметили: ARCHA POINT отправил клиенту код возврата.';
   } else if (button.dataset.document) {
     const note = button.dataset.status === 'rejected' ? window.prompt('Напишите причину отклонения. Она будет показана клиенту:') : '';
     if (button.dataset.status === 'rejected' && !note?.trim()) return;
@@ -178,6 +223,11 @@ ordersEl.addEventListener('click', async event => {
     if (payload.action === 'create_bakai_payment') { const order = orders.find(item => item.id === payload.orderId); if (order) order.payment = result.payment; }
     if (payload.action === 'revoke_bakai_payment') { const order = orders.find(item => item.id === payload.orderId); if (order) order.payment = result.payment; }
     if (payload.action === 'confirm_bakai_payment_manually') { const order = orders.find(item => item.id === payload.orderId); if (order) { order.payment = result.payment; order.status = result.order?.status || 'confirmed'; } }
+    if (['prepare_archa_handoff','record_archa_reservation','mark_locker_loaded','mark_archa_access_sent','send_manual_pickup_code','mark_return_access_sent'].includes(payload.action)) { const order = orders.find(item => item.id === payload.orderId); if (order && result.order) Object.assign(order, result.order); }
+    if (['prepare_archa_handoff','prepare_archa_return_handoff'].includes(payload.action) && result.message) {
+      navigator.clipboard?.writeText(result.message).catch(() => {});
+      showFeedback(`${successMessage} Текст скопирован — вставьте его в рабочую Telegram-группу ARCHA POINT.\n\n${result.message}`, 'success');
+    }
     statusEl.textContent = successMessage;
     showFeedback(successMessage, 'success');
     render();

@@ -44,7 +44,7 @@ export function createSupabaseApi(config) {
     getOrder: (id) => getOne(`rental_orders?id=eq.${encodeURIComponent(id)}&select=*`),
     listOrdersByCustomerPhone: (phone, limit = 30) => request(
       `rental_orders?customer_phone=eq.${encodeURIComponent(phone)}` +
-      '&select=id,laptop_id,rental_start_date,rental_end_date,rental_days,status,total_amount,delivery_type,locker_address,created_at,updated_at' +
+      '&select=id,laptop_id,rental_start_date,rental_end_date,rental_days,status,total_amount,deposit_amount,delivery_type,locker_address,locker_status,customer_note,archa_handoff_sent_at,locker_loading_reference,locker_loaded_at,customer_access_sent_at,return_method,return_locker_address,return_access_sent_at,created_at,updated_at' +
       `&order=updated_at.desc&limit=${Math.min(Math.max(Number(limit) || 30, 1), 50)}`
     ),
     getOrderPayment: (orderId) => getOne(`rental_order_payments?order_id=eq.${encodeURIComponent(orderId)}&select=*&order=created_at.desc&limit=1`),
@@ -63,10 +63,14 @@ export function createSupabaseApi(config) {
     }).then((rows) => rows?.[0] || null),
     listCustomerRequests: (orderId) => request(
       `rental_order_customer_requests?order_id=eq.${encodeURIComponent(orderId)}` +
-      '&select=id,kind,status,customer_message,requested_days,estimated_amount,proposed_return_date,created_at,updated_at&order=created_at.desc&limit=12'
+      '&select=id,kind,status,customer_message,requested_days,estimated_amount,proposed_return_date,return_method,return_locker_address,created_at,updated_at&order=created_at.desc&limit=12'
     ),
     createCustomerRequest: (customerRequest) => request('rental_order_customer_requests', {
       method: 'POST', body: JSON.stringify(customerRequest)
+    }).then((rows) => rows?.[0] || null),
+    getOrderFeedback: (orderId) => getOne(`rental_order_feedback?order_id=eq.${encodeURIComponent(orderId)}&select=id,rating,review,suggestion,created_at&limit=1`),
+    createOrderFeedback: (feedback) => request('rental_order_feedback', {
+      method:'POST', body:JSON.stringify(feedback)
     }).then((rows) => rows?.[0] || null),
     listOrderDocuments: (orderId) => request(
       `rental_order_documents?order_id=eq.${encodeURIComponent(orderId)}` +
@@ -113,7 +117,7 @@ export function createSupabaseApi(config) {
       const allowedStatuses = Array.isArray(statuses) ? statuses.filter(Boolean) : [];
       const statusFilter = allowedStatuses.length ? `&status=in.(${allowedStatuses.map(encodeURIComponent).join(',')})` : '';
       return request(
-        `rental_orders?select=id,laptop_id,customer_name,customer_phone,rental_start_date,rental_end_date,status,total_amount,deposit_amount,delivery_type,locker_address,created_at,updated_at&order=created_at.desc&limit=${Math.min(Math.max(Number(limit) || 12, 1), 100)}${statusFilter}`
+        `rental_orders?select=id,laptop_id,customer_name,customer_phone,rental_start_date,rental_end_date,status,total_amount,deposit_amount,delivery_type,locker_address,locker_status,customer_note,archa_handoff_sent_at,locker_loading_reference,locker_loading_code,locker_loaded_at,customer_access_sent_at,return_method,return_locker_address,return_access_code,return_access_sent_at,created_at,updated_at&order=created_at.desc&limit=${Math.min(Math.max(Number(limit) || 12, 1), 100)}${statusFilter}`
       );
     },
     findOverlappingBlockingOrder: (orderId, laptopId, startDate, endDate) => request(

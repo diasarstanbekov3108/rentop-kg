@@ -10,9 +10,9 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const SHORT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const EXTENDABLE_STATUSES = new Set(['issued', 'in_use']);
 const RETURNABLE_STATUSES = new Set(['issued', 'in_use']);
-const DOCUMENT_TYPES = new Set(['identity', 'selfie', 'supporting']);
-const DOCUMENT_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'application/pdf']);
-const MAX_DOCUMENT_BYTES = 8 * 1024 * 1024;
+const DOCUMENT_TYPES = new Set(['identity', 'selfie', 'supporting', 'issue_video', 'return_video']);
+const DOCUMENT_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'application/pdf', 'video/mp4', 'video/quicktime']);
+const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024;
 
 function readCookie(request, name) { const source = String(request.headers.cookie || ''); return source.split(';').map(v => v.trim()).find(v => v.startsWith(`${name}=`))?.slice(name.length + 1) || ''; }
 function json(response, status, body) { response.setHeader('Cache-Control', 'private, no-store, max-age=0'); response.status(status).json(body); }
@@ -23,7 +23,7 @@ function allowOrigin(request, response) { const origin = request.headers.origin;
 function label(delivery) { return ({ arca_locker:'ARCHA POINT 24/7', delivery:'Доставка', pickup:'Самовывоз' }[delivery] || 'Уточняется'); }
 function addDays(isoDate, days) { const date = new Date(`${isoDate}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); }
 function orderRef(order) { return String(order.id || '').slice(0, 8).toUpperCase(); }
-function documentLabel(kind) { return ({ identity:'Паспорт или ID-карта', selfie:'Селфи с документом', supporting:'Официальный подтверждающий документ' }[kind] || 'Документ'); }
+function documentLabel(kind) { return ({ identity:'Паспорт или ID-карта', selfie:'Селфи с документом', supporting:'Официальный подтверждающий документ', issue_video:'Видео до получения', return_video:'Видео возврата' }[kind] || 'Документ'); }
 
 export default async function handler(request, response) {
   allowOrigin(request, response);
@@ -47,6 +47,7 @@ export default async function handler(request, response) {
       }));
     }));
     const payments = await Promise.all(orders.map((order) => database.getOrderPayment(order.id).catch(() => null)));
+    const feedback = await Promise.all(orders.map((order) => database.getOrderFeedback(order.id).catch(() => null)));
     return orders.map((order, index) => ({
       ...order,
       laptop_title:laptops[index]?.title || laptops[index]?.name || 'Ноутбук Rentop',
@@ -54,6 +55,7 @@ export default async function handler(request, response) {
       delivery_label:label(order.delivery_type),
       requests:requests[index],
       documents:documents[index],
+      feedback:feedback[index],
       payment:payments[index] && {
         amount:payments[index].amount,
         currency_id:payments[index].currency_id,
@@ -68,6 +70,7 @@ export default async function handler(request, response) {
   };
   const accountData = async (phone) => ({
     phone,
+    whatsappUrl: config.rentopWhatsappPhone ? `https://wa.me/${config.rentopWhatsappPhone}` : '',
     profile:await database.getCustomerProfile(phone).catch(() => null),
     orders:await hydrate(phone)
   });
@@ -99,7 +102,7 @@ export default async function handler(request, response) {
     if (request.method !== 'POST') return json(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
     if (payload.action === 'logout') { const raw = readCookie(request, COOKIE); if (raw) await database.revokeCabinetSession(hash(secret, raw)); response.setHeader('Set-Cookie', `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`); return json(response, 200, { ok:true }); }
-    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'save_profile' || payload.action === 'extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request') {
+    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'save_profile' || payload.action === 'extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup' || payload.action === 'submit_feedback') {
       const session = await verifySession();
       if (!session) return json(response, 401, { error:'Сессия истекла. Войдите в кабинет снова.', code:'AUTH_REQUIRED' });
       if (payload.action === 'save_profile') {
@@ -134,9 +137,9 @@ export default async function handler(request, response) {
         const byteSize = Number(payload.byteSize);
         const rawName = String(payload.fileName || '').slice(0, 180);
         if (!DOCUMENT_TYPES.has(kind) || !DOCUMENT_MIME_TYPES.has(contentType) || !Number.isInteger(byteSize) || byteSize < 1 || byteSize > MAX_DOCUMENT_BYTES) {
-          return json(response, 400, { error:'Допустимы JPG, PNG или PDF размером до 8 МБ.' });
+          return json(response, 400, { error:'Допустимы JPG, PNG, PDF, MP4 или MOV. Фото/документы — до 8 МБ, короткое видео — до 50 МБ.' });
         }
-        const extension = contentType === 'application/pdf' ? 'pdf' : contentType === 'image/png' ? 'png' : 'jpg';
+        const extension = contentType === 'application/pdf' ? 'pdf' : contentType === 'image/png' ? 'png' : contentType === 'video/mp4' ? 'mp4' : contentType === 'video/quicktime' ? 'mov' : 'jpg';
         const path = `${order.id}/${kind}/${randomBytes(18).toString('hex')}.${extension}`;
         const signed = await database.createSignedDocumentUpload(path);
         const signedPath = signed.url || signed.signedURL || signed.signedUrl;
@@ -166,6 +169,35 @@ export default async function handler(request, response) {
       const notifyManager = async (text) => {
         try { await createTelegramApi(config.telegramBotToken).sendMessage(config.adminChatId, text); } catch (error) { console.error('Cabinet manager notification failed:', error.message); }
       };
+      if (payload.action === 'save_order_comment') {
+        const note = String(payload.message || '').trim().replace(/\s+/g, ' ').slice(0, 1000);
+        if (note.length < 3) return json(response, 400, { error:'Напишите комментарий хотя бы несколькими словами.' });
+        await database.updateOrder(order.id, { customer_note:note });
+        await database.createEvent({ order_id:order.id, event_type:'customer_saved_order_comment_from_cabinet', actor_type:'customer', metadata:{ length:note.length } });
+        return json(response, 200, { ok:true, message:'Комментарий сохранён. Менеджер увидит его при подготовке заказа.' });
+      }
+      if (payload.action === 'confirm_pickup') {
+        if (order.status !== 'awaiting_pickup' || !['access_sent','loaded'].includes(String(order.locker_status || ''))) return json(response, 409, { error:'Подтверждение доступно после помещения ноутбука в ячейку и отправки инструкции.' });
+        const evidence = await database.listOrderDocuments(order.id);
+        const issueVideo = evidence.find(document => document.kind === 'issue_video');
+        if (issueVideo?.status !== 'accepted') return json(response, 409, { error:'Сначала прикрепите короткое видео до получения и дождитесь его проверки менеджером.' });
+        const updated = await database.updateOrder(order.id, { status:'in_use', locker_status:'client_picked_up' });
+        await database.createEvent({ order_id:order.id, event_type:'customer_confirmed_pickup_from_cabinet', actor_type:'customer', metadata:{} });
+        return json(response, 200, { ok:true, order:updated, message:'Получение подтверждено. Аренда стала активной.' });
+      }
+      if (payload.action === 'submit_feedback') {
+        if (order.status !== 'completed') return json(response, 409, { error:'Отзыв доступен после завершения аренды.' });
+        if (await database.getOrderFeedback(order.id)) return json(response, 409, { error:'Спасибо, ваш отзыв уже получен.' });
+        const rating = payload.rating === '' || payload.rating == null ? null : Number(payload.rating);
+        const review = String(payload.review || '').trim().slice(0, 1500) || null;
+        const suggestion = String(payload.suggestion || '').trim().slice(0, 1500) || null;
+        if (rating !== null && (!Number.isInteger(rating) || rating < 1 || rating > 5)) return json(response, 400, { error:'Оцените сервис от 1 до 5 или оставьте поле пустым.' });
+        if (!review && !suggestion) return json(response, 400, { error:'Напишите отзыв или предложение по улучшению сервиса.' });
+        const created = await database.createOrderFeedback({ order_id:order.id, rating, review, suggestion });
+        await database.createEvent({ order_id:order.id, event_type:'customer_submitted_feedback_from_cabinet', actor_type:'customer', metadata:{ rating, has_review:Boolean(review), has_suggestion:Boolean(suggestion) } });
+        await notifyManager(`⭐ Отзыв Rentop.KG\n\nЗаявка ${orderRef(order)} · ${laptop?.title || 'Ноутбук'}\nОценка: ${rating || 'не указана'}\nОтзыв: ${review || '—'}\nПредложение: ${suggestion || '—'}`);
+        return json(response, 201, { ok:true, feedback:created, message:'Спасибо! Ваш отзыв и предложения переданы команде Rentop.' });
+      }
       if (payload.action === 'extension_request') {
         const days = Number(payload.days);
         if (!EXTENDABLE_STATUSES.has(order.status)) return json(response, 400, { error:'Продление доступно только для активной аренды.' });
@@ -181,19 +213,27 @@ export default async function handler(request, response) {
       }
       if (payload.action === 'early_return_request') {
         const note = String(payload.message || '').trim().slice(0, 500);
+        const returnMethod = ['arca_locker','courier','warehouse'].includes(payload.returnMethod) ? payload.returnMethod : '';
+        const returnLockerAddress = String(payload.returnLockerAddress || '').trim().slice(0, 300);
         if (!RETURNABLE_STATUSES.has(order.status)) return json(response, 400, { error:'Досрочный возврат доступен только для активной аренды.' });
-        const customerRequest = await database.createCustomerRequest({ order_id:order.id, kind:'early_return', customer_message:note || null });
-        await database.updateOrder(order.id, { status:'return_requested', locker_status:order.delivery_type === 'arca_locker' ? 'return_pending' : order.locker_status });
-        await database.createEvent({ order_id:order.id, event_type:'customer_requested_early_return_from_cabinet', actor_type:'customer', metadata:{ reason_provided:Boolean(note) } });
-        await notifyManager(`↩️ Досрочный возврат с сайта\n\nЗаявка ${orderRef(order)} · ${laptop?.title || 'Ноутбук'}\nКлиент: ${order.customer_name || '—'}\nПричина: ${note || 'не указана'}\n\nПодготовьте следующий шаг возврата.`);
+        if (!returnMethod) return json(response, 400, { error:'Выберите удобный способ возврата.' });
+        if (returnMethod === 'arca_locker' && !returnLockerAddress) return json(response, 400, { error:'Выберите постамат для возврата.' });
+        const customerRequest = await database.createCustomerRequest({ order_id:order.id, kind:'early_return', customer_message:note || null, return_method:returnMethod, return_locker_address:returnMethod === 'arca_locker' ? returnLockerAddress : null });
+        const nextStatus = returnMethod === 'arca_locker' ? 'awaiting_return_reservation' : 'return_requested';
+        await database.updateOrder(order.id, { status:nextStatus, return_method:returnMethod, return_locker_address:returnMethod === 'arca_locker' ? returnLockerAddress : null, locker_status:returnMethod === 'arca_locker' ? 'return_pending' : order.locker_status });
+        await database.createEvent({ order_id:order.id, event_type:'customer_requested_early_return_from_cabinet', actor_type:'customer', metadata:{ reason_provided:Boolean(note), return_method:returnMethod, has_return_locker:Boolean(returnLockerAddress) } });
+        const methodLabel = ({ arca_locker:'через постамат ARCHA POINT', courier:'курьером Rentop', warehouse:'на склад Rentop' })[returnMethod];
+        await notifyManager(`↩️ Досрочный возврат с сайта\n\nЗаявка ${orderRef(order)} · ${laptop?.title || 'Ноутбук'}\nКлиент: ${order.customer_name || '—'}\nСпособ: ${methodLabel}\n${returnLockerAddress ? `Постамат: ${returnLockerAddress}\n` : ''}Причина: ${note || 'не указана'}\n\nПодготовьте следующий шаг возврата.`);
         return json(response, 201, { ok:true, request:customerRequest, message:'Запрос принят. Менеджер подготовит дальнейшие инструкции по возврату.' });
       }
-      const kind = payload.kind === 'archa' ? 'archa' : 'rentop';
+      const supportKinds = new Set(['rentop','archa','archa_code_missing','archa_locker_issue','rental_issue']);
+      const kind = supportKinds.has(payload.kind) ? payload.kind : 'rentop';
       const note = String(payload.message || '').trim().slice(0, 1000);
       if (note.length < 3) return json(response, 400, { error:'Опишите вопрос хотя бы несколькими словами.' });
       await database.openSupportCase({ order_id:order.id, kind, status:'open', customer_message:note });
-      await database.createEvent({ order_id:order.id, event_type:kind === 'archa' ? 'customer_requested_archa_support_from_cabinet' : 'customer_requested_rentop_support_from_cabinet', actor_type:'customer', metadata:{} });
-      await notifyManager(`🆘 Обращение с сайта · ${kind === 'archa' ? 'ARCHA POINT' : 'Rentop'}\n\nЗаявка ${orderRef(order)} · ${laptop?.title || 'Ноутбук'}\nКлиент: ${order.customer_name || '—'}\n${note}`);
+      await database.createEvent({ order_id:order.id, event_type:'customer_opened_support_case_from_cabinet', actor_type:'customer', metadata:{ kind } });
+      const kindLabel = ({ rentop:'Вопрос к Rentop', archa:'Проблема с ARCHA POINT', archa_code_missing:'Не пришёл код ARCHA POINT', archa_locker_issue:'Постамат не выдаёт / не открывается', rental_issue:'Проблема с ноутбуком или комплектностью' })[kind];
+      await notifyManager(`🆘 Обращение с сайта · ${kindLabel}\n\nЗаявка ${orderRef(order)} · ${laptop?.title || 'Ноутбук'}\nКлиент: ${order.customer_name || '—'}\n${note}`);
       return json(response, 201, { ok:true, message:'Обращение передано менеджеру. Ответ появится в кабинете и придёт в Telegram.' });
     }
     const phone = `+${normalizeKyrgyzPhone(payload.phone)}`;

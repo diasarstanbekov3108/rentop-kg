@@ -1,0 +1,109 @@
+-- Утверждённый операционный процесс RENTOP.KG × ARCHA POINT.
+-- Выполнить один раз в Supabase SQL Editor после предыдущих миграций.
+-- Коды закладки видит только менеджер; клиентские коды не передаются в группу ARCHA POINT.
+
+BEGIN;
+
+ALTER TABLE public.rental_orders
+  ADD COLUMN IF NOT EXISTS customer_note text,
+  ADD COLUMN IF NOT EXISTS archa_handoff_sent_at timestamptz,
+  ADD COLUMN IF NOT EXISTS locker_loading_code text,
+  ADD COLUMN IF NOT EXISTS locker_loading_reference text,
+  ADD COLUMN IF NOT EXISTS locker_loaded_at timestamptz,
+  ADD COLUMN IF NOT EXISTS customer_access_sent_at timestamptz,
+  ADD COLUMN IF NOT EXISTS return_method text,
+  ADD COLUMN IF NOT EXISTS return_locker_address text,
+  ADD COLUMN IF NOT EXISTS return_access_code text,
+  ADD COLUMN IF NOT EXISTS return_access_sent_at timestamptz;
+
+ALTER TABLE public.rental_orders
+  DROP CONSTRAINT IF EXISTS rental_orders_status_allowed;
+ALTER TABLE public.rental_orders
+  ADD CONSTRAINT rental_orders_status_allowed CHECK (
+    status IN (
+      'draft', 'pending_review', 'awaiting_payment', 'payment_review', 'confirmed',
+      'awaiting_archa_reservation', 'awaiting_locker_loading', 'awaiting_pickup',
+      'issued', 'in_use', 'return_requested', 'awaiting_return_reservation',
+      'awaiting_return_dropoff', 'returned', 'completed', 'rejected', 'cancelled', 'expired'
+    )
+  );
+
+ALTER TABLE public.rental_orders
+  DROP CONSTRAINT IF EXISTS rental_orders_locker_status_allowed;
+ALTER TABLE public.rental_orders
+  ADD CONSTRAINT rental_orders_locker_status_allowed CHECK (
+    locker_status IN (
+      'none', 'pending', 'reservation_requested', 'reserved', 'loaded', 'access_sent',
+      'client_picked_up', 'return_pending', 'return_reserved', 'return_access_sent',
+      'returned', 'failed'
+    )
+  );
+
+ALTER TABLE public.rental_orders
+  ADD CONSTRAINT rental_orders_customer_note_len CHECK (customer_note IS NULL OR char_length(btrim(customer_note)) <= 1000),
+  ADD CONSTRAINT rental_orders_return_method_allowed CHECK (return_method IS NULL OR return_method IN ('arca_locker', 'courier', 'warehouse'));
+
+ALTER TABLE public.rental_order_customer_requests
+  ADD COLUMN IF NOT EXISTS return_method text,
+  ADD COLUMN IF NOT EXISTS return_locker_address text;
+
+ALTER TABLE public.rental_order_customer_requests
+  DROP CONSTRAINT IF EXISTS rental_customer_requests_kind_allowed;
+ALTER TABLE public.rental_order_customer_requests
+  ADD CONSTRAINT rental_customer_requests_kind_allowed CHECK (kind IN ('extension', 'early_return'));
+ALTER TABLE public.rental_order_customer_requests
+  ADD CONSTRAINT rental_customer_requests_return_method_allowed CHECK (
+    return_method IS NULL OR return_method IN ('arca_locker', 'courier', 'warehouse')
+  );
+
+ALTER TABLE public.rental_order_support_cases
+  DROP CONSTRAINT IF EXISTS rental_order_support_cases_kind_check;
+ALTER TABLE public.rental_order_support_cases
+  ADD CONSTRAINT rental_order_support_cases_kind_check CHECK (
+    kind IN ('rentop', 'archa', 'archa_code_missing', 'archa_locker_issue', 'rental_issue')
+  );
+
+ALTER TABLE public.rental_order_documents
+  DROP CONSTRAINT IF EXISTS rental_order_documents_kind_allowed;
+ALTER TABLE public.rental_order_documents
+  ADD CONSTRAINT rental_order_documents_kind_allowed CHECK (kind IN ('identity', 'selfie', 'supporting', 'issue_video', 'return_video'));
+ALTER TABLE public.rental_order_documents
+  DROP CONSTRAINT IF EXISTS rental_order_documents_content_type_allowed;
+ALTER TABLE public.rental_order_documents
+  ADD CONSTRAINT rental_order_documents_content_type_allowed CHECK (content_type IN ('image/jpeg', 'image/png', 'application/pdf', 'video/mp4', 'video/quicktime'));
+ALTER TABLE public.rental_order_documents
+  DROP CONSTRAINT IF EXISTS rental_order_documents_size_allowed;
+ALTER TABLE public.rental_order_documents
+  ADD CONSTRAINT rental_order_documents_size_allowed CHECK (byte_size BETWEEN 1 AND 52428800);
+
+UPDATE storage.buckets
+SET file_size_limit = 52428800,
+    allowed_mime_types = ARRAY['image/jpeg', 'image/png', 'application/pdf', 'video/mp4', 'video/quicktime']
+WHERE id = 'rental-documents';
+
+CREATE TABLE IF NOT EXISTS public.rental_order_feedback (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id uuid NOT NULL UNIQUE REFERENCES public.rental_orders(id) ON DELETE CASCADE,
+  rating integer CHECK (rating BETWEEN 1 AND 5),
+  review text,
+  suggestion text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT rental_order_feedback_content CHECK (
+    nullif(btrim(coalesce(review, '')), '') IS NOT NULL
+    OR nullif(btrim(coalesce(suggestion, '')), '') IS NOT NULL
+  )
+);
+
+ALTER TABLE public.rental_order_feedback ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.rental_order_feedback FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT ON TABLE public.rental_order_feedback TO service_role;
+
+CREATE INDEX IF NOT EXISTS rental_orders_archa_workflow_idx
+  ON public.rental_orders(status, locker_status, updated_at DESC);
+
+COMMENT ON COLUMN public.rental_orders.locker_loading_code IS
+  'Служебный код ARCHA POINT для закладки устройства. Не передавать клиенту.';
+COMMENT ON COLUMN public.rental_orders.pickup_pin IS
+  'Код доступа клиента. Используется только в аварийном ручном сценарии, когда ARCHA POINT не отправил SMS.';
+
+COMMIT;
