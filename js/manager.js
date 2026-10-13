@@ -17,10 +17,11 @@ const bakaiCheck = document.getElementById('manager-bakai-check');
 let orders = [];
 let filter = 'all';
 let pendingManagerPhone = '';
+let isChiefAdmin = false;
 
 const escape = value => String(value || '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' }[char]));
 const date = value => value ? new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }).format(new Date(value)) : '—';
-const statusLabel = status => ({ draft:'Новая заявка', pending_review:'Проверка документов', awaiting_payment:'Ожидает оплаты', payment_review:'Проверка оплаты', confirmed:'Оплата подтверждена', awaiting_archa_reservation:'Резервируем ячейку', awaiting_locker_loading:'Ожидает закладки', awaiting_pickup:'Готово к получению', issued:'Ожидаем подтверждение', in_use:'Активна', return_requested:'Возврат', awaiting_return_reservation:'Резервируем возврат', awaiting_return_dropoff:'Ожидаем возврат в ячейку', returned:'Проверка возврата', completed:'Завершена', cancelled:'Отменена', rejected:'Отклонена' }[status] || status || 'Новая');
+const statusLabel = status => ({ draft:'Новая заявка', pending_review:'Проверка документов', awaiting_payment:'Ожидает оплаты', payment_review:'Проверка оплаты', confirmed:'Оплата подтверждена', awaiting_archa_reservation:'Резервируем ячейку', awaiting_locker_loading:'Ожидает закладки', awaiting_pickup:'Готово к получению', issued:'Ожидаем подтверждение', in_use:'Активна', return_requested:'Возврат', awaiting_return_reservation:'Резервируем возврат', awaiting_return_dropoff:'Ожидаем возврат в ячейку', returned:'Проверка возврата', completed:'Завершена', cancelled:'Отменена', rejected:'Отклонена', incident:'Инцидент — требуется решение' }[status] || status || 'Новая');
 const docLabel = kind => ({ identity:'Документ', selfie:'Селфи', supporting:'Подтверждение', issue_video:'Видео до получения', return_video:'Видео возврата' }[kind] || 'Документ');
 const canDelete = order => ['draft', 'pending_review', 'awaiting_payment', 'payment_review', 'confirmed', 'awaiting_archa_reservation', 'awaiting_locker_loading', 'awaiting_pickup', 'cancelled', 'rejected'].includes(order.status);
 const deliveryLabel = order => order.delivery_type === 'arca_locker' ? 'ARCHA POINT 24/7' : order.delivery_type === 'delivery' ? 'Доставка' : order.delivery_type === 'pickup' ? 'Самовывоз' : 'Уточняется';
@@ -42,7 +43,7 @@ function visibleOrders() {
     if (query && !`${order.id} ${order.customer_name} ${order.customer_phone} ${order.laptop_title}`.toLowerCase().includes(query)) return false;
     if (filter === 'new') return ['draft','pending_review','awaiting_payment','payment_review','confirmed','awaiting_archa_reservation','awaiting_locker_loading','awaiting_pickup','awaiting_return_reservation','awaiting_return_dropoff'].includes(order.status);
     if (filter === 'documents') return order.documents.some(document => document.status === 'pending_review');
-    if (filter === 'active') return ['in_use','return_requested','awaiting_return_reservation','awaiting_return_dropoff','returned'].includes(order.status);
+    if (filter === 'active') return ['in_use','return_requested','awaiting_return_reservation','awaiting_return_dropoff','returned','incident'].includes(order.status);
     if (filter === 'closed') return ['completed','cancelled','rejected'].includes(order.status);
     return true;
   });
@@ -70,7 +71,7 @@ function archaControls(order) {
 function render() {
   const list = visibleOrders();
   const pendingDocs = orders.reduce((total, order) => total + order.documents.filter(document => document.status === 'pending_review').length, 0);
-  const active = orders.filter(order => ['in_use','return_requested','awaiting_return_reservation','awaiting_return_dropoff','returned'].includes(order.status)).length;
+  const active = orders.filter(order => ['in_use','return_requested','awaiting_return_reservation','awaiting_return_dropoff','returned','incident'].includes(order.status)).length;
   const fresh = orders.filter(order => ['draft','pending_review','awaiting_payment','payment_review','confirmed','awaiting_archa_reservation','awaiting_locker_loading','awaiting_pickup'].includes(order.status)).length;
   statsEl.innerHTML = [[orders.length,'Всего заявок','all'],[fresh,'В работе','new'],[pendingDocs,'Документы на проверке','documents'],[active,'Активные аренды','active']].map(([value,label,key]) => `<button class="manager-stat ${filter === key ? 'is-active' : ''}" type="button" data-filter="${key}"><span>${label}</span><strong>${value}</strong></button>`).join('');
   ordersEl.innerHTML = list.length ? list.map(order => {
@@ -83,11 +84,13 @@ function render() {
     const manualPaymentAction = hasActivePayment ? `<button class="secondary manager-payment-manual" data-manual-payment="${order.id}">Подтвердить оплату вручную</button>` : '';
     const paymentState = order.payment ? `<section class="manager-section"><h3>Оплата Bakai</h3><div class="manager-request">${escape(order.payment.status)} · ${Number(order.payment.amount || 0).toLocaleString('ru-RU')} сом · ${escape(order.payment.operation_id || '')}${hasActivePayment ? `<button class="danger manager-payment-revoke" data-revoke-payment="${order.id}">Отозвать QR</button>` : ''}</div>${hasActivePayment ? '<p class="manager-payment-warning">Используйте ручное подтверждение только после проверки поступления в Bakai Business. Отзыв уберёт QR из кабинета Rentop, но не отменяет его в Банке.</p>' : ''}${paymentMismatch}</section>` : '';
     const customerNote = order.customer_note ? `<section class="manager-section"><h3>Комментарий клиента</h3><div class="manager-request">${escape(order.customer_note)}</div></section>` : '';
-    return `<article class="manager-order"><div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p></div><span class="manager-status-pill ${escape(order.status)}">${escape(statusLabel(order.status))}</span></div><div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда</span><strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(deliveryLabel(order))}${order.locker_address ? `<br><small>${escape(order.locker_address)}</small>` : ''}</strong></div><div><span>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></span></div></div><section class="manager-section"><h3>Документы</h3><div class="manager-docs">${order.documents.length ? order.documents.map(documentCard).join('') : '<span class="manager-empty">Документы ещё не загружены</span>'}</div></section>${customerNote}${paymentState}${lockerInstruction(order)}<div class="manager-actions">${pending ? `<button class="secondary" data-reject-all="${order.id}">Отклонить все с причиной</button>` : ''}${paymentAction}${manualPaymentAction}${archaControls(order)}${action ? `<button data-order-action="advance" data-order="${order.id}" data-next-status="${action.next}">${action.label}</button>` : ''}${canDelete(order) ? `<button class="danger" data-delete-order="${order.id}">Удалить тестовую заявку</button>` : ''}</div><p class="manager-order-feedback" data-order-feedback="${order.id}" hidden></p>${order.requests.length ? `<section class="manager-section"><h3>Запросы клиента</h3><div class="manager-requests">${order.requests.map(request => `<div class="manager-request">${escape(request.kind)} · ${escape(request.status)}${request.return_method ? ` · ${escape(request.return_method)}` : ''}${request.return_locker_address ? ` · ${escape(request.return_locker_address)}` : ''}${request.customer_message ? ` · ${escape(request.customer_message)}` : ''}</div>`).join('')}</div></section>` : ''}</article>`;
+    const offerEvidence = order.offer_accepted_at ? `<section class="manager-section"><h3>Оферта и согласия</h3><div class="manager-request">Оферта ${escape(order.offer_version || '—')} · принята ${date(order.offer_accepted_at)} · SMS ${order.offer_otp_verified_at ? `подтверждён ${date(order.offer_otp_verified_at)}` : 'ещё не подтверждён'}</div></section>` : '';
+    const adminTools = isChiefAdmin ? `<section class="manager-section"><h3>Контроль главного администратора</h3><div class="manager-actions"><a class="cabinet-action secondary" href="/api/manager/dossier?order=${encodeURIComponent(order.id)}">Скачать защищённое досье</a>${['in_use','return_requested','awaiting_return_reservation','awaiting_return_dropoff','returned'].includes(order.status) ? `<button class="secondary" data-admin-close="${order.id}">Досрочно завершить после возврата</button>` : ''}${!['completed','cancelled','rejected','incident'].includes(order.status) ? `<button class="danger" data-admin-incident="${order.id}">Открыть инцидент</button>` : ''}</div></section>` : '';
+    return `<article class="manager-order"><div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p></div><span class="manager-status-pill ${escape(order.status)}">${escape(statusLabel(order.status))}</span></div><div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда</span><strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(deliveryLabel(order))}${order.locker_address ? `<br><small>${escape(order.locker_address)}</small>` : ''}</strong></div><div><span>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></span></div></div><section class="manager-section"><h3>Документы</h3><div class="manager-docs">${order.documents.length ? order.documents.map(documentCard).join('') : '<span class="manager-empty">Документы ещё не загружены</span>'}</div></section>${offerEvidence}${customerNote}${paymentState}${lockerInstruction(order)}${adminTools}<div class="manager-actions">${pending ? `<button class="secondary" data-reject-all="${order.id}">Отклонить все с причиной</button>` : ''}${paymentAction}${manualPaymentAction}${archaControls(order)}${action ? `<button data-order-action="advance" data-order="${order.id}" data-next-status="${action.next}">${action.label}</button>` : ''}${canDelete(order) ? `<button class="danger" data-delete-order="${order.id}">Удалить тестовую заявку</button>` : ''}</div><p class="manager-order-feedback" data-order-feedback="${order.id}" hidden></p>${order.requests.length ? `<section class="manager-section"><h3>Запросы клиента</h3><div class="manager-requests">${order.requests.map(request => `<div class="manager-request">${escape(request.kind)} · ${escape(request.status)}${request.return_method ? ` · ${escape(request.return_method)}` : ''}${request.return_locker_address ? ` · ${escape(request.return_locker_address)}` : ''}${request.customer_message ? ` · ${escape(request.customer_message)}` : ''}</div>`).join('')}</div></section>` : ''}</article>`;
   }).join('') : '<div class="manager-empty">По этому фильтру заявок нет.</div>';
 }
 
-async function load() { statusEl.textContent = 'Загружаем заявки…'; try { const data = await api(); orders = data.orders || []; gate.hidden = true; dashboard.hidden = false; statusEl.textContent = `Обновлено: ${new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit'}).format(new Date())}`; render(); } catch (error) { dashboard.hidden = true; gate.hidden = error.status !== 401; statusEl.textContent = error.status === 401 ? '' : error.message; } }
+async function load() { statusEl.textContent = 'Загружаем заявки…'; try { const data = await api(); orders = data.orders || []; isChiefAdmin = Boolean(data.isChiefAdmin); gate.hidden = true; dashboard.hidden = false; statusEl.textContent = `Обновлено: ${new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit'}).format(new Date())}`; render(); } catch (error) { dashboard.hidden = true; gate.hidden = error.status !== 401; statusEl.textContent = error.status === 401 ? '' : error.message; } }
 function setFilter(nextFilter) { filter = nextFilter; document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item.dataset.filter === filter)); render(); }
 
 document.getElementById('manager-refresh').addEventListener('click', load);
@@ -139,9 +142,11 @@ ordersEl.addEventListener('click', async event => {
   const manualPickupCode = event.target.closest('[data-manual-pickup-code]');
   const prepareArchaReturn = event.target.closest('[data-prepare-archa-return]');
   const returnSmsSent = event.target.closest('[data-return-sms-sent]');
+  const adminClose = event.target.closest('[data-admin-close]');
+  const adminIncident = event.target.closest('[data-admin-incident]');
   const button = event.target.closest('[data-document], [data-order-action]');
-  if (!rejectAll && !deleteOrder && !createPayment && !revokePayment && !manualPayment && !prepareArcha && !recordArchaReservation && !markLockerLoaded && !archaSmsSent && !manualPickupCode && !prepareArchaReturn && !returnSmsSent && !button) return;
-  const target = rejectAll || deleteOrder || createPayment || revokePayment || manualPayment || prepareArcha || recordArchaReservation || markLockerLoaded || archaSmsSent || manualPickupCode || prepareArchaReturn || returnSmsSent || button;
+  if (!rejectAll && !deleteOrder && !createPayment && !revokePayment && !manualPayment && !prepareArcha && !recordArchaReservation && !markLockerLoaded && !archaSmsSent && !manualPickupCode && !prepareArchaReturn && !returnSmsSent && !adminClose && !adminIncident && !button) return;
+  const target = rejectAll || deleteOrder || createPayment || revokePayment || manualPayment || prepareArcha || recordArchaReservation || markLockerLoaded || archaSmsSent || manualPickupCode || prepareArchaReturn || returnSmsSent || adminClose || adminIncident || button;
   if (target.disabled) return;
   const feedback = target.closest('.manager-order')?.querySelector('[data-order-feedback]');
   const showFeedback = (text, type = '') => { if (!feedback) return; feedback.textContent = text; feedback.className = `manager-order-feedback${type ? ` is-${type}` : ''}`; feedback.hidden = !text; };
@@ -201,6 +206,18 @@ ordersEl.addEventListener('click', async event => {
   } else if (returnSmsSent) {
     payload = { action:'mark_return_access_sent', orderId:returnSmsSent.dataset.returnSmsSent };
     successMessage = 'Отметили: ARCHA POINT отправил клиенту код возврата.';
+  } else if (adminClose) {
+    const reason = window.prompt('Причина досрочного завершения. Подтвердите, что ноутбук физически возвращён и видео принято:');
+    if (!reason?.trim()) return;
+    if (!window.confirm('Завершить аренду досрочно? Действие будет записано в журнале главного администратора.')) return;
+    payload = { action:'admin_close_rental_early', orderId:adminClose.dataset.adminClose, reason:reason.trim() };
+    successMessage = 'Аренда досрочно завершена и зафиксирована в журнале.';
+  } else if (adminIncident) {
+    const reason = window.prompt('Опишите инцидент. Ноутбук останется заблокированным в учёте до решения:');
+    if (!reason?.trim()) return;
+    if (!window.confirm('Открыть инцидент по этой заявке?')) return;
+    payload = { action:'admin_open_incident', orderId:adminIncident.dataset.adminIncident, reason:reason.trim() };
+    successMessage = 'Инцидент открыт. Заявка требует решения главного администратора.';
   } else if (button.dataset.document) {
     const note = button.dataset.status === 'rejected' ? window.prompt('Напишите причину отклонения. Она будет показана клиенту:') : '';
     if (button.dataset.status === 'rejected' && !note?.trim()) return;
@@ -223,6 +240,7 @@ ordersEl.addEventListener('click', async event => {
     if (payload.action === 'create_bakai_payment') { const order = orders.find(item => item.id === payload.orderId); if (order) order.payment = result.payment; }
     if (payload.action === 'revoke_bakai_payment') { const order = orders.find(item => item.id === payload.orderId); if (order) order.payment = result.payment; }
     if (payload.action === 'confirm_bakai_payment_manually') { const order = orders.find(item => item.id === payload.orderId); if (order) { order.payment = result.payment; order.status = result.order?.status || 'confirmed'; } }
+    if (['admin_close_rental_early','admin_open_incident'].includes(payload.action)) { const order = orders.find(item => item.id === payload.orderId); if (order && result.order) Object.assign(order, result.order); }
     if (['prepare_archa_handoff','record_archa_reservation','mark_locker_loaded','mark_archa_access_sent','send_manual_pickup_code','mark_return_access_sent'].includes(payload.action)) { const order = orders.find(item => item.id === payload.orderId); if (order && result.order) Object.assign(order, result.order); }
     if (['prepare_archa_handoff','prepare_archa_return_handoff'].includes(payload.action) && result.message) {
       navigator.clipboard?.writeText(result.message).catch(() => {});

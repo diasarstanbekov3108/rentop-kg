@@ -22,6 +22,7 @@ let paymentByOrder = new Map();
 let paymentPollingTimer = null;
 let activePaymentOrderId = '';
 let supportWhatsappUrl = '';
+let offerSmsConsentRequired = false;
 const ARCHA_LOCATIONS = [
   { value:'Bishkek Park — Киевская улица, 148, этаж B2', hours:'ежедневно 10:00–22:00', map:'https://2gis.kg/bishkek/search/%D0%9F%D0%BE%D1%81%D1%82%D0%B0%D0%BC%D0%B0%D1%82%D1%8B/rubricId/95584/firm/70000001092731465/74.589874%2C42.874488' },
   { value:'Гипермаркет «Азия» — ул. Максима Горького, 1/2а', hours:'круглосуточно', map:'https://2gis.kg/bishkek/firm/70000001092731520' },
@@ -119,7 +120,7 @@ function watchPayment(orderId) {
   paymentPollingTimer = window.setInterval(async () => {
     try {
       const fresh = await request('GET');
-      if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl);
+      if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired);
     } catch { /* The customer can continue scanning; the next poll will retry. */ }
   }, 8000);
 }
@@ -211,7 +212,8 @@ function panelMarkup(kind, orderId, documentState = {}) {
     const replacement = documentState.mode === 'replacement';
     const kinds = replacement ? String(documentState.kinds || '').split(',').filter(Boolean) : ['identity', 'selfie', 'supporting'];
     const requiredKinds = replacement ? kinds : ['identity', 'selfie'];
-    const offer = replacement ? '' : `<div class="cabinet-offer-box"><strong>Публичная оферта Rentop KG</strong><p>До отправки документов прочитайте условия аренды, выдачи и возврата.</p><button class="cabinet-action secondary" type="button" data-open-offer="true">Открыть договор-оферту</button><label class="cabinet-document-consent"><input name="offerConsent" type="checkbox" required><span>Я ознакомился(лась) с публичной офертой и принимаю её условия.</span></label></div>`;
+    const smsConsent = !replacement && offerSmsConsentRequired && !documentState.offerSmsVerified ? `<div class="cabinet-offer-box"><strong>Подтверждение оферты по SMS</strong><p>После ознакомления подтвердите согласие одноразовым кодом с номера, указанного в заявке.</p><button class="cabinet-action secondary" type="button" data-request-offer-sms="${orderId}">Получить код согласия</button><div class="cabinet-inline-row" data-offer-sms-verify hidden><input inputmode="numeric" maxlength="6" placeholder="Код из SMS" aria-label="Код согласия"><button class="cabinet-action" type="button" data-verify-offer-sms="${orderId}">Подтвердить оферту</button></div></div>` : '';
+    const offer = replacement ? '' : `<div class="cabinet-offer-box"><strong>Публичная оферта Rentop KG</strong><p>До отправки документов прочитайте условия аренды, выдачи и возврата.</p><button class="cabinet-action secondary" type="button" data-open-offer="true">Открыть договор-оферту</button><label class="cabinet-document-consent"><input name="offerConsent" type="checkbox" required><span>Я ознакомился(лась) с публичной офертой и принимаю её условия.</span></label>${smsConsent}</div>`;
     const warnings = replacement ? '' : `<div class="cabinet-safety-notice"><strong>Важно о документах и технике</strong><p>Подделка, использование чужих или заведомо недостоверных документов может повлечь ответственность по законодательству Кыргызской Республики. Rentop проверяет документы до выдачи.</p><p>На выдаваемом оборудовании установлены средства контроля местонахождения и целостности, включая GPS-трекеры и гарантийные пломбы. Несанкционированное вскрытие, нарушение пломб или попытка отключить средства контроля считаются нарушением правил эксплуатации и могут повлечь штраф, возмещение ущерба и обращение в уполномоченные органы.</p></div>`;
     return `<form class="cabinet-inline-form cabinet-documents-form" data-document-upload="true" data-document-replacement="${replacement ? '1' : ''}" data-required-kinds="${requiredKinds.join(',')}" data-order="${orderId}"><label>${replacement ? 'Прикрепите исправленный документ' : 'Подтвердите данные для заявки'}</label><p>${replacement ? 'Менеджер открыл замену для отмеченного файла. После повторной загрузки заявка снова уйдёт на проверку.' : 'Документы увидит только команда Rentop для проверки заявки. Допустимы JPG, PNG или PDF до 8 МБ.'}</p>${kinds.map(fileControl).join('')}${offer}${warnings}<label class="cabinet-document-consent"><input name="documentConsent" type="checkbox" required><span>Согласен(на) на передачу документов команде Rentop исключительно для проверки заявки и оформления договора.</span></label><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">${replacement ? 'Отправить замену' : 'Отправить на проверку'}</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>После отправки повторная загрузка будет заблокирована до решения менеджера.</p></form>`;
   }
@@ -232,7 +234,8 @@ function fileControl(kind) {
   return `<div class="cabinet-file-control"><label for="document-${kind}">${title} <span>${hint}</span></label>${typeChoice}<input id="document-${kind}" name="${kind}" type="file" accept="image/jpeg,image/png,application/pdf" hidden><div><button class="cabinet-file-choose" type="button" data-file-trigger="${kind}">Выберите файл</button><button class="cabinet-file-preview" type="button" data-file-preview="${kind}" disabled>Файл не выбран</button></div></div>`;
 }
 
-function showRentals(orders, phone, profile = null, whatsappUrl = '') {
+function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequired = false) {
+  offerSmsConsentRequired = Boolean(smsRequired);
   supportWhatsappUrl = whatsappUrl || '';
   paymentByOrder = new Map(orders.filter(order => order.payment).map(order => [String(order.id), order.payment]));
   if (activePaymentOrderId && paymentByOrder.get(activePaymentOrderId)?.status !== 'awaiting_payment') closePaymentDialog();
@@ -258,7 +261,7 @@ async function loadSession() {
   try {
     const data = await request('GET');
     loading.hidden = true;
-    if (data.authenticated) { showRentals(data.orders || [], data.phone, data.profile, data.whatsappUrl); return; }
+    if (data.authenticated) { showRentals(data.orders || [], data.phone, data.profile, data.whatsappUrl, data.offerSmsConsentRequired); return; }
     login.hidden = false;
   } catch {
     loading.hidden = true;
@@ -274,7 +277,7 @@ document.getElementById('cabinet-refresh')?.addEventListener('click', async even
   try {
     const fresh = await request('GET');
     if (fresh.authenticated) {
-      showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl);
+      showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired);
       message('Заявки обновлены.', 'success');
     } else {
       dashboard.hidden = true;
@@ -290,7 +293,7 @@ document.getElementById('cabinet-refresh')?.addEventListener('click', async even
 });
 
 phoneForm?.addEventListener('submit', async event => { event.preventDefault(); const phone = formatPhone(phoneInput.value); if (!phone) return message('Введите номер Кыргызстана: +996XXXXXXXXX.', 'error'); const button = phoneForm.querySelector('button'); button.disabled = true; message('Отправляем код…'); try { await request('POST', { action:'request_code', phone }); pendingPhone = phone; phoneForm.hidden = true; codeForm.hidden = false; codeInput.focus(); message('Код отправлен. Введите 6 цифр из SMS.', 'success'); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
-codeForm?.addEventListener('submit', async event => { event.preventDefault(); const code = codeInput.value.replace(/\D/g, ''); if (code.length !== 6) return message('Введите все 6 цифр кода.', 'error'); const button = codeForm.querySelector('button'); button.disabled = true; message('Проверяем код…'); try { const remember = document.getElementById('cabinet-remember')?.checked !== false; const data = await request('POST', { action:'verify_code', phone:pendingPhone, code, remember }); showRentals(data.orders || [], data.phone, data.profile, data.whatsappUrl); message(''); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
+codeForm?.addEventListener('submit', async event => { event.preventDefault(); const code = codeInput.value.replace(/\D/g, ''); if (code.length !== 6) return message('Введите все 6 цифр кода.', 'error'); const button = codeForm.querySelector('button'); button.disabled = true; message('Проверяем код…'); try { const remember = document.getElementById('cabinet-remember')?.checked !== false; const data = await request('POST', { action:'verify_code', phone:pendingPhone, code, remember }); showRentals(data.orders || [], data.phone, data.profile, data.whatsappUrl, data.offerSmsConsentRequired); message(''); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
 document.getElementById('change-phone')?.addEventListener('click', () => { codeForm.hidden = true; phoneForm.hidden = false; codeInput.value = ''; message(''); phoneInput.focus(); });
 document.getElementById('cabinet-logout')?.addEventListener('click', async () => { await request('POST', { action:'logout' }).catch(() => {}); dashboard.hidden = true; login.hidden = false; phoneForm.hidden = false; codeForm.hidden = true; phoneInput.value = ''; codeInput.value = ''; pendingPhone = ''; message('Вы вышли из кабинета.'); });
 rentalsEl?.addEventListener('click', event => {
@@ -303,6 +306,31 @@ rentalsEl?.addEventListener('click', event => {
   const offerButton = event.target.closest('[data-open-offer]');
   if (offerButton) {
     openDocumentViewer('/offer', 'Публичная оферта Rentop KG', 'text/html');
+    return;
+  }
+  const requestOfferSms = event.target.closest('[data-request-offer-sms]');
+  if (requestOfferSms) {
+    if (!requestOfferSms.closest('form')?.elements.offerConsent?.checked) return message('Сначала отметьте согласие с условиями оферты.', 'error');
+    requestOfferSms.disabled = true;
+    request('POST', { action:'accept_offer', orderId:requestOfferSms.dataset.requestOfferSms })
+      .then(() => request('POST', { action:'request_offer_sms_consent', orderId:requestOfferSms.dataset.requestOfferSms }))
+      .then(() => {
+        const verify = requestOfferSms.closest('.cabinet-offer-box')?.querySelector('[data-offer-sms-verify]');
+        if (verify) verify.hidden = false;
+        requestOfferSms.textContent = 'Код отправлен';
+        message('Код согласия отправлен по SMS.', 'success');
+      })
+      .catch(error => { requestOfferSms.disabled = false; message(error.message, 'error'); });
+    return;
+  }
+  const verifyOfferSms = event.target.closest('[data-verify-offer-sms]');
+  if (verifyOfferSms) {
+    const code = verifyOfferSms.closest('.cabinet-offer-box')?.querySelector('[data-offer-sms-verify] input')?.value?.replace(/\D/g, '');
+    if (!/^\d{6}$/.test(code || '')) return message('Введите 6 цифр из SMS.', 'error');
+    verifyOfferSms.disabled = true;
+    request('POST', { action:'verify_offer_sms_consent', orderId:verifyOfferSms.dataset.verifyOfferSms, code })
+      .then(async () => { const fresh = await request('GET'); if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired); message('Согласие с офертой подтверждено и зафиксировано.', 'success'); })
+      .catch(error => { verifyOfferSms.disabled = false; message(error.message, 'error'); });
     return;
   }
   const fileTrigger = event.target.closest('[data-file-trigger]');
@@ -329,7 +357,7 @@ rentalsEl?.addEventListener('click', event => {
     if (!window.confirm('Подтвердите только после того, как вы забрали ноутбук из ячейки и проверили комплектность.')) return;
     pickupConfirm.disabled = true;
     request('POST', { action:'confirm_pickup', orderId:pickupConfirm.dataset.confirmPickup })
-      .then(async result => { message(result.message, 'success'); const fresh = await request('GET'); if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl); })
+      .then(async result => { message(result.message, 'success'); const fresh = await request('GET'); if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired); })
       .catch(error => { message(error.message, 'error'); pickupConfirm.disabled = false; });
     return;
   }
@@ -338,7 +366,8 @@ rentalsEl?.addEventListener('click', event => {
     const panel = document.getElementById(`panel-${button.dataset.order}`);
     if (!panel) return;
     panel.hidden = !panel.hidden;
-    panel.innerHTML = panel.hidden ? '' : panelMarkup(button.dataset.panel, button.dataset.order, { mode:button.dataset.documentMode, kinds:button.dataset.documentKinds });
+    const sourceOrder = orders.find(order => String(order.id) === String(button.dataset.order));
+    panel.innerHTML = panel.hidden ? '' : panelMarkup(button.dataset.panel, button.dataset.order, { mode:button.dataset.documentMode, kinds:button.dataset.documentKinds, offerSmsVerified:Boolean(sourceOrder?.offer_otp_verified_at) });
     return;
   }
   const correction = event.target.closest('[data-document-correction]');
@@ -403,7 +432,7 @@ rentalsEl?.addEventListener('submit', async event => {
       }
       message('Документы загружены. Менеджер проверит их и сообщит следующий шаг.', 'success');
       const fresh = await request('GET');
-      if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl);
+      if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired);
     } catch (error) {
       const output = documentForm.querySelector('.cabinet-form-error') || document.createElement('p');
       output.className = 'cabinet-form-error'; output.textContent = error.message; documentForm.append(output);
@@ -421,7 +450,7 @@ rentalsEl?.addEventListener('submit', async event => {
     const result = await request('POST', { action:form.dataset.request, orderId:form.dataset.order, days:data.get('days'), kind:data.get('kind'), message:data.get('message'), returnMethod:data.get('returnMethod'), returnLockerAddress:data.get('returnLockerAddress'), rating:data.get('rating'), review:data.get('review'), suggestion:data.get('suggestion') });
     message(result.message || 'Запрос отправлен.', 'success');
     const fresh = await request('GET');
-    if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl);
+    if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired);
   } catch (error) {
     const output = form.querySelector('.cabinet-form-error') || document.createElement('p');
     output.className = 'cabinet-form-error'; output.textContent = error.message; form.append(output);
@@ -435,7 +464,7 @@ profileEl?.addEventListener('submit', async event => {
   try {
     await request('POST', { action:'save_profile', fullName:new FormData(form).get('fullName') });
     const fresh = await request('GET');
-    if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl);
+    if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired);
   } catch (error) {
     const output = document.createElement('p'); output.className = 'cabinet-form-error'; output.textContent = error.message; form.append(output); button.disabled = false;
   }

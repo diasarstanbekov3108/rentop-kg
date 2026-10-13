@@ -16,6 +16,25 @@ ALTER TABLE public.rental_orders
   ADD COLUMN IF NOT EXISTS return_access_code text,
   ADD COLUMN IF NOT EXISTS return_access_sent_at timestamptz;
 
+-- Evidence for the SMS confirmation of the offer is kept separately from the
+-- raw SMS code: only its one-way HMAC is stored in offer_otp_hash.
+ALTER TABLE public.rental_orders
+  ADD COLUMN IF NOT EXISTS offer_consent_ip text,
+  ADD COLUMN IF NOT EXISTS offer_consent_user_agent text;
+
+-- Asset identifiers belong to the physical laptop, not a particular rental.
+-- Fill these fields in the Supabase laptops table before real issue.
+ALTER TABLE public.laptops
+  ADD COLUMN IF NOT EXISTS serial_number text,
+  ADD COLUMN IF NOT EXISTS inventory_code text;
+
+CREATE UNIQUE INDEX IF NOT EXISTS laptops_serial_number_unique
+  ON public.laptops (serial_number)
+  WHERE serial_number IS NOT NULL AND btrim(serial_number) <> '';
+CREATE UNIQUE INDEX IF NOT EXISTS laptops_inventory_code_unique
+  ON public.laptops (inventory_code)
+  WHERE inventory_code IS NOT NULL AND btrim(inventory_code) <> '';
+
 ALTER TABLE public.rental_orders
   DROP CONSTRAINT IF EXISTS rental_orders_status_allowed;
 ALTER TABLE public.rental_orders
@@ -24,7 +43,7 @@ ALTER TABLE public.rental_orders
       'draft', 'pending_review', 'awaiting_payment', 'payment_review', 'confirmed',
       'awaiting_archa_reservation', 'awaiting_locker_loading', 'awaiting_pickup',
       'issued', 'in_use', 'return_requested', 'awaiting_return_reservation',
-      'awaiting_return_dropoff', 'returned', 'completed', 'rejected', 'cancelled', 'expired'
+      'awaiting_return_dropoff', 'returned', 'completed', 'rejected', 'cancelled', 'expired', 'incident'
     )
   );
 
@@ -105,5 +124,9 @@ COMMENT ON COLUMN public.rental_orders.locker_loading_code IS
   'Служебный код ARCHA POINT для закладки устройства. Не передавать клиенту.';
 COMMENT ON COLUMN public.rental_orders.pickup_pin IS
   'Код доступа клиента. Используется только в аварийном ручном сценарии, когда ARCHA POINT не отправил SMS.';
+COMMENT ON COLUMN public.laptops.serial_number IS
+  'Заводской серийный номер физического ноутбука. Заполняется один раз и не передаётся клиенту.';
+COMMENT ON COLUMN public.laptops.inventory_code IS
+  'Внутренний инвентарный идентификатор Rentop для маркировки и досье по выдаче.';
 
 COMMIT;

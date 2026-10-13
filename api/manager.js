@@ -21,7 +21,8 @@ function archaMessage(order, laptop, mode = 'issue') {
   const reference = String(order.id || '').slice(0, 8).toUpperCase();
   const location = mode === 'return' ? order.return_locker_address : order.locker_address;
   const title = mode === 'return' ? 'ВОЗВРАТ RENTOP.KG' : 'ВЫДАЧА RENTOP.KG';
-  return `${title}\nЗаявка: ${reference}\nФИО: ${order.customer_name || '—'}\nТелефон: ${order.customer_phone || '—'}\nПостамат: ${location || '—'}\nНоутбук: ${laptop?.title || laptop?.name || '—'}\n${mode === 'return' ? 'Просим зарезервировать ячейку возврата и направить клиенту SMS-код доступа.' : `Срок аренды: ${order.rental_start_date || '—'} — ${order.rental_end_date || '—'}\nПросим зарезервировать ячейку и направить данные для закладки устройства.`}`;
+  const asset = [laptop?.title || laptop?.name || '—', laptop?.serial_number ? `S/N ${laptop.serial_number}` : '', laptop?.inventory_code ? `Инв. ${laptop.inventory_code}` : ''].filter(Boolean).join(' · ');
+  return `${title}\nЗаявка: ${reference}\nФИО: ${order.customer_name || '—'}\nТелефон: ${order.customer_phone || '—'}\nПостамат: ${location || '—'}\nНоутбук: ${asset}\n${mode === 'return' ? 'Просим зарезервировать ячейку возврата и направить клиенту SMS-код доступа.' : `Срок аренды: ${order.rental_start_date || '—'} — ${order.rental_end_date || '—'}\nПросим зарезервировать ячейку и направить данные для закладки устройства.`}`;
 }
 
 export default async function handler(request, response) {
@@ -32,6 +33,7 @@ export default async function handler(request, response) {
   const raw = readCookie(request, COOKIE);
   const session = raw ? await database.getCabinetSession(hash(config.customerOtpHmacSecret, raw)) : null;
   if (!session || session.revoked_at || new Date(session.expires_at) <= new Date() || !samePhone(session.phone, config.managerPhone)) return reply(response, 401, { error:'Войдите в кабинет с номером менеджера.', code:'MANAGER_AUTH_REQUIRED' });
+  const isChiefAdmin = samePhone(session.phone, config.adminManagerPhone);
   try {
     if (request.method === 'GET') {
       if (String(request.query?.access || '') === '1') return reply(response, 200, { manager:true });
@@ -50,10 +52,30 @@ export default async function handler(request, response) {
         }));
         return { ...order, laptop_title:laptop?.title || laptop?.name || 'Ноутбук Rentop', documents:documentsWithLinks, requests, payment };
       }));
-      return reply(response, 200, { authenticated:true, managerPhone:session.phone, orders:hydrated });
+      return reply(response, 200, { authenticated:true, managerPhone:session.phone, isChiefAdmin, orders:hydrated });
     }
     if (request.method !== 'POST') return reply(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
+    if (payload.action === 'admin_close_rental_early' || payload.action === 'admin_open_incident') {
+      if (!isChiefAdmin) return reply(response, 403, { error:'Это действие доступно только главному администратору.' });
+      const order = await database.getOrder(String(payload.orderId || ''));
+      const reason = String(payload.reason || '').trim().replace(/\s+/g, ' ').slice(0, 1000);
+      if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
+      if (reason.length < 5) return reply(response, 400, { error:'Укажите понятную причину действия — минимум 5 символов.' });
+      if (payload.action === 'admin_open_incident') {
+        if (['completed','cancelled','rejected'].includes(order.status)) return reply(response, 409, { error:'По завершённой или отменённой заявке инцидент не открывается.' });
+        const updated = await database.updateOrder(order.id, { status:'incident', admin_note:`Инцидент: ${reason}` });
+        await database.createEvent({ order_id:order.id, event_type:'chief_admin_opened_incident_from_web', actor_type:'chief_admin', metadata:{ reason, previous_status:order.status, manager_phone:session.phone } });
+        return reply(response, 200, { ok:true, order:updated, message:'Инцидент открыт. Ноутбук остаётся заблокированным в учёте до разрешения ситуации.' });
+      }
+      if (!['in_use','return_requested','awaiting_return_reservation','awaiting_return_dropoff','returned'].includes(order.status)) return reply(response, 409, { error:'Досрочно завершить можно только активную аренду или оформленный возврат.' });
+      const documents = await database.listOrderDocuments(order.id);
+      const returnVideo = documents.find(document => document.kind === 'return_video');
+      if (returnVideo?.status !== 'accepted') return reply(response, 409, { error:'Сначала примите видео состояния устройства при возврате. Это защищает Rentop и клиента.' });
+      const updated = await database.updateOrder(order.id, { status:'completed', admin_note:`Досрочно завершено: ${reason}` });
+      await database.createEvent({ order_id:order.id, event_type:'chief_admin_closed_rental_early_from_web', actor_type:'chief_admin', metadata:{ reason, previous_status:order.status, manager_phone:session.phone } });
+      return reply(response, 200, { ok:true, order:updated, message:'Аренда досрочно завершена и действие записано в журнал.' });
+    }
     if (payload.action === 'review_document') {
       const state = String(payload.status || '');
       if (!allowedDocumentStates.has(state)) return reply(response, 400, { error:'Некорректный статус документа.' });
