@@ -50,14 +50,32 @@ export default async function handler(request, response) {
           const path = signed?.signedURL || signed?.signedUrl || signed?.url || '';
           return { ...document, view_url:path ? (path.startsWith('http') ? path : `${config.supabaseUrl}/storage/v1${path}`) : '' };
         }));
-        return { ...order, laptop_title:laptop?.title || laptop?.name || 'Ноутбук Rentop', documents:documentsWithLinks, requests, payment };
+        return {
+          ...order,
+          laptop_title:laptop?.title || laptop?.name || 'Ноутбук Rentop',
+          laptop_serial_number:laptop?.serial_number || '',
+          laptop_inventory_code:laptop?.inventory_code || '',
+          documents:documentsWithLinks,
+          requests,
+          payment
+        };
       }));
       return reply(response, 200, { authenticated:true, managerPhone:session.phone, isChiefAdmin, orders:hydrated });
     }
     if (request.method !== 'POST') return reply(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
-    if (payload.action === 'admin_close_rental_early' || payload.action === 'admin_open_incident') {
+    if (payload.action === 'admin_close_rental_early' || payload.action === 'admin_open_incident' || payload.action === 'admin_resolve_incident' || payload.action === 'admin_update_laptop_asset') {
       if (!isChiefAdmin) return reply(response, 403, { error:'Это действие доступно только главному администратору.' });
+      if (payload.action === 'admin_update_laptop_asset') {
+        const laptopId = String(payload.laptopId || '');
+        const serialNumber = String(payload.serialNumber || '').trim().replace(/\s+/g, ' ').slice(0, 160);
+        const inventoryCode = String(payload.inventoryCode || '').trim().replace(/\s+/g, ' ').slice(0, 100);
+        if (!laptopId || (!serialNumber && !inventoryCode)) return reply(response, 400, { error:'Укажите заводской серийный номер или внутренний инвентарный код.' });
+        const laptop = await database.getLaptop(laptopId);
+        if (!laptop) return reply(response, 404, { error:'Ноутбук не найден.' });
+        const updated = await database.updateLaptop(laptopId, { serial_number:serialNumber || null, inventory_code:inventoryCode || null });
+        return reply(response, 200, { ok:true, laptop:updated, message:'Идентификаторы ноутбука сохранены. Они войдут в досье и сообщения ARCHA POINT.' });
+      }
       const order = await database.getOrder(String(payload.orderId || ''));
       const reason = String(payload.reason || '').trim().replace(/\s+/g, ' ').slice(0, 1000);
       if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
@@ -67,6 +85,20 @@ export default async function handler(request, response) {
         const updated = await database.updateOrder(order.id, { status:'incident', admin_note:`Инцидент: ${reason}` });
         await database.createEvent({ order_id:order.id, event_type:'chief_admin_opened_incident_from_web', actor_type:'chief_admin', metadata:{ reason, previous_status:order.status, manager_phone:session.phone } });
         return reply(response, 200, { ok:true, order:updated, message:'Инцидент открыт. Ноутбук остаётся заблокированным в учёте до разрешения ситуации.' });
+      }
+      if (payload.action === 'admin_resolve_incident') {
+        if (order.status !== 'incident') return reply(response, 409, { error:'Разрешение доступно только для открытого инцидента.' });
+        const outcome = String(payload.outcome || '');
+        if (!['in_use','returned','cancelled'].includes(outcome)) return reply(response, 400, { error:'Выберите корректный результат инцидента.' });
+        if (outcome === 'cancelled' && order.locker_loaded_at) return reply(response, 409, { error:'Нельзя отменить заявку после закладки ноутбука. Верните устройство или оставьте его в инциденте.' });
+        if (outcome === 'returned') {
+          const documents = await database.listOrderDocuments(order.id);
+          const returnVideo = documents.find(document => document.kind === 'return_video');
+          if (returnVideo?.status !== 'accepted') return reply(response, 409, { error:'До отметки возврата примите видео состояния устройства.' });
+        }
+        const updated = await database.updateOrder(order.id, { status:outcome, admin_note:`Инцидент разрешён: ${reason}` });
+        await database.createEvent({ order_id:order.id, event_type:'chief_admin_resolved_incident_from_web', actor_type:'chief_admin', metadata:{ reason, outcome, manager_phone:session.phone } });
+        return reply(response, 200, { ok:true, order:updated, message:'Инцидент разрешён, решение и причина записаны в журнал.' });
       }
       if (!['in_use','return_requested','awaiting_return_reservation','awaiting_return_dropoff','returned'].includes(order.status)) return reply(response, 409, { error:'Досрочно завершить можно только активную аренду или оформленный возврат.' });
       const documents = await database.listOrderDocuments(order.id);
