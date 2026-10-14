@@ -73,6 +73,7 @@ export default async function handler(request, response) {
     whatsappUrl: config.rentopWhatsappPhone ? `https://wa.me/${config.rentopWhatsappPhone}` : '',
     offerSmsConsentRequired: config.offerSmsConsentRequired,
     profile:await database.getCustomerProfile(phone).catch(() => null),
+    promos:await database.listPromosByPhone(phone).catch(() => []),
     orders:await hydrate(phone)
   });
   const verifySession = async () => {

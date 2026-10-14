@@ -14,7 +14,10 @@ ALTER TABLE public.rental_orders
   ADD COLUMN IF NOT EXISTS return_method text,
   ADD COLUMN IF NOT EXISTS return_locker_address text,
   ADD COLUMN IF NOT EXISTS return_access_code text,
-  ADD COLUMN IF NOT EXISTS return_access_sent_at timestamptz;
+  ADD COLUMN IF NOT EXISTS return_access_sent_at timestamptz,
+  ADD COLUMN IF NOT EXISTS rental_purpose text,
+  ADD COLUMN IF NOT EXISTS manager_note text,
+  ADD COLUMN IF NOT EXISTS return_condition_note text;
 
 -- Evidence for the SMS confirmation of the offer is kept separately from the
 -- raw SMS code: only its one-way HMAC is stored in offer_otp_hash.
@@ -60,7 +63,24 @@ ALTER TABLE public.rental_orders
 
 ALTER TABLE public.rental_orders
   ADD CONSTRAINT rental_orders_customer_note_len CHECK (customer_note IS NULL OR char_length(btrim(customer_note)) <= 1000),
+  ADD CONSTRAINT rental_orders_rental_purpose_len CHECK (rental_purpose IS NULL OR char_length(btrim(rental_purpose)) <= 600),
+  ADD CONSTRAINT rental_orders_manager_note_len CHECK (manager_note IS NULL OR char_length(btrim(manager_note)) <= 2000),
+  ADD CONSTRAINT rental_orders_return_condition_note_len CHECK (return_condition_note IS NULL OR char_length(btrim(return_condition_note)) <= 2000),
   ADD CONSTRAINT rental_orders_return_method_allowed CHECK (return_method IS NULL OR return_method IN ('arca_locker', 'courier', 'warehouse'));
+
+-- A website-only customer may not have a Telegram account, therefore a loyalty
+-- code can be tied to the verified phone instead of a Telegram user ID.
+ALTER TABLE public.rental_promo_codes
+  ALTER COLUMN recipient_telegram_user_id DROP NOT NULL;
+ALTER TABLE public.rental_promo_codes
+  DROP CONSTRAINT IF EXISTS rental_promo_codes_recipient_required;
+ALTER TABLE public.rental_promo_codes
+  ADD CONSTRAINT rental_promo_codes_recipient_required CHECK (
+    recipient_telegram_user_id IS NOT NULL OR recipient_phone IS NOT NULL
+  );
+CREATE INDEX IF NOT EXISTS rental_promo_codes_phone_idx
+  ON public.rental_promo_codes (recipient_phone, status, expires_at DESC)
+  WHERE recipient_phone IS NOT NULL;
 
 ALTER TABLE public.rental_order_customer_requests
   ADD COLUMN IF NOT EXISTS return_method text,

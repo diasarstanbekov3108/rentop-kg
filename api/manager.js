@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 import { loadConfig } from '../server/src/config.js';
 import { createSupabaseApi } from '../server/src/supabase.js';
 import { verifyBakaiToken, generateBakaiQr, makePaymentOperationId } from '../server/src/bakai.js';
@@ -64,6 +64,32 @@ export default async function handler(request, response) {
     }
     if (request.method !== 'POST') return reply(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
+    if (payload.action === 'save_order_registry') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
+      const rentalPurpose = String(payload.rentalPurpose || '').trim().replace(/\s+/g, ' ').slice(0, 600);
+      const managerNote = String(payload.managerNote || '').trim().slice(0, 2000);
+      const returnConditionNote = String(payload.returnConditionNote || '').trim().slice(0, 2000);
+      const updated = await database.updateOrder(order.id, { rental_purpose:rentalPurpose || null, manager_note:managerNote || null, return_condition_note:returnConditionNote || null });
+      await database.createEvent({ order_id:order.id, event_type:'manager_updated_rental_registry_from_web', actor_type:'manager', metadata:{ has_rental_purpose:Boolean(rentalPurpose), has_manager_note:Boolean(managerNote), has_return_condition_note:Boolean(returnConditionNote) } }).catch(error => console.error('Manager registry audit event failed:', error.message));
+      return reply(response, 200, { ok:true, order:updated, message:'Внутренний реестр аренды сохранён.' });
+    }
+    if (payload.action === 'issue_loyalty_promo') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      const percent = Number(payload.discountPercent);
+      if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
+      if (order.status !== 'completed') return reply(response, 409, { error:'Промокод лояльности можно выдать только после завершённой аренды.' });
+      if (!order.customer_phone) return reply(response, 409, { error:'У этой аренды не указан номер клиента.' });
+      if (![5, 10, 15, 20].includes(percent)) return reply(response, 400, { error:'Выберите скидку 5%, 10%, 15% или 20%.' });
+      const expiresAt = new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString();
+      let promo;
+      for (let attempt = 0; attempt < 3 && !promo; attempt += 1) {
+        const code = `RENTOP${percent}-${randomBytes(3).toString('hex').toUpperCase()}`;
+        try { promo = await database.createPromo({ code, discount_percent:percent, status:'issued', issued_from_order_id:order.id, recipient_telegram_user_id:null, recipient_phone:order.customer_phone, expires_at:expiresAt }); } catch (error) { if (attempt === 2) throw error; }
+      }
+      await database.createEvent({ order_id:order.id, event_type:'manager_issued_loyalty_promo_from_web', actor_type:'manager', metadata:{ promo_id:promo?.id || null, discount_percent:percent, expires_at:expiresAt } }).catch(error => console.error('Manager promo audit event failed:', error.message));
+      return reply(response, 201, { ok:true, promo, message:'Персональный промокод создан и появится в кабинете клиента.' });
+    }
     if (payload.action === 'admin_close_rental_early' || payload.action === 'admin_open_incident' || payload.action === 'admin_resolve_incident' || payload.action === 'admin_update_laptop_asset') {
       if (!isChiefAdmin) return reply(response, 403, { error:'Это действие доступно только главному администратору.' });
       if (payload.action === 'admin_update_laptop_asset') {
