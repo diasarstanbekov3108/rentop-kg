@@ -98,7 +98,7 @@ function openDocumentViewer(url, name = 'Документ', contentType = '') {
 
 function openPaymentDialog(payment) {
   if (!paymentDialog || !paymentDialogQr || !payment) return;
-  const rawImage = String(payment.qr_image_with_frame || payment.qr_image || '');
+  const rawImage = String(payment.qr_image || payment.qr_image_with_frame || '');
   const image = rawImage && !rawImage.startsWith('data:') && !rawImage.startsWith('http') ? `data:image/png;base64,${rawImage}` : rawImage;
   if (!image) return;
   const expires = payment.expires_at ? new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}).format(new Date(payment.expires_at)) : '—';
@@ -153,8 +153,11 @@ function documentSummary(order) {
     const document = latest.get(kind);
     const symbol = !document ? '○' : document.status === 'rejected' ? '↺' : document.status === 'accepted' ? '✓' : '⌛';
     const text = `${symbol} ${label}`;
+    const remove = order.status === 'draft' && document?.id
+      ? `<button type="button" class="cabinet-doc-remove" data-document-delete="${escape(document.id)}" data-document-order="${escape(order.id)}" aria-label="Удалить ${escape(label)}">Удалить</button>`
+      : '';
     return document?.view_url
-      ? `<button type="button" class="cabinet-doc-chip" data-document-view="${escape(document.view_url)}" data-document-name="${escape(document.file_name || label)}" data-document-type="${escape(document.content_type || '')}">${text}</button>`
+      ? `<span class="cabinet-doc-saved"><button type="button" class="cabinet-doc-chip" data-document-view="${escape(document.view_url)}" data-document-name="${escape(document.file_name || label)}" data-document-type="${escape(document.content_type || '')}">${text}</button>${remove}</span>`
       : `<span>${text}</span>`;
   };
   const reasons = [...latest.values()].filter(document => document.status === 'rejected' && document.reviewer_note).map(document => `<li><strong>${escape(({ identity:'Документ', identity_front:'Лицевая сторона', identity_back:'Обратная сторона', selfie:'Селфи', supporting:'Подтверждение' }[document.kind] || 'Документ'))}:</strong> ${escape(document.reviewer_note)}</li>`).join('');
@@ -187,7 +190,7 @@ function paymentPanel(order) {
   if (!payment) return `<div class="cabinet-payment waiting"><strong>Готовим способ оплаты</strong><p>Менеджер формирует защищённый QR-счёт. Обновите страницу через несколько минут — платить по реквизитам в переписке не нужно.</p>${documentNotice}</div>`;
   if (payment.status === 'paid') return `<div class="cabinet-payment success"><strong>Оплата получена</strong><p>Банк подтвердил платёж. Мы готовим следующий шаг выдачи.</p>${documentNotice}</div>`;
   if (['revoked', 'expired', 'failed'].includes(payment.status)) return `<div class="cabinet-payment waiting"><strong>Счёт обновляется</strong><p>Предыдущий QR больше не используйте. Менеджер подготовит новый защищённый счёт, если оплата ещё нужна.</p>${documentNotice}</div>`;
-  const rawImage = String(payment.qr_image_with_frame || payment.qr_image || '');
+  const rawImage = String(payment.qr_image || payment.qr_image_with_frame || '');
   const image = rawImage && !rawImage.startsWith('data:') && !rawImage.startsWith('http') ? `data:image/png;base64,${rawImage}` : rawImage;
   const expires = payment.expires_at ? new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(payment.expires_at)) : '—';
   return `<section class="cabinet-payment"><div><strong>Оплата аренды</strong><span>${Number(payment.amount || 0).toLocaleString('ru-RU')} сом · до ${escape(expires)}</span></div><p>${image ? 'Нажмите «Оплатить по QR»: код откроется крупно на весь экран. Платёжная ссылка Банка доступна как дополнительный способ, но её поддержка зависит от приложения банка.' : 'Банк создал ссылку на QR. Откройте её в поддерживаемом банковском приложении или попросите менеджера перевыпустить счёт.'} Не переводите сумму вручную на другие реквизиты.</p>${documentNotice}${image ? `<button class="cabinet-action cabinet-payment-open" type="button" data-open-payment="${escape(order.id)}">Оплатить по QR</button>` : ''}${payment.qr_link ? `<a class="cabinet-action cabinet-payment-link secondary" href="${escape(payment.qr_link)}" target="_blank" rel="noopener">Открыть платёжную ссылку Банка</a>` : ''}</section>`;
@@ -266,7 +269,7 @@ function fileControl(kind) {
   const [title, hint] = ({ identity_front:['Паспорт или ID-карта — лицевая сторона', 'обязательно'], identity_back:['Паспорт или ID-карта — обратная сторона', 'обязательно'], selfie:['Селфи с документом', 'обязательно: откроется фронтальная камера'], supporting:['Официальное подтверждение', 'обязательно: выберите тип документа ниже'] }[kind] || ['Документ', '']);
   const typeChoice = kind === 'supporting' ? `<select name="supportingType" class="cabinet-document-type"><option value="">Выберите документ</option><option value="Справка с места работы">Справка с места работы</option><option value="Справка с места жительства">Справка с места жительства</option><option value="Тундук">Документ / скрин из Тундук</option><option value="Иной официальный документ">Иной официальный документ</option></select>` : '';
   const selfie = kind === 'selfie';
-  return `<div class="cabinet-file-control"><label for="document-${kind}">${title} <span>${hint}</span></label>${typeChoice}<input id="document-${kind}" name="${kind}" type="file" accept="${selfie ? 'image/jpeg,image/png' : 'image/jpeg,image/png,application/pdf'}" ${selfie ? 'capture="user"' : ''} hidden><div><button class="cabinet-file-choose" type="button" data-file-trigger="${kind}">${selfie ? 'Снять селфи камерой' : 'Выберите файл'}</button><button class="cabinet-file-preview" type="button" data-file-preview="${kind}" disabled>Файл не выбран</button></div></div>`;
+  return `<div class="cabinet-file-control"><label for="document-${kind}">${title} <span>${hint}</span></label>${typeChoice}<input id="document-${kind}" name="${kind}" type="file" accept="${selfie ? 'image/jpeg,image/png' : 'image/jpeg,image/png,application/pdf'}" ${selfie ? 'capture="user"' : ''} hidden><div><button class="cabinet-file-choose" type="button" data-file-trigger="${kind}">${selfie ? 'Снять селфи камерой' : 'Выберите файл'}</button><button class="cabinet-file-preview" type="button" data-file-preview="${kind}" disabled>Файл не выбран</button><button class="cabinet-file-remove" type="button" data-file-remove="${kind}" hidden>Удалить</button></div></div>`;
 }
 
 function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequired = false, promos = []) {
@@ -385,6 +388,25 @@ rentalsEl?.addEventListener('click', event => {
     if (file) openDocumentViewer(URL.createObjectURL(file), file.name, file.type);
     return;
   }
+  const fileRemove = event.target.closest('[data-file-remove]');
+  if (fileRemove) {
+    const form = fileRemove.closest('form');
+    const input = form?.elements[fileRemove.dataset.fileRemove];
+    const preview = fileRemove.closest('.cabinet-file-control')?.querySelector('[data-file-preview]');
+    if (input) input.value = '';
+    if (preview) { preview.disabled = true; preview.textContent = 'Файл не выбран'; }
+    fileRemove.hidden = true;
+    return;
+  }
+  const deleteSavedDocument = event.target.closest('[data-document-delete]');
+  if (deleteSavedDocument) {
+    if (!window.confirm('Удалить этот файл? До отправки документов на проверку вы сможете выбрать другой.')) return;
+    deleteSavedDocument.disabled = true;
+    request('POST', { action:'delete_draft_document', orderId:deleteSavedDocument.dataset.documentOrder, documentId:deleteSavedDocument.dataset.documentDelete })
+      .then(async result => { message(result.message, 'success'); const fresh = await request('GET'); if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos); })
+      .catch(error => { message(error.message, 'error'); deleteSavedDocument.disabled = false; });
+    return;
+  }
   const savedDocument = event.target.closest('[data-document-view]');
   if (savedDocument) {
     openDocumentViewer(savedDocument.dataset.documentView, savedDocument.dataset.documentName, savedDocument.dataset.documentType);
@@ -446,6 +468,8 @@ rentalsEl?.addEventListener('change', event => {
   const file = input.files?.[0];
   preview.disabled = !file;
   preview.textContent = file ? `Открыть: ${file.name}` : 'Файл не выбран';
+  const remove = input.closest('.cabinet-file-control')?.querySelector('[data-file-remove]');
+  if (remove) remove.hidden = !file;
 });
 rentalsEl?.addEventListener('submit', async event => {
   const documentForm = event.target.closest('[data-document-upload]');

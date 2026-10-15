@@ -86,6 +86,7 @@ export function createSupabaseApi(config) {
     registerOrderDocument: (document) => request('rental_order_documents', {
       method: 'POST', body: JSON.stringify(document)
     }).then((rows) => rows?.[0] || null),
+    deleteOrderDocument: (id) => request(`rental_order_documents?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' }),
     createSignedDocumentUpload: (path) => storageRequest(`object/upload/sign/rental-documents/${path}`, {
       method: 'POST', body: JSON.stringify({})
     }),

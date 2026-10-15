@@ -106,7 +106,7 @@ export default async function handler(request, response) {
     if (request.method !== 'POST') return json(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
     if (payload.action === 'logout') { const raw = readCookie(request, COOKIE); if (raw) await database.revokeCabinetSession(hash(secret, raw)); response.setHeader('Set-Cookie', `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`); return json(response, 200, { ok:true }); }
-    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'request_offer_sms_consent' || payload.action === 'verify_offer_sms_consent' || payload.action === 'save_profile' || payload.action === 'extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup' || payload.action === 'submit_feedback') {
+    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'delete_draft_document' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'request_offer_sms_consent' || payload.action === 'verify_offer_sms_consent' || payload.action === 'save_profile' || payload.action === 'extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup' || payload.action === 'submit_feedback') {
       const session = await verifySession();
       if (!session) return json(response, 401, { error:'Сессия истекла. Войдите в кабинет снова.', code:'AUTH_REQUIRED' });
       if (payload.action === 'save_profile') {
@@ -163,6 +163,16 @@ export default async function handler(request, response) {
         await database.createEvent({ order_id:order.id, event_type:'customer_requested_document_correction_from_cabinet', actor_type:'customer', metadata:{ note:note || null } });
         try { await createTelegramApi(config.telegramBotToken).sendMessage(config.adminChatId, `⚠️ Клиент просит заменить документ с сайта\n\nЗаявка ${orderRef(order)}\n${note || 'Причина не указана'}\n\nПроверьте документы и отклоните неверный файл в панели менеджера — клиент сможет прикрепить замену.`); } catch (error) { console.error('Document correction notification failed:', error.message); }
         return json(response, 201, { ok:true, message:'Запрос на исправление передан менеджеру. После отклонения неверного файла появится загрузка замены.' });
+      }
+      if (payload.action === 'delete_draft_document') {
+        if (order.status !== 'draft') return json(response, 409, { error:'После отправки на проверку документ нельзя удалить самостоятельно. Запросите замену у менеджера.' });
+        const documentId = String(payload.documentId || '');
+        const document = (await database.listOrderDocuments(order.id)).find(item => item.id === documentId);
+        if (!document) return json(response, 404, { error:'Документ не найден.' });
+        await database.deleteOrderDocument(document.id);
+        await database.deleteDocumentFile(document.storage_path).catch(error => console.error('Draft document storage cleanup failed:', error.message));
+        await database.createEvent({ order_id:order.id, event_type:'customer_deleted_draft_document_from_cabinet', actor_type:'customer', metadata:{ kind:document.kind } });
+        return json(response, 200, { ok:true, message:'Файл удалён. Можете выбрать другой.' });
       }
       if (payload.action === 'create_document_upload') {
         const kind = String(payload.kind || '');
