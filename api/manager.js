@@ -39,11 +39,12 @@ export default async function handler(request, response) {
       if (String(request.query?.access || '') === '1') return reply(response, 200, { manager:true });
       const orders = await database.listRecentOrders(50);
       const hydrated = await Promise.all(orders.map(async order => {
-        const [laptop, documents, requests, payment] = await Promise.all([
+        const [laptop, documents, requests, payment, supportCases] = await Promise.all([
           database.getLaptop(order.laptop_id),
           database.listOrderDocuments(order.id).catch(() => []),
           database.listCustomerRequests(order.id).catch(() => []),
-          database.getOrderPayment(order.id).catch(() => null)
+          database.getOrderPayment(order.id).catch(() => null),
+          database.listOrderSupportCases(order.id).catch(() => [])
         ]);
         const documentsWithLinks = await Promise.all(documents.map(async document => {
           const signed = await database.createSignedDocumentDownload(document.storage_path).catch(() => null);
@@ -57,13 +58,24 @@ export default async function handler(request, response) {
           laptop_inventory_code:laptop?.inventory_code || '',
           documents:documentsWithLinks,
           requests,
-          payment
+          payment,
+          supportCases
         };
       }));
       return reply(response, 200, { authenticated:true, managerPhone:session.phone, isChiefAdmin, orders:hydrated });
     }
     if (request.method !== 'POST') return reply(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
+    if (payload.action === 'resolve_support_case') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      const kind = String(payload.kind || '');
+      if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
+      if (!['rentop','archa','archa_code_missing','archa_locker_issue','rental_issue'].includes(kind)) return reply(response, 400, { error:'Некорректный тип обращения.' });
+      const resolved = await database.resolveSupportCase(order.id, kind, session.phone);
+      if (!resolved) return reply(response, 404, { error:'Открытое обращение не найдено.' });
+      await database.createEvent({ order_id:order.id, event_type:'manager_resolved_support_case_from_web', actor_type:'manager', metadata:{ kind } }).catch(error => console.error('Manager support audit event failed:', error.message));
+      return reply(response, 200, { ok:true, supportCase:resolved, message:'Обращение отмечено как решённое.' });
+    }
     if (payload.action === 'save_order_registry') {
       const order = await database.getOrder(String(payload.orderId || ''));
       if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
@@ -147,7 +159,8 @@ export default async function handler(request, response) {
         const documents = await database.listOrderDocuments(document.order_id);
         const latest = new Map();
         for (const item of documents) if (!latest.has(item.kind)) latest.set(item.kind, item);
-        if (['identity','selfie'].every(kind => latest.get(kind)?.status === 'accepted')) {
+        const identityFrontAccepted = latest.get('identity_front')?.status === 'accepted' || latest.get('identity')?.status === 'accepted';
+        if (identityFrontAccepted && ['identity_back','selfie','supporting'].every(kind => latest.get(kind)?.status === 'accepted')) {
           const order = await database.getOrder(document.order_id);
           if (['draft','pending_review'].includes(order?.status)) {
             updatedOrder = await database.updateOrder(order.id, { status:'awaiting_payment', hold_expires_at:new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() });

@@ -16,6 +16,7 @@ const paymentDialog = document.getElementById('cabinet-payment-dialog');
 const paymentDialogQr = document.getElementById('cabinet-payment-dialog-qr');
 const paymentDialogAmount = document.getElementById('cabinet-payment-dialog-amount');
 const paymentDialogExpiry = document.getElementById('cabinet-payment-dialog-expiry');
+const paymentDialogLink = document.getElementById('cabinet-payment-dialog-link');
 let pendingPhone = '';
 let currentPreviewUrl = '';
 let paymentByOrder = new Map();
@@ -102,6 +103,10 @@ function openPaymentDialog(payment) {
   paymentDialogQr.src = image;
   paymentDialogAmount.textContent = `${Number(payment.amount || 0).toLocaleString('ru-RU')} сом`;
   paymentDialogExpiry.textContent = `Счёт действует до ${expires}`;
+  if (paymentDialogLink) {
+    paymentDialogLink.hidden = !payment.qr_link;
+    if (payment.qr_link) paymentDialogLink.href = payment.qr_link;
+  }
   paymentDialog.hidden = false;
   document.body.style.overflow = 'hidden';
 }
@@ -110,6 +115,7 @@ function closePaymentDialog() {
   if (!paymentDialog) return;
   paymentDialog.hidden = true;
   if (paymentDialogQr) paymentDialogQr.removeAttribute('src');
+  if (paymentDialogLink) { paymentDialogLink.hidden = true; paymentDialogLink.removeAttribute('href'); }
   document.body.style.overflow = '';
   activePaymentOrderId = '';
   if (paymentPollingTimer) window.clearInterval(paymentPollingTimer);
@@ -139,7 +145,7 @@ function latestDocuments(order) {
 function documentSummary(order) {
   const latest = latestDocuments(order);
   const visibleKinds = latest.size
-    ? ['identity', 'selfie', 'supporting', 'issue_video', 'return_video'].filter(kind => latest.has(kind))
+    ? ['identity', 'identity_front', 'identity_back', 'selfie', 'supporting', 'issue_video', 'return_video'].filter(kind => latest.has(kind))
     : [];
   const state = (kind, label) => {
     const document = latest.get(kind);
@@ -149,16 +155,18 @@ function documentSummary(order) {
       ? `<button type="button" class="cabinet-doc-chip" data-document-view="${escape(document.view_url)}" data-document-name="${escape(document.file_name || label)}" data-document-type="${escape(document.content_type || '')}">${text}</button>`
       : `<span>${text}</span>`;
   };
-  const reasons = [...latest.values()].filter(document => document.status === 'rejected' && document.reviewer_note).map(document => `<li><strong>${escape(({ identity:'Документ', selfie:'Селфи', supporting:'Подтверждение' }[document.kind] || 'Документ'))}:</strong> ${escape(document.reviewer_note)}</li>`).join('');
-  const labels = { identity:'Документ', selfie:'Селфи', supporting:'Подтверждение', issue_video:'Видео до получения', return_video:'Видео возврата' };
+  const reasons = [...latest.values()].filter(document => document.status === 'rejected' && document.reviewer_note).map(document => `<li><strong>${escape(({ identity:'Документ', identity_front:'Лицевая сторона', identity_back:'Обратная сторона', selfie:'Селфи', supporting:'Подтверждение' }[document.kind] || 'Документ'))}:</strong> ${escape(document.reviewer_note)}</li>`).join('');
+  const labels = { identity:'Документ', identity_front:'Лицевая сторона', identity_back:'Обратная сторона', selfie:'Селфи', supporting:'Подтверждение', issue_video:'Видео до получения', return_video:'Видео возврата' };
   const summary = visibleKinds.length ? visibleKinds.map(kind => state(kind, labels[kind])).join('') : '<span>○ Документы ещё не загружены</span>';
   return `<div class="cabinet-doc-summary">${summary}</div>${reasons ? `<div class="cabinet-document-reasons"><strong>Нужно исправить</strong><ul>${reasons}</ul></div>` : ''}`;
 }
 function documentMode(order) {
   const latest = latestDocuments(order);
-  const required = ['identity', 'selfie'];
-  const missing = required.filter(kind => !latest.has(kind));
-  const rejected = required.filter(kind => latest.get(kind)?.status === 'rejected');
+  const required = ['identity_front', 'identity_back', 'selfie', 'supporting'];
+  const hasDocument = kind => kind === 'identity_front' ? latest.has('identity_front') || latest.has('identity') : latest.has(kind);
+  const isRejected = kind => kind === 'identity_front' ? latest.get('identity_front')?.status === 'rejected' || latest.get('identity')?.status === 'rejected' : latest.get(kind)?.status === 'rejected';
+  const missing = required.filter(kind => !hasDocument(kind));
+  const rejected = required.filter(isRejected);
   if (rejected.length) return { mode:'replacement', kinds:rejected };
   if (missing.length) return { mode:'upload', kinds:missing };
   if (required.every(kind => latest.get(kind)?.status === 'accepted')) return { mode:'approved', kinds:[] };
@@ -175,7 +183,7 @@ function paymentPanel(order) {
   const rawImage = String(payment.qr_image_with_frame || payment.qr_image || '');
   const image = rawImage && !rawImage.startsWith('data:') && !rawImage.startsWith('http') ? `data:image/png;base64,${rawImage}` : rawImage;
   const expires = payment.expires_at ? new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(payment.expires_at)) : '—';
-  return `<section class="cabinet-payment"><div><strong>Оплата аренды</strong><span>${Number(payment.amount || 0).toLocaleString('ru-RU')} сом · до ${escape(expires)}</span></div><p>${image ? 'Счёт создан Банком. Нажмите «Оплатить по QR» — код откроется крупно прямо на сайте.' : 'Банк создал ссылку на QR. Откройте её в поддерживаемом банковском приложении или попросите менеджера перевыпустить счёт.'} Не переводите сумму вручную на другие реквизиты.</p>${documentNotice}${image ? `<button class="cabinet-action cabinet-payment-open" type="button" data-open-payment="${escape(order.id)}">Оплатить по QR</button>` : ''}${payment.qr_link && !image ? `<a class="cabinet-action cabinet-payment-link" href="${escape(payment.qr_link)}" target="_blank" rel="noopener">Открыть в банковском приложении</a>` : ''}</section>`;
+  return `<section class="cabinet-payment"><div><strong>Оплата аренды</strong><span>${Number(payment.amount || 0).toLocaleString('ru-RU')} сом · до ${escape(expires)}</span></div><p>${image ? 'Нажмите «Оплатить по QR»: код откроется крупно на весь экран. На этом же телефоне можно перейти в Bakai по защищённой ссылке Банка.' : 'Банк создал ссылку на QR. Откройте её в поддерживаемом банковском приложении или попросите менеджера перевыпустить счёт.'} Не переводите сумму вручную на другие реквизиты.</p>${documentNotice}${image ? `<button class="cabinet-action cabinet-payment-open" type="button" data-open-payment="${escape(order.id)}">Оплатить по QR</button>` : ''}${payment.qr_link ? `<a class="cabinet-action cabinet-payment-link secondary" href="${escape(payment.qr_link)}" target="_blank" rel="noopener">Открыть Bakai для оплаты</a>` : ''}</section>`;
 }
 function pickupInstruction(order) {
   if (order.delivery_type !== 'arca_locker') return '';
@@ -201,7 +209,7 @@ function actionPanel(order) {
   const documentText = docState.mode === 'approved' ? 'Документы проверены' : docState.mode === 'submitted' ? 'Документы на проверке' : docState.mode === 'replacement' ? 'Заменить документ' : 'Документы и договор';
   const documents = `<button class="cabinet-action secondary" data-panel="documents" data-document-mode="${docState.mode}" data-document-kinds="${docState.kinds.join(',')}" data-order="${order.id}">${documentText}</button>`;
   const whatsapp = supportWhatsappUrl ? `<a class="cabinet-action ghost" href="${escape(supportWhatsappUrl)}?text=${encodeURIComponent(`Здравствуйте! Нужна помощь по заявке ${order.reference}.`)}" target="_blank" rel="noopener">Написать в WhatsApp</a>` : '';
-  if (docState.mode === 'upload') return `<div class="cabinet-documents-cta"><strong>Следующий шаг — документы</strong><p>Прикрепите паспорт/ID и селфи с документом. Без проверки документов счёт на оплату не создаётся.</p>${documents}</div><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
+  if (docState.mode === 'upload') return `<div class="cabinet-documents-cta"><strong>Следующий шаг — документы</strong><p>Нужны лицевая и обратная стороны паспорта/ID, селфи с документом и официальный подтверждающий документ. Без полного комплекта счёт на оплату не создаётся.</p>${documents}</div><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="comment" data-order="${order.id}">Комментарий к заявке</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
   if (docState.mode === 'approved') return `<div class="cabinet-action-disabled">Продление и досрочный возврат станут доступны после выдачи ноутбука.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
   if (order.status === 'awaiting_pickup') return `${documents}<div class="cabinet-request-state">До получения снимите короткое видео состояния комплекта. Ноутбук должен быть помещён в ячейку, а SMS-код — прийти от ARCHA POINT.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="issue-video" data-order="${order.id}">Прикрепить видео до получения</button><button class="cabinet-action" data-confirm-pickup="${order.id}">Я получил(а) ноутбук</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Код не пришёл / проблема с постаматом</button></div>`;
   if (order.status === 'awaiting_return_dropoff') return `${documents}<div class="cabinet-request-state">Снимите видео состояния ноутбука, зарядки и комплекта до помещения в ячейку. Затем используйте SMS-код ARCHA POINT.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="return-video" data-order="${order.id}">Прикрепить видео возврата</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Проблема с возвратом</button></div>`;
@@ -228,8 +236,8 @@ function panelMarkup(kind, orderId, documentState = {}) {
     if (documentState.mode === 'approved') return `<div class="cabinet-document-wait is-approved"><strong>Документы проверены</strong><p>Спасибо. Заявка перешла к оплате или подготовке выдачи — следующий шаг показан выше.</p></div>`;
     if (documentState.mode === 'submitted') return `<div class="cabinet-document-wait"><strong>Документы отправлены</strong><p>Ваша заявка обрабатывается. Ожидайте ответа менеджера — повторная отправка заблокирована.</p><button class="cabinet-action ghost" type="button" data-document-correction="${orderId}">Я отправил(а) неверный документ</button></div>`;
     const replacement = documentState.mode === 'replacement';
-    const kinds = replacement ? String(documentState.kinds || '').split(',').filter(Boolean) : ['identity', 'selfie', 'supporting'];
-    const requiredKinds = replacement ? kinds : ['identity', 'selfie'];
+    const kinds = replacement ? String(documentState.kinds || '').split(',').filter(Boolean) : ['identity_front', 'identity_back', 'selfie', 'supporting'];
+    const requiredKinds = replacement ? kinds : ['identity_front', 'identity_back', 'selfie', 'supporting'];
     const smsConsent = !replacement && offerSmsConsentRequired && !documentState.offerSmsVerified ? `<div class="cabinet-offer-box"><strong>Подтверждение оферты по SMS</strong><p>После ознакомления подтвердите согласие одноразовым кодом с номера, указанного в заявке.</p><button class="cabinet-action secondary" type="button" data-request-offer-sms="${orderId}">Получить код согласия</button><div class="cabinet-inline-row" data-offer-sms-verify hidden><input inputmode="numeric" maxlength="6" placeholder="Код из SMS" aria-label="Код согласия"><button class="cabinet-action" type="button" data-verify-offer-sms="${orderId}">Подтвердить оферту</button></div></div>` : '';
     const offer = replacement ? '' : `<div class="cabinet-offer-box"><strong>Публичная оферта Rentop KG</strong><p>До отправки документов прочитайте условия аренды, выдачи и возврата.</p><button class="cabinet-action secondary" type="button" data-open-offer="true">Открыть договор-оферту</button><label class="cabinet-document-consent"><input name="offerConsent" type="checkbox" required><span>Я ознакомился(лась) с публичной офертой и принимаю её условия.</span></label>${smsConsent}</div>`;
     const warnings = replacement ? '' : `<div class="cabinet-safety-notice"><strong>Важно о документах и технике</strong><p>Подделка, использование чужих или заведомо недостоверных документов может повлечь ответственность по законодательству Кыргызской Республики. Rentop проверяет документы до выдачи.</p><p>На выдаваемом оборудовании установлены средства контроля местонахождения и целостности, включая GPS-трекеры и гарантийные пломбы. Несанкционированное вскрытие, нарушение пломб или попытка отключить средства контроля считаются нарушением правил эксплуатации и могут повлечь штраф, возмещение ущерба и обращение в уполномоченные органы.</p></div>`;
@@ -242,14 +250,15 @@ function panelMarkup(kind, orderId, documentState = {}) {
   }
   if (kind === 'extend') return `<form class="cabinet-inline-form" data-request="extension_request" data-order="${orderId}"><label>На сколько дней продлить?</label><div class="cabinet-inline-row"><input name="days" type="number" min="1" max="30" value="3" required><button class="cabinet-action" type="submit">Отправить запрос</button></div><p>Менеджер проверит доступность и пришлёт сумму к оплате.</p></form>`;
   if (kind === 'return') return `<form class="cabinet-inline-form" data-request="early_return_request" data-order="${orderId}"><label>Как вам удобнее вернуть ноутбук?</label><select name="returnMethod" required><option value="">Выберите способ</option><option value="arca_locker">Через постамат ARCHA POINT</option><option value="courier">Заказать курьера Rentop</option><option value="warehouse">Привезти на склад Rentop</option></select><div class="cabinet-return-locker" hidden><label>Выберите постамат возврата</label><select name="returnLockerAddress"><option value="">Выберите постамат</option>${ARCHA_LOCATIONS.map(location => `<option value="${escape(location.value)}">${escape(location.value)} · ${escape(location.hours)}</option>`).join('')}</select></div><label>Коротко опишите причину (необязательно)</label><textarea name="message" maxlength="500" placeholder="Например: изменились планы, хочу вернуть сегодня"></textarea><div class="cabinet-inline-row"><button class="cabinet-action danger" type="submit">Запросить возврат</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>Перед возвратом снимите короткое видео состояния ноутбука и комплекта. Не кладите устройство в ячейку, пока не придёт инструкция.</p></form>`;
-  if (kind === 'comment') return `<form class="cabinet-inline-form" data-request="save_order_comment" data-order="${orderId}"><label>Комментарий к заказу</label><textarea name="message" minlength="3" maxlength="1000" placeholder="Например: прошу проверить зарядку, нужен переходник или есть вопрос по комплектности"></textarea><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Сохранить комментарий</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>Комментарий увидит менеджер Rentop при подготовке заказа.</p></form>`;
+  if (kind === 'comment') return `<form class="cabinet-inline-form cabinet-comment-form" data-request="save_order_comment" data-order="${orderId}"><label>Комментарий к заявке</label><textarea name="message" minlength="3" maxlength="1000" placeholder="Например: цель аренды, важные пожелания по комплектации или вопрос менеджеру"></textarea><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Сохранить комментарий</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>Комментарий увидит менеджер ещё до проверки документов.</p></form>`;
   if (kind === 'feedback') return `<form class="cabinet-inline-form" data-request="submit_feedback" data-order="${orderId}"><label>Спасибо, что выбрали Rentop</label><select name="rating"><option value="">Оценка — по желанию</option><option value="5">5 — отлично</option><option value="4">4 — хорошо</option><option value="3">3 — нормально</option><option value="2">2 — есть проблемы</option><option value="1">1 — плохо</option></select><label>Ваш отзыв</label><textarea name="review" maxlength="1500" placeholder="Что вам понравилось?"></textarea><label>Предложение по улучшению</label><textarea name="suggestion" maxlength="1500" placeholder="Что сделать удобнее?"></textarea><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Отправить отзыв</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
-  return `<form class="cabinet-inline-form" data-request="support_request" data-order="${orderId}"><label>Что случилось?</label><select name="kind"><option value="rentop">Вопрос к Rentop</option><option value="archa_code_missing">Не пришёл код ARCHA POINT</option><option value="archa_locker_issue">Постамат не открывается или не выдаёт ноутбук</option><option value="archa">Другая проблема с ARCHA POINT</option><option value="rental_issue">Проблема с ноутбуком или комплектностью</option></select><textarea name="message" minlength="3" maxlength="1000" placeholder="Опишите ситуацию — менеджер увидит сообщение"></textarea><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Отправить обращение</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
+  return `<form class="cabinet-inline-form cabinet-support-form" data-request="support_request" data-order="${orderId}"><strong>Поддержка Rentop</strong><p>Опишите проблему — обращение появится в рабочей панели менеджера и будет продублировано в Telegram.</p><label>Тема обращения</label><select name="kind"><option value="rentop">Вопрос к Rentop</option><option value="archa_code_missing">Не пришёл код ARCHA POINT</option><option value="archa_locker_issue">Постамат не открывается или не выдаёт ноутбук</option><option value="archa">Другая проблема с ARCHA POINT</option><option value="rental_issue">Проблема с ноутбуком или комплектностью</option></select><label>Сообщение</label><textarea name="message" minlength="3" maxlength="1000" placeholder="Например: не могу открыть постамат, код не пришёл, нужна помощь"></textarea><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Отправить обращение</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
 }
 function fileControl(kind) {
-  const [title, hint] = ({ identity:['Паспорт или ID-карта', 'обязательно'], selfie:['Селфи с документом', 'обязательно'], supporting:['Официальное подтверждение', 'необязательно: выберите тип документа ниже'] }[kind] || ['Документ', '']);
+  const [title, hint] = ({ identity_front:['Паспорт или ID-карта — лицевая сторона', 'обязательно'], identity_back:['Паспорт или ID-карта — обратная сторона', 'обязательно'], selfie:['Селфи с документом', 'обязательно: откроется фронтальная камера'], supporting:['Официальное подтверждение', 'обязательно: выберите тип документа ниже'] }[kind] || ['Документ', '']);
   const typeChoice = kind === 'supporting' ? `<select name="supportingType" class="cabinet-document-type"><option value="">Выберите документ</option><option value="Справка с места работы">Справка с места работы</option><option value="Справка с места жительства">Справка с места жительства</option><option value="Тундук">Документ / скрин из Тундук</option><option value="Иной официальный документ">Иной официальный документ</option></select>` : '';
-  return `<div class="cabinet-file-control"><label for="document-${kind}">${title} <span>${hint}</span></label>${typeChoice}<input id="document-${kind}" name="${kind}" type="file" accept="image/jpeg,image/png,application/pdf" hidden><div><button class="cabinet-file-choose" type="button" data-file-trigger="${kind}">Выберите файл</button><button class="cabinet-file-preview" type="button" data-file-preview="${kind}" disabled>Файл не выбран</button></div></div>`;
+  const selfie = kind === 'selfie';
+  return `<div class="cabinet-file-control"><label for="document-${kind}">${title} <span>${hint}</span></label>${typeChoice}<input id="document-${kind}" name="${kind}" type="file" accept="${selfie ? 'image/jpeg,image/png' : 'image/jpeg,image/png,application/pdf'}" ${selfie ? 'capture="user"' : ''} hidden><div><button class="cabinet-file-choose" type="button" data-file-trigger="${kind}">${selfie ? 'Снять селфи камерой' : 'Выберите файл'}</button><button class="cabinet-file-preview" type="button" data-file-preview="${kind}" disabled>Файл не выбран</button></div></div>`;
 }
 
 function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequired = false, promos = []) {
@@ -435,7 +444,7 @@ rentalsEl?.addEventListener('submit', async event => {
     event.preventDefault();
     const button = documentForm.querySelector('[type="submit"]');
     const requiredKinds = String(documentForm.dataset.requiredKinds || '').split(',').filter(Boolean);
-    const files = ['identity', 'selfie', 'supporting', 'issue_video', 'return_video'].map(kind => ({ kind, file:documentForm.elements[kind]?.files?.[0] })).filter(item => item.file);
+    const files = ['identity_front', 'identity_back', 'selfie', 'supporting', 'issue_video', 'return_video'].map(kind => ({ kind, file:documentForm.elements[kind]?.files?.[0] })).filter(item => item.file);
     const isReplacement = documentForm.dataset.documentReplacement === '1';
     const isEvidence = documentForm.dataset.evidenceUpload === 'true';
     if (!requiredKinds.every(kind => files.some(item => item.kind === kind)) || (!isEvidence && (!documentForm.elements.documentConsent?.checked || (!isReplacement && !documentForm.elements.offerConsent?.checked)))) return;

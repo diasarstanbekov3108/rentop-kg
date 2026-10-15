@@ -147,6 +147,10 @@ export function createSupabaseApi(config) {
     listOpenSupportCases: (limit = 12) => request(
       `rental_order_support_cases?select=*&status=eq.open&order=opened_at.desc&limit=${Math.min(Math.max(Number(limit) || 12, 1), 30)}`
     ),
+    listOrderSupportCases: (orderId) => request(
+      `rental_order_support_cases?order_id=eq.${encodeURIComponent(orderId)}` +
+      '&select=id,kind,status,customer_message,opened_at,opened_by,resolved_at,resolved_by&order=opened_at.desc&limit=30'
+    ),
     createPromo: (promo) => request('rental_promo_codes', {
       method: 'POST', body: JSON.stringify(promo)
     }).then((rows) => rows?.[0] || null),

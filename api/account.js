@@ -10,7 +10,7 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const SHORT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const EXTENDABLE_STATUSES = new Set(['issued', 'in_use']);
 const RETURNABLE_STATUSES = new Set(['issued', 'in_use']);
-const DOCUMENT_TYPES = new Set(['identity', 'selfie', 'supporting', 'issue_video', 'return_video']);
+const DOCUMENT_TYPES = new Set(['identity', 'identity_front', 'identity_back', 'selfie', 'supporting', 'issue_video', 'return_video']);
 const DOCUMENT_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'application/pdf', 'video/mp4', 'video/quicktime']);
 const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024;
 
@@ -23,7 +23,7 @@ function allowOrigin(request, response) { const origin = request.headers.origin;
 function label(delivery) { return ({ arca_locker:'ARCHA POINT 24/7', delivery:'Доставка', pickup:'Самовывоз' }[delivery] || 'Уточняется'); }
 function addDays(isoDate, days) { const date = new Date(`${isoDate}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); }
 function orderRef(order) { return String(order.id || '').slice(0, 8).toUpperCase(); }
-function documentLabel(kind) { return ({ identity:'Паспорт или ID-карта', selfie:'Селфи с документом', supporting:'Официальный подтверждающий документ', issue_video:'Видео до получения', return_video:'Видео возврата' }[kind] || 'Документ'); }
+function documentLabel(kind) { return ({ identity:'Паспорт или ID-карта', identity_front:'Паспорт или ID-карта — лицевая сторона', identity_back:'Паспорт или ID-карта — обратная сторона', selfie:'Селфи с документом', supporting:'Официальный подтверждающий документ', issue_video:'Видео до получения', return_video:'Видео возврата' }[kind] || 'Документ'); }
 
 export default async function handler(request, response) {
   allowOrigin(request, response);
@@ -193,7 +193,12 @@ export default async function handler(request, response) {
         if (latestOfKind && latestOfKind.status !== 'rejected') return json(response, 409, { error:'Этот документ уже отправлен. Дождитесь проверки или запросите исправление.' });
         const document = await database.registerOrderDocument({ order_id:order.id, kind, storage_path:path, file_name:fileName, content_type:contentType, byte_size:byteSize });
         await database.createEvent({ order_id:order.id, event_type:'customer_uploaded_document_from_cabinet', actor_type:'customer', metadata:{ kind } });
-        if (order.status === 'draft') await database.updateOrder(order.id, { status:'pending_review' });
+        const uploaded = await database.listOrderDocuments(order.id);
+        const latestKinds = new Set(uploaded.filter(item => item.status !== 'rejected').map(item => item.kind));
+        const hasFront = latestKinds.has('identity_front') || latestKinds.has('identity');
+        if (hasFront && ['identity_back', 'selfie', 'supporting'].every(requiredKind => latestKinds.has(requiredKind)) && order.status === 'draft') {
+          await database.updateOrder(order.id, { status:'pending_review' });
+        }
         await notifyDocumentManager(order, document);
         return json(response, 201, { ok:true, document });
       }
