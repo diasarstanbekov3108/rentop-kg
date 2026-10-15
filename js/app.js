@@ -57,6 +57,9 @@ const archaLocationInput = document.getElementById('archa-location');
 const rentalAvailabilityMessage = document.getElementById('rental-availability-message');
 const submitBtn = document.getElementById('submitBtn');
 const cabinetOrderPhone = document.getElementById('cabinet-order-phone');
+const orderNameGroup = document.getElementById('order-name-group');
+const orderPhoneGroup = document.getElementById('order-phone-group');
+const orderPhoneLabel = document.getElementById('order-phone-label');
 const archaOrderBtn = document.getElementById('open-archa-order');
 const archaSelectionNotice = document.getElementById('archa-selection-notice');
 const closeArchaSelectionBtn = document.getElementById('close-archa-selection');
@@ -403,16 +406,20 @@ function updateOrderAuthUi() {
   if (nameInput) {
     if (signedIn && verifiedName) nameInput.value = verifiedName;
     nameInput.readOnly = Boolean(signedIn && verifiedName);
+    nameInput.required = !(signedIn && verifiedName);
     nameInput.title = signedIn && verifiedName ? 'ФИО берётся из личного кабинета. Для исправления откройте личный кабинет.' : '';
   }
+  if (orderNameGroup) orderNameGroup.hidden = Boolean(signedIn && verifiedName);
   const phoneInput = document.getElementById('user-phone');
   if (phoneInput) {
     phoneInput.hidden = signedIn;
     phoneInput.required = !signedIn;
   }
+  if (orderPhoneGroup) orderPhoneGroup.classList.toggle('is-session-known', signedIn);
+  if (orderPhoneLabel) orderPhoneLabel.textContent = signedIn ? 'Вы оформляете заявку с профиля' : 'Номер телефона / WhatsApp';
   if (cabinetOrderPhone) {
     cabinetOrderPhone.hidden = !signedIn;
-    cabinetOrderPhone.textContent = signedIn ? `Оформляете с номером ${cabinetSession.phone}` : '';
+    cabinetOrderPhone.textContent = signedIn ? `${verifiedName || 'Укажите ФИО выше'} · ${cabinetSession.phone}` : '';
   }
   if (submitBtn && !submitInFlight) submitBtn.textContent = signedIn ? 'Продолжить оформление' : 'Войти и продолжить';
 }

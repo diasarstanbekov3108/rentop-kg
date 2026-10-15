@@ -36,7 +36,7 @@
   
   <!-- Fonts & Styles -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=20261016-profile-and-mobile">
   <link rel="stylesheet" href="css/premium.css">
 
   <!-- Микроразметка Schema.org для Google -->
@@ -739,12 +739,12 @@
       </div>
 
       <form id="order-form">
-        <div class="form-group">
+        <div class="form-group" id="order-name-group">
           <label for="user-name">Фамилия, имя, отчество</label>
           <input type="text" id="user-name" autocomplete="name" placeholder="Например, Асанов Азамат Кубанычбекович" required>
         </div>
-        <div class="form-group">
-          <label for="user-phone">Номер телефона / WhatsApp</label>
+        <div class="form-group" id="order-phone-group">
+          <label for="user-phone" id="order-phone-label">Номер телефона / WhatsApp</label>
           <input type="tel" id="user-phone" inputmode="numeric" autocomplete="tel" maxlength="19" value="+996 " placeholder="+996 (___) __-__-__" required>
           <p class="cabinet-order-phone" id="cabinet-order-phone" hidden></p>
         </div>
@@ -758,6 +758,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script type="module" src="js/app.js"></script>
+  <script type="module" src="js/app.js?v=20261016-profile-and-mobile"></script>
 </body>
 </html>
