@@ -137,6 +137,9 @@ function latestDocuments(order) {
 }
 function documentSummary(order) {
   const latest = latestDocuments(order);
+  const visibleKinds = latest.size
+    ? ['identity', 'selfie', 'supporting', 'issue_video', 'return_video'].filter(kind => latest.has(kind))
+    : [];
   const state = (kind, label) => {
     const document = latest.get(kind);
     const symbol = !document ? '○' : document.status === 'rejected' ? '↺' : document.status === 'accepted' ? '✓' : '⌛';
@@ -146,7 +149,9 @@ function documentSummary(order) {
       : `<span>${text}</span>`;
   };
   const reasons = [...latest.values()].filter(document => document.status === 'rejected' && document.reviewer_note).map(document => `<li><strong>${escape(({ identity:'Документ', selfie:'Селфи', supporting:'Подтверждение' }[document.kind] || 'Документ'))}:</strong> ${escape(document.reviewer_note)}</li>`).join('');
-  return `<div class="cabinet-doc-summary">${state('identity', 'Документ')}${state('selfie', 'Селфи')}${state('supporting', 'Подтверждение')}${state('issue_video', 'Видео до получения')}${state('return_video', 'Видео возврата')}</div>${reasons ? `<div class="cabinet-document-reasons"><strong>Нужно исправить</strong><ul>${reasons}</ul></div>` : ''}`;
+  const labels = { identity:'Документ', selfie:'Селфи', supporting:'Подтверждение', issue_video:'Видео до получения', return_video:'Видео возврата' };
+  const summary = visibleKinds.length ? visibleKinds.map(kind => state(kind, labels[kind])).join('') : '<span>○ Документы ещё не загружены</span>';
+  return `<div class="cabinet-doc-summary">${summary}</div>${reasons ? `<div class="cabinet-document-reasons"><strong>Нужно исправить</strong><ul>${reasons}</ul></div>` : ''}`;
 }
 function documentMode(order) {
   const latest = latestDocuments(order);
@@ -173,6 +178,7 @@ function paymentPanel(order) {
 }
 function pickupInstruction(order) {
   if (order.delivery_type !== 'arca_locker') return '';
+  if (!['confirmed', 'awaiting_archa_reservation', 'awaiting_locker_loading', 'awaiting_pickup', 'issued', 'in_use', 'return_requested', 'awaiting_return_reservation', 'awaiting_return_dropoff', 'returned', 'completed'].includes(order.status)) return '';
   const location = order.locker_address || 'локация, выбранная при оформлении';
   const point = archaLocation(location);
   const copy = {
@@ -380,6 +386,12 @@ rentalsEl?.addEventListener('click', event => {
     panel.hidden = !panel.hidden;
     const sourceOrder = orders.find(order => String(order.id) === String(button.dataset.order));
     panel.innerHTML = panel.hidden ? '' : panelMarkup(button.dataset.panel, button.dataset.order, { mode:button.dataset.documentMode, kinds:button.dataset.documentKinds, offerSmsVerified:Boolean(sourceOrder?.offer_otp_verified_at) });
+    if (!panel.hidden) {
+      window.requestAnimationFrame(() => {
+        panel.scrollIntoView({ behavior:'smooth', block:'start' });
+        panel.querySelector('input, select, textarea, button')?.focus({ preventScroll:true });
+      });
+    }
     return;
   }
   const correction = event.target.closest('[data-document-correction]');
