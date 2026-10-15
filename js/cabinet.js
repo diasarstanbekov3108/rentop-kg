@@ -24,6 +24,7 @@ let activePaymentOrderId = '';
 let supportWhatsappUrl = '';
 let offerSmsConsentRequired = false;
 let customerPromos = [];
+let cabinetOrders = [];
 const ARCHA_LOCATIONS = [
   { value:'Bishkek Park — Киевская улица, 148, этаж B2', hours:'ежедневно 10:00–22:00', map:'https://2gis.kg/bishkek/search/%D0%9F%D0%BE%D1%81%D1%82%D0%B0%D0%BC%D0%B0%D1%82%D1%8B/rubricId/95584/firm/70000001092731465/74.589874%2C42.874488' },
   { value:'Гипермаркет «Азия» — ул. Максима Горького, 1/2а', hours:'круглосуточно', map:'https://2gis.kg/bishkek/firm/70000001092731520' },
@@ -254,8 +255,9 @@ function fileControl(kind) {
 function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequired = false, promos = []) {
   offerSmsConsentRequired = Boolean(smsRequired);
   customerPromos = Array.isArray(promos) ? promos : [];
+  cabinetOrders = Array.isArray(orders) ? orders : [];
   supportWhatsappUrl = whatsappUrl || '';
-  paymentByOrder = new Map(orders.filter(order => order.payment).map(order => [String(order.id), order.payment]));
+  paymentByOrder = new Map(cabinetOrders.filter(order => order.payment).map(order => [String(order.id), order.payment]));
   if (activePaymentOrderId && paymentByOrder.get(activePaymentOrderId)?.status !== 'awaiting_payment') closePaymentDialog();
   login.hidden = true; dashboard.hidden = false;
   const fullName = String(profile?.full_name || '').trim();
@@ -266,11 +268,11 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   const created = new URLSearchParams(window.location.search).get('created');
   dashboardNotice.hidden = !created;
   if (created) dashboardNotice.textContent = 'Заявка создана и уже появилась в кабинете. Следующий шаг покажем здесь.';
-  rentalsEl.innerHTML = `${loyaltyPanel(customerPromos)}${orders.map(order => {
+  rentalsEl.innerHTML = `${loyaltyPanel(customerPromos)}${cabinetOrders.map(order => {
     const state = statusInfo(order.status);
     return `<article class="cabinet-rental" data-rental="${order.id}"><div class="cabinet-rental-top"><div><h3>${escape(order.laptop_title || 'Ноутбук Rentop')}</h3><p class="cabinet-rental-ref">Заявка ${escape(order.reference)}</p></div><span class="cabinet-badge">${escape(state.title)}</span></div><div class="cabinet-progress" aria-label="Этап ${state.step} из 5"><span class="is-done"></span><span class="${state.step >= 2 ? 'is-done' : ''}"></span><span class="${state.step >= 3 ? 'is-done' : ''}"></span><span class="${state.step >= 4 ? 'is-done' : ''}"></span><span class="${state.step >= 5 ? 'is-done' : ''}"></span></div><p class="cabinet-next-step">${escape(state.text)}</p>${documentSummary(order)}<div class="cabinet-rental-grid"><div>Срок<strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div>Получение<strong>${escape(order.delivery_label)}</strong></div><div>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div>Скидка<strong>${Number(order.discount_percent || 0)}%</strong></div></div>${pickupInstruction(order)}${paymentPanel(order)}${actionPanel(order)}${requestForm(order)}</article>`;
   }).join('')}`;
-  emptyEl.hidden = orders.length !== 0;
+  emptyEl.hidden = cabinetOrders.length !== 0;
   if (new URLSearchParams(window.location.search).get('return') === 'booking') {
     window.setTimeout(() => window.location.assign('/?resume_booking=1'), 250);
   }
@@ -384,7 +386,7 @@ rentalsEl?.addEventListener('click', event => {
     const panel = document.getElementById(`panel-${button.dataset.order}`);
     if (!panel) return;
     panel.hidden = !panel.hidden;
-    const sourceOrder = orders.find(order => String(order.id) === String(button.dataset.order));
+    const sourceOrder = cabinetOrders.find(order => String(order.id) === String(button.dataset.order));
     panel.innerHTML = panel.hidden ? '' : panelMarkup(button.dataset.panel, button.dataset.order, { mode:button.dataset.documentMode, kinds:button.dataset.documentKinds, offerSmsVerified:Boolean(sourceOrder?.offer_otp_verified_at) });
     if (!panel.hidden) {
       window.requestAnimationFrame(() => {
