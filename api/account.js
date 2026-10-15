@@ -48,6 +48,7 @@ export default async function handler(request, response) {
     }));
     const payments = await Promise.all(orders.map((order) => database.getOrderPayment(order.id).catch(() => null)));
     const feedback = await Promise.all(orders.map((order) => database.getOrderFeedback(order.id).catch(() => null)));
+    const supportCases = await Promise.all(orders.map((order) => database.listOrderSupportCases(order.id).catch(() => [])));
     return orders.map((order, index) => ({
       ...order,
       laptop_title:laptops[index]?.title || laptops[index]?.name || 'Ноутбук Rentop',
@@ -56,6 +57,7 @@ export default async function handler(request, response) {
       requests:requests[index],
       documents:documents[index],
       feedback:feedback[index],
+      supportCases:supportCases[index],
       payment:payments[index] && {
         amount:payments[index].amount,
         currency_id:payments[index].currency_id,

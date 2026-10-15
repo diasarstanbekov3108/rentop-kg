@@ -66,6 +66,17 @@ export default async function handler(request, response) {
     }
     if (request.method !== 'POST') return reply(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
+    if (payload.action === 'reply_support_case') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      const kind = String(payload.kind || '');
+      const message = String(payload.message || '').trim().slice(0, 1500);
+      if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
+      if (!['rentop','archa','archa_code_missing','archa_locker_issue','rental_issue'].includes(kind) || message.length < 3) return reply(response, 400, { error:'Напишите клиенту ответ хотя бы несколькими словами.' });
+      const supportCase = await database.replyToSupportCase(order.id, kind, message, session.phone);
+      if (!supportCase) return reply(response, 404, { error:'Обращение не найдено.' });
+      await database.createEvent({ order_id:order.id, event_type:'manager_replied_support_case_from_web', actor_type:'manager', metadata:{ kind, length:message.length } }).catch(error => console.error('Manager support reply audit event failed:', error.message));
+      return reply(response, 200, { ok:true, supportCase, message:'Ответ сохранён — клиент увидит его в личном кабинете.' });
+    }
     if (payload.action === 'resolve_support_case') {
       const order = await database.getOrder(String(payload.orderId || ''));
       const kind = String(payload.kind || '');
