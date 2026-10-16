@@ -76,6 +76,18 @@ const statusInfo = (status) => ({
 const date = (value) => value ? new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',year:'numeric'}).format(new Date(`${value}T00:00:00`)) : '—';
 const escape = (value) => String(value || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 const archaLocation = (value) => ARCHA_LOCATIONS.find(location => location.value === value) || null;
+const isValidFullName = (value) => String(value || '').trim().split(/\s+/).filter(Boolean).filter(part => part.length >= 2).length >= 3;
+const contentTypeForFile = (file) => {
+  const type = String(file?.type || '').toLowerCase();
+  if (type) return type;
+  const name = String(file?.name || '').toLowerCase();
+  if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
+  if (name.endsWith('.png')) return 'image/png';
+  if (name.endsWith('.pdf')) return 'application/pdf';
+  if (name.endsWith('.mp4')) return 'video/mp4';
+  if (name.endsWith('.mov')) return 'video/quicktime';
+  return '';
+};
 
 function closeDocumentViewer() {
   if (!documentViewer) return;
@@ -301,8 +313,8 @@ function panelMarkup(kind, orderId, documentState = {}) {
     const offer = replacement ? '' : `<div class="cabinet-offer-compact"><button class="cabinet-action secondary" type="button" data-open-offer="true">Открыть договор-оферту</button><label class="cabinet-document-consent"><input name="offerConsent" type="checkbox" required><span>Я ознакомился(лась) с публичной офертой и принимаю её условия.</span></label>${smsConsent}</div>`;
     const warnings = replacement ? '' : `<details class="cabinet-safety-notice"><summary>Важно о документах и технике</summary><p>Подделка, использование чужих или заведомо недостоверных документов может повлечь ответственность по законодательству Кыргызской Республики. Rentop проверяет документы до выдачи.</p><p>На выдаваемом оборудовании установлены средства контроля местонахождения и целостности, включая GPS-трекеры и гарантийные пломбы. Несанкционированное вскрытие, нарушение пломб или попытка отключить средства контроля считаются нарушением правил эксплуатации и могут повлечь штраф, возмещение ущерба и обращение в уполномоченные органы.</p></details>`;
     const orderComment = replacement ? '' : `<label>Комментарий к заявке <span>необязательно</span></label><textarea name="orderComment" maxlength="1000" placeholder="Например: цель аренды, пожелания по комплектации или вопрос менеджеру"></textarea>`;
-    const profileField = replacement || customerProfile?.full_name ? '' : `<label>ФИО для договора <span>заполняется один раз</span></label><input name="fullName" autocomplete="name" placeholder="Фамилия Имя Отчество" required>`;
-    return `<form class="cabinet-inline-form cabinet-documents-form" data-document-upload="true" data-document-replacement="${replacement ? '1' : ''}" data-required-kinds="${requiredKinds.join(',')}" data-order="${orderId}"><label>${replacement ? 'Прикрепите исправленный документ' : 'Подтвердите данные для заявки'}</label><p>${replacement ? 'Менеджер открыл замену для отмеченного файла. После повторной загрузки заявка снова уйдёт на проверку.' : 'Документы увидит только команда Rentop для проверки заявки. Допустимы JPG, PNG или PDF до 8 МБ.'}</p>${profileField}${kinds.map(fileControl).join('')}${orderComment}${offer}${warnings}<label class="cabinet-document-consent"><input name="documentConsent" type="checkbox" required><span>Согласен(на) на передачу документов команде Rentop исключительно для проверки заявки и оформления договора.</span></label><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">${replacement ? 'Отправить замену' : 'Загрузить документы'}</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>После отправки повторная загрузка будет заблокирована до решения менеджера.</p></form>`;
+    const profileField = replacement || isValidFullName(customerProfile?.full_name) ? '' : `<label>ФИО для договора <span>заполняется один раз</span></label><input name="fullName" autocomplete="name" placeholder="Фамилия Имя Отчество">`;
+    return `<form class="cabinet-inline-form cabinet-documents-form" novalidate data-document-upload="true" data-document-replacement="${replacement ? '1' : ''}" data-required-kinds="${requiredKinds.join(',')}" data-order="${orderId}"><label>${replacement ? 'Прикрепите исправленный документ' : 'Подтвердите данные для заявки'}</label><p>${replacement ? 'Менеджер открыл замену для отмеченного файла. После повторной загрузки заявка снова уйдёт на проверку.' : 'Документы увидит только команда Rentop для проверки заявки. Допустимы JPG, PNG или PDF до 8 МБ.'}</p>${profileField}${kinds.map(fileControl).join('')}${orderComment}${offer}${warnings}<label class="cabinet-document-consent"><input name="documentConsent" type="checkbox"><span>Согласен(на) на передачу документов команде Rentop исключительно для проверки заявки и оформления договора.</span></label><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">${replacement ? 'Отправить замену' : 'Загрузить документы'}</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>После отправки повторная загрузка будет заблокирована до решения менеджера.</p></form>`;
   }
   if (kind === 'issue-video' || kind === 'return-video') {
     const documentKind = kind === 'issue-video' ? 'issue_video' : 'return_video';
@@ -335,8 +347,9 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   if (activePaymentOrderId && paymentByOrder.get(activePaymentOrderId)?.status !== 'awaiting_payment') closePaymentDialog();
   login.hidden = true; dashboard.hidden = false;
   const fullName = String(profile?.full_name || '').trim();
+  const hasValidProfileName = isValidFullName(fullName);
   document.getElementById('cabinet-greeting').textContent = fullName ? `Здравствуйте, ${fullName.split(' ')[1] || fullName}!` : 'Здравствуйте!';
-  profileEl.innerHTML = fullName
+  profileEl.innerHTML = hasValidProfileName
     ? `<p class="cabinet-profile-name">Личный кабинет · ${escape(fullName)} · ${phone}</p>`
     : `<form class="cabinet-profile-form" id="profile-form"><label for="profile-full-name">Заполните ФИО для договора</label><div><input id="profile-full-name" name="fullName" autocomplete="name" placeholder="Фамилия Имя Отчество" required><button class="cabinet-action" type="submit">Сохранить</button></div><p>Указывайте данные так же, как в документе.</p></form>`;
   const created = new URLSearchParams(window.location.search).get('created');
@@ -558,14 +571,27 @@ rentalsEl?.addEventListener('submit', async event => {
     const files = ['identity_front', 'identity_back', 'selfie', 'supporting', 'issue_video', 'return_video'].map(kind => ({ kind, file:documentForm.elements[kind]?.files?.[0] })).filter(item => item.file);
     const isReplacement = documentForm.dataset.documentReplacement === '1';
     const isEvidence = documentForm.dataset.evidenceUpload === 'true';
-    if (!requiredKinds.every(kind => files.some(item => item.kind === kind)) || (!isEvidence && (!documentForm.elements.documentConsent?.checked || (!isReplacement && !documentForm.elements.offerConsent?.checked)))) return;
+    const formError = (text) => {
+      const output = documentForm.querySelector('.cabinet-form-error') || document.createElement('p');
+      output.className = 'cabinet-form-error'; output.textContent = text;
+      if (!output.parentElement) documentForm.append(output);
+      output.scrollIntoView({ behavior:'smooth', block:'nearest' });
+    };
+    const titles = { identity_front:'лицевую сторону паспорта / ID', identity_back:'обратную сторону паспорта / ID', selfie:'селфи с документом', supporting:'официальное подтверждение', issue_video:'видео получения', return_video:'видео возврата' };
+    const missingKinds = requiredKinds.filter(kind => !files.some(item => item.kind === kind));
+    if (missingKinds.length) return formError(`Выберите: ${missingKinds.map(kind => titles[kind] || kind).join(', ')}.`);
+    if (!isEvidence && !documentForm.elements.documentConsent?.checked) return formError('Отметьте согласие на передачу документов Rentop.');
+    if (!isEvidence && !isReplacement && !documentForm.elements.offerConsent?.checked) return formError('Отметьте согласие с публичной офертой.');
     const supporting = files.find(item => item.kind === 'supporting');
-    if (supporting && !documentForm.elements.supportingType?.value) return message('Выберите, какой официальный документ вы прикрепляете.', 'error');
+    if (supporting && !documentForm.elements.supportingType?.value) return formError('Выберите тип официального подтверждающего документа.');
+    const fullName = String(documentForm.elements.fullName?.value || '').trim();
+    if (!isReplacement && !isValidFullName(customerProfile?.full_name) && !isValidFullName(fullName)) return formError('Укажите фамилию, имя и отчество — как в документе.');
+    const unsupported = files.find(({ file }) => !['image/jpeg', 'image/png', 'application/pdf', 'video/mp4', 'video/quicktime'].includes(contentTypeForFile(file)));
+    if (unsupported) return formError(`Файл «${unsupported.file.name}» имеет неподдерживаемый формат. Нужен JPG, PNG или PDF.`);
     button.disabled = true;
+    button.textContent = 'Подготавливаем загрузку…';
     try {
-      const fullName = String(documentForm.elements.fullName?.value || '').trim();
-      if (!isReplacement && !customerProfile?.full_name) {
-        if (!fullName) throw new Error('Укажите ФИО для договора в этой форме.');
+      if (!isReplacement && !isValidFullName(customerProfile?.full_name)) {
         const saved = await request('POST', { action:'save_profile', fullName });
         customerProfile = saved.profile || { full_name:fullName };
       }
@@ -579,12 +605,13 @@ rentalsEl?.addEventListener('submit', async event => {
         const selectedType = kind === 'supporting' ? documentForm.elements.supportingType.value : '';
         const fileName = selectedType ? `${selectedType} — ${file.name}` : file.name;
         button.textContent = `Загружаем ${index + 1}/${files.length}…`;
-        const isVideo = ['video/mp4', 'video/quicktime'].includes(file.type);
-        if (!['image/jpeg', 'image/png', 'application/pdf', 'video/mp4', 'video/quicktime'].includes(file.type) || file.size > (isVideo ? 50 : 8) * 1024 * 1024) throw new Error('Допустимы JPG, PNG, PDF до 8 МБ или короткое видео MP4/MOV до 50 МБ.');
-        const ticket = await request('POST', { action:'create_document_upload', orderId:documentForm.dataset.order, kind, fileName, contentType:file.type, byteSize:file.size });
-        const upload = await fetch(ticket.uploadUrl, { method:'PUT', headers:{ Authorization:`Bearer ${ticket.token}`, 'x-upsert':'false', 'content-type':file.type }, body:file });
+        const contentType = contentTypeForFile(file);
+        const isVideo = ['video/mp4', 'video/quicktime'].includes(contentType);
+        if (file.size > (isVideo ? 50 : 8) * 1024 * 1024) throw new Error('Фото или документ «' + file.name + '» больше 8 МБ. Уменьшите размер и выберите файл заново.');
+        const ticket = await request('POST', { action:'create_document_upload', orderId:documentForm.dataset.order, kind, fileName, contentType, byteSize:file.size });
+        const upload = await fetch(ticket.uploadUrl, { method:'PUT', headers:{ Authorization:`Bearer ${ticket.token}`, 'x-upsert':'false', 'content-type':contentType }, body:file });
         if (!upload.ok) throw new Error('Не удалось загрузить файл. Проверьте соединение и попробуйте снова.');
-        await request('POST', { action:'register_document', orderId:documentForm.dataset.order, kind, path:ticket.path, fileName, contentType:file.type, byteSize:file.size });
+        await request('POST', { action:'register_document', orderId:documentForm.dataset.order, kind, path:ticket.path, fileName, contentType, byteSize:file.size });
       }
       message('Документы загружены. Менеджер проверит их и сообщит следующий шаг.', 'success');
       const fresh = await request('GET');
