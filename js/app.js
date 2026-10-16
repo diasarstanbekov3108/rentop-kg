@@ -76,6 +76,31 @@ const navAccountAuth = document.getElementById('nav-account-auth');
 const navAccountGreeting = document.getElementById('nav-account-greeting');
 const navAccountLogout = document.getElementById('nav-account-logout');
 
+// The mobile menu must work immediately.  It must not wait for the catalog,
+// availability, or account-session requests below: on a slow mobile network
+// that used to make the first several taps appear to do nothing.
+function initMobileNavigation() {
+  if (!burger || !nav || burger.dataset.navigationReady === '1') return;
+  burger.dataset.navigationReady = '1';
+  const header = document.querySelector('.header');
+  const setOpen = (open) => {
+    burger.classList.toggle('active', open);
+    nav.classList.toggle('active', open);
+    burger.setAttribute('aria-expanded', String(open));
+    burger.setAttribute('aria-label', open ? 'Закрыть меню' : 'Открыть меню');
+    if (open && header) nav.style.setProperty('--mobile-menu-top', `${Math.ceil(header.getBoundingClientRect().bottom)}px`);
+  };
+  burger.addEventListener('click', (event) => {
+    event.preventDefault();
+    setOpen(!nav.classList.contains('active'));
+  });
+  nav.querySelectorAll('a').forEach((link) => link.addEventListener('click', () => setOpen(false)));
+  window.addEventListener('resize', () => {
+    if (nav.classList.contains('active') && header) nav.style.setProperty('--mobile-menu-top', `${Math.ceil(header.getBoundingClientRect().bottom)}px`);
+  }, { passive:true });
+}
+initMobileNavigation();
+
 // Lightbox
 const lightbox = document.getElementById('lightbox');
 const lightboxImg = document.getElementById('lightbox-img');
@@ -860,20 +885,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       const isActive = item.classList.contains('active');
       document.querySelectorAll('.faq-item').forEach(el => el.classList.remove('active'));
       if (!isActive) item.classList.add('active');
-    });
-  });
-
-  // Burger menu
-  burger?.addEventListener('click', () => {
-    burger.classList.toggle('active');
-    nav.classList.toggle('active');
-  });
-
-  // Закрытие меню при клике на ссылку
-  nav?.querySelectorAll('a').forEach(link => {
-    link.addEventListener('click', () => {
-      burger.classList.remove('active');
-      nav.classList.remove('active');
     });
   });
 

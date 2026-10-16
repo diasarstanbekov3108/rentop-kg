@@ -1809,18 +1809,27 @@ section {
    АДАПТИВ ПОД МОБИЛЬНЫЕ (до 768px и 320px)
    ========================================== */
 @media (max-width: 992px) {
+  header {
+    isolation: isolate;
+  }
+
   /* Скрываем горизонтальную навигацию на планшетах и смартфонах */
   .nav {
     display: none;
-    position: absolute;
-    top: 100%;
+    position: fixed;
+    top: var(--mobile-menu-top, 64px);
     left: 0;
     width: 100%;
+    box-sizing: border-box;
     background: #0f172a;
     flex-direction: column;
     padding: 20px;
     gap: 15px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 18px 32px rgba(0, 0, 0, 0.32);
+    z-index: 101;
+    max-height: calc(100dvh - var(--mobile-menu-top, 64px));
+    overflow-y: auto;
   }
 
   /* Показываем выпадающее меню при клике (класс active задается через JS) */
@@ -1831,6 +1840,10 @@ section {
   /* Показываем бургер-шестерёнку */
   .burger {
     display: flex;
+    position: relative;
+    z-index: 102;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
