@@ -62,8 +62,17 @@ export default async function handler(request, response) {
       paid_at:now
     });
     const order = await database.getOrder(payment.order_id);
-    if (order?.status === 'awaiting_payment') await database.updateOrder(order.id, { status:'confirmed', payment_channel:'bakai', payment_receipt_received_at:now, payment_confirmed_at:now });
-    await database.createEvent({ order_id:payment.order_id, event_type:'bakai_payment_confirmed_webhook', actor_type:'bank', metadata:{ operation_id:operationId, elqr_id:bankElqrId, amount } }).catch(error => console.error('Bakai webhook audit event failed:', error.message));
+    if (payment.purpose === 'extension' && order && payment.proposed_return_date) {
+      const start = new Date(`${order.rental_start_date}T00:00:00Z`);
+      const end = new Date(`${payment.proposed_return_date}T00:00:00Z`);
+      const rentalDays = Math.max(1, Math.round((end - start) / 86_400_000));
+      await database.updateOrder(order.id, { rental_end_date:payment.proposed_return_date, rental_days:rentalDays });
+      if (payment.request_id) await database.updateCustomerRequest(payment.request_id, { status:'resolved', resolved_at:now });
+      await database.createEvent({ order_id:payment.order_id, event_type:'bakai_extension_payment_confirmed_webhook', actor_type:'bank', metadata:{ operation_id:operationId, elqr_id:bankElqrId, amount, proposed_return_date:payment.proposed_return_date } }).catch(error => console.error('Bakai extension payment audit failed:', error.message));
+    } else {
+      if (order?.status === 'awaiting_payment') await database.updateOrder(order.id, { status:'confirmed', payment_channel:'bakai', payment_receipt_received_at:now, payment_confirmed_at:now });
+      await database.createEvent({ order_id:payment.order_id, event_type:'bakai_payment_confirmed_webhook', actor_type:'bank', metadata:{ operation_id:operationId, elqr_id:bankElqrId, amount } }).catch(error => console.error('Bakai webhook audit event failed:', error.message));
+    }
     return reply(response, 200, { ok:true });
   } catch (error) {
     console.error('Bakai webhook failed:', error.message);

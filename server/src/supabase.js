@@ -51,6 +51,7 @@ export function createSupabaseApi(config) {
       `&order=updated_at.desc&limit=${Math.min(Math.max(Number(limit) || 30, 1), 50)}`
     ),
     getOrderPayment: (orderId) => getOne(`rental_order_payments?order_id=eq.${encodeURIComponent(orderId)}&select=*&order=created_at.desc&limit=1`),
+    listOrderPayments: (orderId) => request(`rental_order_payments?order_id=eq.${encodeURIComponent(orderId)}&select=*&order=created_at.desc&limit=20`),
     getPaymentByOperationId: (operationId) => getOne(`rental_order_payments?operation_id=eq.${encodeURIComponent(operationId)}&select=*&limit=1`),
     createOrderPayment: (payment) => request('rental_order_payments', {
       method:'POST', body:JSON.stringify(payment)
@@ -70,6 +71,9 @@ export function createSupabaseApi(config) {
     ),
     createCustomerRequest: (customerRequest) => request('rental_order_customer_requests', {
       method: 'POST', body: JSON.stringify(customerRequest)
+    }).then((rows) => rows?.[0] || null),
+    updateCustomerRequest: (id, patch) => request(`rental_order_customer_requests?id=eq.${encodeURIComponent(id)}`, {
+      method:'PATCH', body:JSON.stringify(patch)
     }).then((rows) => rows?.[0] || null),
     getOrderFeedback: (orderId) => getOne(`rental_order_feedback?order_id=eq.${encodeURIComponent(orderId)}&select=id,rating,review,suggestion,created_at&limit=1`),
     createOrderFeedback: (feedback) => request('rental_order_feedback', {

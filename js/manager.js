@@ -89,6 +89,9 @@ function render() {
     const paymentMismatch = ['confirmed','awaiting_pickup','issued','in_use'].includes(order.status) && order.payment?.status === 'awaiting_payment' ? '<p class="manager-payment-warning">Банк ещё не подтвердил этот QR. Не выдавайте ноутбук: статус заявки был изменён вручную, а оплата не зафиксирована webhook-ом.</p>' : '';
     const manualPaymentAction = hasActivePayment ? `<button class="secondary manager-payment-manual" data-manual-payment="${order.id}">Подтвердить оплату вручную</button>` : '';
     const paymentState = order.payment ? `<section class="manager-section"><h3>Оплата Bakai</h3><div class="manager-request">${escape(order.payment.status)} · ${Number(order.payment.amount || 0).toLocaleString('ru-RU')} сом · ${escape(order.payment.operation_id || '')}${hasActivePayment ? `<button class="danger manager-payment-revoke" data-revoke-payment="${order.id}">Отозвать QR</button>` : ''}</div>${hasActivePayment ? '<p class="manager-payment-warning">Используйте ручное подтверждение только после проверки поступления в Bakai Business. Отзыв уберёт QR из кабинета Rentop, но не отменяет его в Банке.</p>' : ''}${paymentMismatch}</section>` : '';
+    const extensionRequest = order.requests.find(request => request.kind === 'extension' && ['open','in_progress'].includes(request.status));
+    const extensionPayment = (order.payments || []).find(payment => payment.purpose === 'extension' && extensionRequest && payment.request_id === extensionRequest.id && ['awaiting_payment','paid'].includes(payment.status));
+    const extensionAction = extensionRequest ? `<section class="manager-section"><h3>Продление аренды</h3><div class="manager-request">+${Number(extensionRequest.requested_days || 0)} дн. · до ${date(extensionRequest.proposed_return_date)} · ${Number(extensionRequest.estimated_amount || 0).toLocaleString('ru-RU')} сом</div>${extensionPayment ? `<p>${extensionPayment.status === 'paid' ? '✓ Продление оплачено — дата обновлена.' : 'QR продления уже показан клиенту.'}</p>` : `<div class="manager-payment-create"><label>Доплата за продление, сом<input data-extension-payment-amount type="number" min="1" max="1000000" step="1" value="${Number(extensionRequest.estimated_amount || 0)}"></label><button class="secondary" data-create-extension-payment="${order.id}" data-request-id="${extensionRequest.id}">Создать QR продления</button></div>`}</section>` : '';
     const customerNote = order.customer_note ? `<section class="manager-section"><h3>Комментарий клиента</h3><div class="manager-request">${escape(order.customer_note)}</div></section>` : '';
     const supportCases = (order.supportCases || []).filter(item => item.status === 'open');
     const supportPanel = supportCases.length ? `<section class="manager-section"><h3>Открытые обращения клиента</h3><p>Клиент: <strong>${escape(order.customer_phone || 'номер не указан')}</strong> — можно связаться вручную или отправить ответ в кабинет ниже.</p><div class="manager-requests">${supportCases.map(item => `<div class="manager-request"><strong>${escape(({ rentop:'Вопрос к Rentop', archa:'Проблема с ARCHA POINT', archa_code_missing:'Не пришёл код ARCHA POINT', archa_locker_issue:'Постамат не выдаёт / не открывается', rental_issue:'Проблема с ноутбуком' }[item.kind] || item.kind))}</strong><br>${escape(item.customer_message || 'Сообщение не указано')}<br><small>${date(item.opened_at)}</small>${item.manager_reply ? `<p><strong>Ответ менеджера:</strong> ${escape(item.manager_reply)}</p>` : ''}<textarea data-support-reply="${escape(item.kind)}" maxlength="1500" placeholder="Напишите ответ клиенту — он появится в личном кабинете"></textarea><div class="manager-actions"><button class="secondary" data-reply-support="${order.id}" data-support-kind="${escape(item.kind)}">Отправить ответ</button><button class="secondary" data-resolve-support="${order.id}" data-support-kind="${escape(item.kind)}">Отметить решённым</button></div></div>`).join('')}</div></section>` : '';
@@ -103,7 +106,7 @@ function render() {
     const documentsPanel = `<section class="manager-section"><h3>Документы</h3><div class="manager-docs">${order.documents.length ? order.documents.map(documentCard).join('') : '<span class="manager-empty">Документы ещё не загружены</span>'}</div></section>`;
     const requestsPanel = order.requests.length ? `<section class="manager-section"><h3>Запросы клиента</h3><div class="manager-requests">${order.requests.map(request => `<div class="manager-request">${escape(request.kind)} · ${escape(request.status)}${request.return_method ? ` · ${escape(request.return_method)}` : ''}${request.return_locker_address ? ` · ${escape(request.return_locker_address)}` : ''}${request.customer_message ? ` · ${escape(request.customer_message)}` : ''}</div>`).join('')}</div></section>` : '';
     const directDocuments = pending ? documentsPanel : '';
-    const details = `${pending ? '' : documentsPanel}${offerEvidence}${customerNote}${registry}${paymentState}${lockerInstruction(order)}${handoffPanel}${assetTools}${loyaltyAction}${adminTools}${requestsPanel}`;
+    const details = `${pending ? '' : documentsPanel}${offerEvidence}${customerNote}${registry}${paymentState}${extensionAction}${lockerInstruction(order)}${handoffPanel}${assetTools}${loyaltyAction}${adminTools}${requestsPanel}`;
     const workflowActions = `${pending ? `<button class="secondary" data-reject-all="${order.id}">Отклонить все с причиной</button>` : ''}${paymentAction}${manualPaymentAction}${archaControls(order)}${action ? `<button data-order-action="advance" data-order="${order.id}" data-next-status="${action.next}">${action.label}</button>` : ''}${canDelete(order) ? `<button class="danger" data-delete-order="${order.id}">Удалить тестовую заявку</button>` : ''}`;
     return `<article class="manager-order"><div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p></div><span class="manager-status-pill ${escape(order.status)}">${escape(statusLabel(order.status))}</span></div><div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда</span><strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(deliveryLabel(order))}${order.locker_address ? `<br><small>${escape(order.locker_address)}</small>` : ''}</strong></div><div><span>Сумма аренды</span><strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div><span>Залог / скидка</span><strong>${Number(order.deposit_amount || 0).toLocaleString('ru-RU')} сом · ${Number(order.discount_percent || 0)}%</strong></div></div>${directDocuments}${supportPanel}<div class="manager-actions manager-workflow-actions">${workflowActions || '<span class="manager-action-note">Следующее действие появится после обновления статуса.</span>'}</div><p class="manager-order-feedback" data-order-feedback="${order.id}" hidden></p><details class="manager-order-details"><summary>Детали заявки, реестр и служебные данные</summary>${details}</details></article>`;
   }).join('') : '<div class="manager-empty">По этому фильтру заявок нет.</div>';
@@ -152,6 +155,7 @@ ordersEl.addEventListener('click', async event => {
   const rejectAll = event.target.closest('[data-reject-all]');
   const deleteOrder = event.target.closest('[data-delete-order]');
   const createPayment = event.target.closest('[data-create-payment]');
+  const createExtensionPayment = event.target.closest('[data-create-extension-payment]');
   const revokePayment = event.target.closest('[data-revoke-payment]');
   const manualPayment = event.target.closest('[data-manual-payment]');
   const prepareArcha = event.target.closest('[data-prepare-archa]');
@@ -170,8 +174,8 @@ ordersEl.addEventListener('click', async event => {
   const resolveSupport = event.target.closest('[data-resolve-support]');
   const replySupport = event.target.closest('[data-reply-support]');
   const button = event.target.closest('[data-document], [data-order-action]');
-  if (!rejectAll && !deleteOrder && !createPayment && !revokePayment && !manualPayment && !prepareArcha && !recordArchaReservation && !markLockerLoaded && !archaSmsSent && !manualPickupCode && !prepareArchaReturn && !returnSmsSent && !adminClose && !adminIncident && !adminResolveIncident && !saveAsset && !saveRegistry && !issuePromo && !resolveSupport && !replySupport && !button) return;
-  const target = rejectAll || deleteOrder || createPayment || revokePayment || manualPayment || prepareArcha || recordArchaReservation || markLockerLoaded || archaSmsSent || manualPickupCode || prepareArchaReturn || returnSmsSent || adminClose || adminIncident || adminResolveIncident || saveAsset || saveRegistry || issuePromo || resolveSupport || replySupport || button;
+  if (!rejectAll && !deleteOrder && !createPayment && !createExtensionPayment && !revokePayment && !manualPayment && !prepareArcha && !recordArchaReservation && !markLockerLoaded && !archaSmsSent && !manualPickupCode && !prepareArchaReturn && !returnSmsSent && !adminClose && !adminIncident && !adminResolveIncident && !saveAsset && !saveRegistry && !issuePromo && !resolveSupport && !replySupport && !button) return;
+  const target = rejectAll || deleteOrder || createPayment || createExtensionPayment || revokePayment || manualPayment || prepareArcha || recordArchaReservation || markLockerLoaded || archaSmsSent || manualPickupCode || prepareArchaReturn || returnSmsSent || adminClose || adminIncident || adminResolveIncident || saveAsset || saveRegistry || issuePromo || resolveSupport || replySupport || button;
   if (target.disabled) return;
   const feedback = target.closest('.manager-order')?.querySelector('[data-order-feedback]');
   const showFeedback = (text, type = '') => { if (!feedback) return; feedback.textContent = text; feedback.className = `manager-order-feedback${type ? ` is-${type}` : ''}`; feedback.hidden = !text; };
@@ -192,6 +196,12 @@ ordersEl.addEventListener('click', async event => {
     if (!window.confirm(`Создать настоящий QR-счёт Bakai на ${amount.toLocaleString('ru-RU')} сом? Деньги не спишутся сейчас, но QR можно будет оплатить.`)) return;
     payload = { action:'create_bakai_payment', orderId:createPayment.dataset.createPayment, amount };
     successMessage = 'QR-счёт Bakai создан и показан клиенту в личном кабинете.';
+  } else if (createExtensionPayment) {
+    const amount = Number(createExtensionPayment.closest('.manager-order')?.querySelector('[data-extension-payment-amount]')?.value);
+    if (!Number.isFinite(amount) || amount <= 0) { showFeedback('Введите корректную доплату за продление.', 'error'); return; }
+    if (!window.confirm(`Создать отдельный QR продления на ${amount.toLocaleString('ru-RU')} сом? Залог повторно не взимается.`)) return;
+    payload = { action:'create_extension_bakai_payment', orderId:createExtensionPayment.dataset.createExtensionPayment, requestId:createExtensionPayment.dataset.requestId, amount };
+    successMessage = 'QR продления создан и показан клиенту.';
   } else if (revokePayment) {
     if (!window.confirm('Отозвать QR из кабинета клиента? Bakai не отменяет уже созданный QR, поэтому поздняя оплата не подтвердит заявку автоматически.')) return;
     payload = { action:'revoke_bakai_payment', orderId:revokePayment.dataset.revokePayment };
@@ -290,8 +300,8 @@ ordersEl.addEventListener('click', async event => {
   }
   target.disabled = true;
   const original = target.textContent;
-  target.textContent = createPayment ? 'Создаём QR…' : 'Сохраняем…';
-  if (createPayment) showFeedback('Отправляем запрос в Bakai…');
+  target.textContent = createPayment || createExtensionPayment ? 'Создаём QR…' : 'Сохраняем…';
+  if (createPayment || createExtensionPayment) showFeedback('Отправляем запрос в Bakai…');
   try {
     const result = await api('POST', payload);
     if (payload.action === 'delete_test_order') orders = orders.filter(order => order.id !== payload.orderId);

@@ -39,11 +39,11 @@ export default async function handler(request, response) {
       if (String(request.query?.access || '') === '1') return reply(response, 200, { manager:true });
       const orders = await database.listRecentOrders(50);
       const hydrated = await Promise.all(orders.map(async order => {
-        const [laptop, documents, requests, payment, supportCases] = await Promise.all([
+        const [laptop, documents, requests, payments, supportCases] = await Promise.all([
           database.getLaptop(order.laptop_id),
           database.listOrderDocuments(order.id).catch(() => []),
           database.listCustomerRequests(order.id).catch(() => []),
-          database.getOrderPayment(order.id).catch(() => null),
+          database.listOrderPayments(order.id).catch(() => []),
           database.listOrderSupportCases(order.id).catch(() => [])
         ]);
         const documentsWithLinks = await Promise.all(documents.map(async document => {
@@ -58,7 +58,8 @@ export default async function handler(request, response) {
           laptop_inventory_code:laptop?.inventory_code || '',
           documents:documentsWithLinks,
           requests,
-          payment,
+          payment:(payments || []).find(payment => payment.purpose !== 'extension') || null,
+          payments,
           supportCases
         };
       }));
@@ -323,6 +324,26 @@ export default async function handler(request, response) {
         expires_at:new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
       });
       await database.createEvent({ order_id:order.id, event_type:'bakai_qr_created_from_web', actor_type:'manager', metadata:{ operation_id:operationId, amount } }).catch(error => console.error('Bakai payment audit event failed:', error.message));
+      return reply(response, 201, { ok:true, payment });
+    }
+    if (payload.action === 'create_extension_bakai_payment') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      const requestId = String(payload.requestId || '');
+      if (!order || !['issued', 'in_use'].includes(order.status)) return reply(response, 409, { error:'Продление можно оплатить только для активной аренды.' });
+      const extension = (await database.listCustomerRequests(order.id)).find(item => item.id === requestId && item.kind === 'extension' && ['open', 'in_progress'].includes(item.status));
+      if (!extension) return reply(response, 404, { error:'Активный запрос продления не найден.' });
+      const conflict = await database.findOverlappingBlockingOrder(order.id, order.laptop_id, order.rental_end_date, extension.proposed_return_date);
+      if (conflict) return reply(response, 409, { error:`Ноутбук уже занят с ${conflict.rental_start_date}; продление нельзя оплатить.` });
+      const active = (await database.listOrderPayments(order.id)).find(item => item.purpose === 'extension' && item.request_id === extension.id && item.status === 'awaiting_payment' && new Date(item.expires_at) > new Date());
+      if (active) return reply(response, 409, { error:'Для этого продления уже создан активный QR.' });
+      const amount = Number(payload.amount || extension.estimated_amount);
+      if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) return reply(response, 400, { error:'Укажите корректную сумму продления.' });
+      const operationId = makePaymentOperationId(order.id);
+      const comment = `Rentop extension ${String(order.id).slice(0, 8).toUpperCase()}`;
+      const qr = await generateBakaiQr(config, { operationId, amount, comment, ttlHours:24 });
+      const payment = await database.createOrderPayment({ order_id:order.id, request_id:extension.id, purpose:'extension', proposed_return_date:extension.proposed_return_date, provider:'bakai', operation_id:operationId, amount, currency_id:417, comment, qr_image:qr.qrImage || null, qr_image_with_frame:qr.qrImageWithFrame || null, qr_link:qr.qrLink || null, status:'awaiting_payment', expires_at:new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() });
+      await database.updateCustomerRequest(extension.id, { status:'in_progress', estimated_amount:amount });
+      await database.createEvent({ order_id:order.id, event_type:'bakai_extension_qr_created_from_web', actor_type:'manager', metadata:{ operation_id:operationId, amount, request_id:extension.id, proposed_return_date:extension.proposed_return_date } });
       return reply(response, 201, { ok:true, payment });
     }
     if (payload.action === 'revoke_bakai_payment') {

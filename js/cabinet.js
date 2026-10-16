@@ -195,17 +195,18 @@ function supportUpdates(order) {
   return `<section class="cabinet-support-updates"><strong>Ответ Rentop</strong>${replies.map(item => `<div><span>${escape(item.manager_reply)}</span><small>${date(item.replied_at)}</small></div>`).join('')}</section>`;
 }
 function paymentPanel(order) {
-  const payment = order.payment;
+  const isExtension = Boolean(order.extensionPayment);
+  const payment = order.extensionPayment || order.payment;
   const documentsApproved = documentMode(order).mode === 'approved';
-  const documentNotice = documentsApproved ? `<div class="cabinet-payment-docs-success"><strong>✓ Документы проверены</strong><span>Можно переходить к оплате, как только появится защищённый QR-счёт.</span></div>` : '';
-  if (order.status !== 'awaiting_payment') return '';
+  const documentNotice = !isExtension && documentsApproved ? `<div class="cabinet-payment-docs-success"><strong>✓ Документы проверены</strong><span>Можно переходить к оплате, как только появится защищённый QR-счёт.</span></div>` : '';
+  if (!isExtension && order.status !== 'awaiting_payment') return '';
   if (!payment) return `<div class="cabinet-payment waiting"><strong>Готовим способ оплаты</strong><p>Менеджер формирует защищённый QR-счёт. Обновите страницу через несколько минут — платить по реквизитам в переписке не нужно.</p>${documentNotice}</div>`;
-  if (payment.status === 'paid') return `<div class="cabinet-payment success"><strong>Оплата получена</strong><p>Банк подтвердил платёж. Мы готовим следующий шаг выдачи.</p>${documentNotice}</div>`;
+  if (payment.status === 'paid') return `<div class="cabinet-payment success"><strong>${isExtension ? 'Продление оплачено' : 'Оплата получена'}</strong><p>${isExtension ? `Банк подтвердил доплату. Новый срок аренды: до ${date(order.rental_end_date)}.` : 'Банк подтвердил платёж. Мы готовим следующий шаг выдачи.'}</p>${documentNotice}</div>`;
   if (['revoked', 'expired', 'failed'].includes(payment.status)) return `<div class="cabinet-payment waiting"><strong>Счёт обновляется</strong><p>Предыдущий QR больше не используйте. Менеджер подготовит новый защищённый счёт, если оплата ещё нужна.</p>${documentNotice}</div>`;
   const rawImage = String(payment.qr_image || payment.qr_image_with_frame || '');
   const image = rawImage && !rawImage.startsWith('data:') && !rawImage.startsWith('http') ? `data:image/png;base64,${rawImage}` : rawImage;
   const expires = payment.expires_at ? new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(payment.expires_at)) : '—';
-  return `<section class="cabinet-payment"><div><strong>Оплата аренды</strong><span>${Number(payment.amount || 0).toLocaleString('ru-RU')} сом · до ${escape(expires)}</span></div><p>${image ? 'Нажмите «Оплатить по QR»: код откроется крупно на весь экран. Платёжная ссылка Банка доступна как дополнительный способ, но её поддержка зависит от приложения банка.' : 'Банк создал ссылку на QR. Откройте её в поддерживаемом банковском приложении или попросите менеджера перевыпустить счёт.'} Не переводите сумму вручную на другие реквизиты.</p>${documentNotice}${image ? `<button class="cabinet-action cabinet-payment-open" type="button" data-open-payment="${escape(order.id)}">Оплатить по QR</button>` : ''}${payment.qr_link ? `<a class="cabinet-action cabinet-payment-link secondary" href="${escape(payment.qr_link)}" target="_blank" rel="noopener">Открыть платёжную ссылку Банка</a>` : ''}</section>`;
+  return `<section class="cabinet-payment"><div><strong>${isExtension ? 'Оплата продления' : 'Оплата аренды'}</strong><span>${Number(payment.amount || 0).toLocaleString('ru-RU')} сом · до ${escape(expires)}</span></div><p>${image ? 'Нажмите «Оплатить по QR»: код откроется крупно на весь экран. Платёжная ссылка Банка доступна как дополнительный способ, но её поддержка зависит от приложения банка.' : 'Банк создал ссылку на QR. Откройте её в поддерживаемом банковском приложении или попросите менеджера перевыпустить счёт.'} Не переводите сумму вручную на другие реквизиты.</p>${documentNotice}${image ? `<button class="cabinet-action cabinet-payment-open" type="button" data-open-payment="${escape(order.id)}">Оплатить по QR</button>` : ''}${payment.qr_link ? `<a class="cabinet-action cabinet-payment-link secondary" href="${escape(payment.qr_link)}" target="_blank" rel="noopener">Открыть платёжную ссылку Банка</a>` : ''}</section>`;
 }
 function pickupInstruction(order) {
   if (order.delivery_type !== 'arca_locker') return '';
@@ -313,7 +314,7 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   customerPromos = Array.isArray(promos) ? promos : [];
   cabinetOrders = Array.isArray(orders) ? orders : [];
   supportWhatsappUrl = whatsappUrl || '';
-  paymentByOrder = new Map(cabinetOrders.filter(order => order.payment).map(order => [String(order.id), order.payment]));
+  paymentByOrder = new Map(cabinetOrders.filter(order => order.payment || order.extensionPayment).map(order => [String(order.id), order.extensionPayment || order.payment]));
   if (activePaymentOrderId && paymentByOrder.get(activePaymentOrderId)?.status !== 'awaiting_payment') closePaymentDialog();
   login.hidden = true; dashboard.hidden = false;
   const fullName = String(profile?.full_name || '').trim();

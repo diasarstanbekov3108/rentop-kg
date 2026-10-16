@@ -46,7 +46,7 @@ export default async function handler(request, response) {
         return { ...document, view_url:path ? (path.startsWith('http') ? path : `${config.supabaseUrl}/storage/v1${path}`) : '' };
       }));
     }));
-    const payments = await Promise.all(orders.map((order) => database.getOrderPayment(order.id).catch(() => null)));
+    const payments = await Promise.all(orders.map((order) => database.listOrderPayments(order.id).catch(() => [])));
     const feedback = await Promise.all(orders.map((order) => database.getOrderFeedback(order.id).catch(() => null)));
     const supportCases = await Promise.all(orders.map((order) => database.listOrderSupportCases(order.id).catch(() => [])));
     return orders.map((order, index) => ({
@@ -58,16 +58,8 @@ export default async function handler(request, response) {
       documents:documents[index],
       feedback:feedback[index],
       supportCases:supportCases[index],
-      payment:payments[index] && {
-        amount:payments[index].amount,
-        currency_id:payments[index].currency_id,
-        qr_image:payments[index].qr_image,
-        qr_image_with_frame:payments[index].qr_image_with_frame,
-        qr_link:payments[index].qr_link,
-        status:payments[index].status,
-        expires_at:payments[index].expires_at,
-        paid_at:payments[index].paid_at
-      }
+      payment:(payments[index] || []).find(payment => payment.purpose !== 'extension') || null,
+      extensionPayment:(payments[index] || []).find(payment => payment.purpose === 'extension' && ['awaiting_payment', 'paid'].includes(payment.status)) || null
     }));
   };
   const accountData = async (phone) => ({
