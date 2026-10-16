@@ -28,7 +28,7 @@ function normalizeFullName(value) {
   const fullName = String(value || '').trim().replace(/\s+/g, ' ');
   const parts = fullName.split(' ').filter(Boolean);
   if (parts.length < 3 || parts.some((part) => part.length < 2)) {
-    throw new Error('Укажите фамилию, имя и отчество — как в документе.');
+    throw new Error('Для оформления укажите полные ФИО: фамилию, имя и отчество. На этом шаге документы ещё не проверяются.');
   }
   return fullName;
 }

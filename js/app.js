@@ -403,11 +403,15 @@ function updateOrderAuthUi() {
   const signedIn = Boolean(cabinetSession?.authenticated);
   const nameInput = document.getElementById('user-name');
   const verifiedName = String(cabinetSession?.profile?.full_name || '').trim();
+  const legacyName = String((cabinetSession?.orders || []).find(order => String(order.customer_name || '').trim())?.customer_name || '').trim();
   if (nameInput) {
     if (signedIn && verifiedName) nameInput.value = verifiedName;
+    else if (signedIn && legacyName && !nameInput.value.trim()) nameInput.value = legacyName;
     nameInput.readOnly = Boolean(signedIn && verifiedName);
     nameInput.required = !(signedIn && verifiedName);
-    nameInput.title = signedIn && verifiedName ? 'ФИО берётся из личного кабинета. Для исправления откройте личный кабинет.' : '';
+    nameInput.title = signedIn && verifiedName
+      ? 'ФИО берётся из личного кабинета. Для исправления откройте личный кабинет.'
+      : legacyName ? 'ФИО подставлено из прежней заявки. Проверьте и при необходимости исправьте перед оформлением.' : '';
   }
   if (orderNameGroup) orderNameGroup.hidden = Boolean(signedIn && verifiedName);
   const phoneInput = document.getElementById('user-phone');
