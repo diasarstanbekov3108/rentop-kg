@@ -64,7 +64,9 @@ function archaControls(order) {
   if (order.delivery_type === 'arca_locker' && order.status === 'confirmed') return `<button class="secondary" data-prepare-archa="${order.id}">Подготовить сообщение для ARCHA POINT</button>`;
   if (order.status === 'awaiting_archa_reservation') return `<div class="manager-payment-create"><label>Код закладки ARCHA POINT<input data-archa-loading-code type="text" maxlength="200" placeholder="Код для менеджера"></label><label>Номер ячейки / комментарий<input data-archa-reference type="text" maxlength="200" placeholder="Необязательно"></label><button class="secondary" data-record-archa-reservation="${order.id}">Сохранить резерв ячейки</button></div>`;
   if (order.status === 'awaiting_locker_loading') return `<button class="secondary" data-mark-locker-loaded="${order.id}">Ноутбук помещён в ячейку</button>`;
-  if (order.status === 'awaiting_pickup') return `<div class="manager-actions"><button class="secondary" data-archa-sms-sent="${order.id}">ARCHA отправил SMS-код</button><button class="secondary" data-manual-pickup-code="${order.id}">Отправить код клиенту вручную</button></div>`;
+  if (order.status === 'awaiting_pickup') return order.locker_status === 'access_sent'
+    ? `<div class="manager-request">✓ SMS-код отмечен как отправленный клиенту. В кабинете клиента открыт этап видео и подтверждения получения.</div><div class="manager-actions"><button class="secondary" data-manual-pickup-code="${order.id}">Повторно отправить код вручную</button></div>`
+    : `<div class="manager-actions"><button class="secondary" data-archa-sms-sent="${order.id}">ARCHA отправил SMS-код</button><button class="secondary" data-manual-pickup-code="${order.id}">Отправить код клиенту вручную</button></div>`;
   if (order.status === 'awaiting_return_reservation') return `<div class="manager-actions"><button class="secondary" data-prepare-archa-return="${order.id}">Подготовить сообщение о возврате</button><button class="secondary" data-return-sms-sent="${order.id}">ARCHA отправил код возврата</button></div>`;
   return '';
 }

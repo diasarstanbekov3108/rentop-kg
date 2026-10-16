@@ -228,8 +228,8 @@ export default async function handler(request, response) {
       if (payload.action === 'confirm_pickup') {
         if (order.status !== 'awaiting_pickup' || !['access_sent','loaded'].includes(String(order.locker_status || ''))) return json(response, 409, { error:'Подтверждение доступно после помещения ноутбука в ячейку и отправки инструкции.' });
         const evidence = await database.listOrderDocuments(order.id);
-        const issueVideo = evidence.find(document => document.kind === 'issue_video');
-        if (issueVideo?.status !== 'accepted') return json(response, 409, { error:'Сначала прикрепите короткое видео до получения и дождитесь его проверки менеджером.' });
+        const issueVideo = evidence.find(document => document.kind === 'issue_video' && document.status !== 'rejected');
+        if (!issueVideo) return json(response, 409, { error:'Сначала прикрепите короткое видео получения: ноутбук, экран, корпус, зарядку и комплект.' });
         const updated = await database.updateOrder(order.id, { status:'in_use', locker_status:'client_picked_up' });
         await database.createEvent({ order_id:order.id, event_type:'customer_confirmed_pickup_from_cabinet', actor_type:'customer', metadata:{} });
         return json(response, 200, { ok:true, order:updated, message:'Получение подтверждено. Аренда стала активной.' });

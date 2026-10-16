@@ -23,6 +23,7 @@ let pendingPhone = '';
 let currentPreviewUrl = '';
 let paymentByOrder = new Map();
 let paymentPollingTimer = null;
+let orderPollingTimer = null;
 let activePaymentOrderId = '';
 let supportWhatsappUrl = '';
 let offerSmsConsentRequired = false;
@@ -134,6 +135,17 @@ function watchPayment(orderId) {
     } catch { /* The customer can continue scanning; the next poll will retry. */ }
   }, 8000);
 }
+function watchOrderUpdates(orders) {
+  if (orderPollingTimer) window.clearInterval(orderPollingTimer);
+  const needsLiveUpdates = orders.some(order => ['awaiting_payment', 'payment_review', 'confirmed', 'awaiting_archa_reservation', 'awaiting_locker_loading', 'awaiting_pickup'].includes(order.status));
+  if (!needsLiveUpdates) return;
+  orderPollingTimer = window.setInterval(async () => {
+    try {
+      const fresh = await request('GET');
+      if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos);
+    } catch { /* A manual refresh remains available if the network is offline. */ }
+  }, 15000);
+}
 
 function requestLabel(request) {
   if (request.kind === 'extension') return `Продление: +${request.requested_days} дн. до ${date(request.proposed_return_date)}`;
@@ -205,11 +217,14 @@ function pickupInstruction(order) {
     confirmed:'Оплата подтверждена. Rentop передаёт заявку в ARCHA POINT. Пока не приезжайте к постамату: дождитесь следующего статуса.',
     awaiting_archa_reservation:'ARCHA POINT резервирует ячейку. Мы сообщим, когда менеджер сможет разместить ноутбук.',
     awaiting_locker_loading:'Ячейка готова. Менеджер размещает ноутбук в постамате и проверяет комплектацию.',
-    awaiting_pickup:'Ноутбук помещён в ячейку. ARCHA POINT отправляет SMS-код на номер из заявки. Если код не пришёл, сразу сообщите нам.',
+    awaiting_pickup: order.locker_status === 'access_sent'
+      ? 'SMS-код доступа отправлен. Получите ноутбук, снимите короткое видео и подтвердите получение.'
+      : 'Ноутбук помещён в ячейку. ARCHA POINT отправляет SMS-код на номер из заявки. Если код не пришёл, сразу сообщите нам.',
     issued:'Подтвердите получение только после того, как заберёте ноутбук из ячейки.',
     in_use:'Ноутбук получен. Для продления или возврата используйте действия ниже.'
   }[order.status] || 'Rentop координирует выдачу через ARCHA POINT.';
-  return `<section class="cabinet-pickup-instruction"><strong>Получение через ARCHA POINT</strong><p class="cabinet-pickup-location">${escape(location)}${point ? ` · ${escape(point.hours)}` : ''}</p>${point ? `<a class="cabinet-map-link" href="${escape(point.map)}" target="_blank" rel="noopener">Открыть маршрут в 2ГИС ↗</a>` : ''}<p>${copy}</p><ol><li>До получения снимите короткое видео состояния ячейки и комплекта.</li><li>Открывайте ячейку только по SMS-коду ARCHA POINT или инструкции менеджера.</li><li>Осмотрите ноутбук, зарядку и комплектность сразу. При проблеме не подтверждайте получение — откройте обращение.</li></ol></section>`;
+  const accessSent = order.locker_status === 'access_sent';
+  return `<section class="cabinet-pickup-instruction ${accessSent ? 'is-access-sent' : ''}"><strong>${accessSent ? '✓ Код доступа отправлен' : 'Получение через ARCHA POINT'}</strong><p class="cabinet-pickup-location">${escape(location)}${point ? ` · ${escape(point.hours)}` : ''}</p>${point ? `<a class="cabinet-map-link" href="${escape(point.map)}" target="_blank" rel="noopener">Открыть маршрут в 2ГИС ↗</a>` : ''}<p>${copy}</p><ol><li>Откройте ячейку только кодом из SMS ARCHA POINT или по инструкции менеджера.</li><li>После открытия снимите короткое видео ноутбука, корпуса, экрана, зарядки и комплекта.</li><li>Прикрепите видео ниже и подтвердите получение. При проблеме не подтверждайте получение — откройте обращение.</li></ol></section>`;
 }
 function actionPanel(order) {
   const canAct = order.status === 'in_use';
@@ -221,7 +236,12 @@ function actionPanel(order) {
   const whatsapp = supportWhatsappUrl ? `<a class="cabinet-action ghost" href="${escape(supportWhatsappUrl)}?text=${encodeURIComponent(`Здравствуйте! Нужна помощь по заявке ${order.reference}.`)}" target="_blank" rel="noopener">Написать в WhatsApp</a>` : '';
   if (docState.mode === 'upload') return `<div class="cabinet-documents-cta"><strong>Следующий шаг — документы</strong><p>Нужны лицевая и обратная стороны паспорта/ID, селфи с документом и официальный подтверждающий документ. Комментарий можно добавить внутри формы. Без полного комплекта счёт на оплату не создаётся.</p>${documents}</div><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
   if (docState.mode === 'approved') return `<div class="cabinet-action-disabled">Продление и досрочный возврат станут доступны после выдачи ноутбука.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
-  if (order.status === 'awaiting_pickup') return `${documents}<div class="cabinet-request-state">До получения снимите короткое видео состояния комплекта. Ноутбук должен быть помещён в ячейку, а SMS-код — прийти от ARCHA POINT.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="issue-video" data-order="${order.id}">Прикрепить видео до получения</button><button class="cabinet-action" data-confirm-pickup="${order.id}">Я получил(а) ноутбук</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Код не пришёл / проблема с постаматом</button></div>`;
+  if (order.status === 'awaiting_pickup') {
+    const accessSent = order.locker_status === 'access_sent';
+    const issueVideo = (order.documents || []).find(document => document.kind === 'issue_video' && document.status !== 'rejected');
+    if (!accessSent) return `${documents}<div class="cabinet-request-state">Ноутбук уже помещён в ячейку. ARCHA POINT отправляет код на номер из заявки. Экран обновляется автоматически; если код не придёт, откройте обращение.</div><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Код не пришёл / проблема с постаматом</button></div>`;
+    return `${documents}<div class="cabinet-request-state is-success">✓ Код доступа отмечен как отправленный. Заберите ноутбук, снимите короткое видео комплекта и прикрепите его здесь.${issueVideo ? ' Видео получено — теперь подтвердите получение.' : ''}</div><div class="cabinet-actions">${issueVideo ? `<button class="cabinet-action" data-confirm-pickup="${order.id}">Подтвердить получение ноутбука</button>` : `<button class="cabinet-action secondary" data-panel="issue-video" data-order="${order.id}">Прикрепить видео получения</button>`}<button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Код не пришёл / проблема с постаматом</button></div>`;
+  }
   if (order.status === 'awaiting_return_dropoff') return `${documents}<div class="cabinet-request-state">Снимите видео состояния ноутбука, зарядки и комплекта до помещения в ячейку. Затем используйте SMS-код ARCHA POINT.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="return-video" data-order="${order.id}">Прикрепить видео возврата</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Проблема с возвратом</button></div>`;
   if (openExtension || openReturn) return `${documents}<div class="cabinet-request-state">⌛ ${escape(requestLabel(openExtension || openReturn))}: ожидает решения менеджера</div><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>`;
   if (order.status === 'completed') return `${documents}${order.feedback ? '<div class="cabinet-request-state">Спасибо — ваш отзыв уже получен.</div>' : '<div class="cabinet-actions"><button class="cabinet-action" data-panel="feedback" data-order="' + order.id + '">Оставить отзыв</button><button class="cabinet-action ghost" data-panel="support" data-order="' + order.id + '">Предложить улучшение</button></div>'}`;
@@ -288,12 +308,15 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   const created = new URLSearchParams(window.location.search).get('created');
   dashboardNotice.hidden = !created;
   if (created) dashboardNotice.textContent = 'Заявка создана и уже появилась в кабинете. Следующий шаг покажем здесь.';
+  const codeSent = cabinetOrders.find(order => order.status === 'awaiting_pickup' && order.locker_status === 'access_sent');
+  if (codeSent) { dashboardNotice.hidden = false; dashboardNotice.textContent = 'Код доступа ARCHA POINT отмечен как отправленный. Откройте заявку и пройдите получение.'; }
   if (loyaltyPanelEl) loyaltyPanelEl.innerHTML = loyaltyPanel(customerPromos);
   rentalsEl.innerHTML = cabinetOrders.map(order => {
     const state = statusInfo(order.status);
     return `<article class="cabinet-rental" data-rental="${order.id}"><div class="cabinet-rental-top"><div><h3>${escape(order.laptop_title || 'Ноутбук Rentop')}</h3><p class="cabinet-rental-ref">Заявка ${escape(order.reference)}</p></div><span class="cabinet-badge">${escape(state.title)}</span></div><div class="cabinet-progress" aria-label="Этап ${state.step} из 5"><span class="is-done"></span><span class="${state.step >= 2 ? 'is-done' : ''}"></span><span class="${state.step >= 3 ? 'is-done' : ''}"></span><span class="${state.step >= 4 ? 'is-done' : ''}"></span><span class="${state.step >= 5 ? 'is-done' : ''}"></span></div><p class="cabinet-next-step">${escape(state.text)}</p>${documentSummary(order)}${supportUpdates(order)}<div class="cabinet-rental-grid"><div>Срок<strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div>Получение<strong>${escape(order.delivery_label)}</strong></div><div>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div>Скидка<strong>${Number(order.discount_percent || 0)}%</strong></div></div>${pickupInstruction(order)}${paymentPanel(order)}${actionPanel(order)}${requestForm(order)}</article>`;
   }).join('');
   emptyEl.hidden = cabinetOrders.length !== 0;
+  watchOrderUpdates(cabinetOrders);
   if (new URLSearchParams(window.location.search).get('return') === 'booking') {
     window.setTimeout(() => window.location.assign('/?resume_booking=1'), 250);
   }
