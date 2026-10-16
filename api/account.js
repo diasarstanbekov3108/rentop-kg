@@ -98,7 +98,7 @@ export default async function handler(request, response) {
     if (request.method !== 'POST') return json(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
     if (payload.action === 'logout') { const raw = readCookie(request, COOKIE); if (raw) await database.revokeCabinetSession(hash(secret, raw)); response.setHeader('Set-Cookie', `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`); return json(response, 200, { ok:true }); }
-    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'delete_draft_document' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'request_offer_sms_consent' || payload.action === 'verify_offer_sms_consent' || payload.action === 'save_profile' || payload.action === 'extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup' || payload.action === 'submit_feedback') {
+    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'delete_draft_document' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'request_offer_sms_consent' || payload.action === 'verify_offer_sms_consent' || payload.action === 'save_profile' || payload.action === 'extension_request' || payload.action === 'cancel_extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup' || payload.action === 'submit_feedback') {
       const session = await verifySession();
       if (!session) return json(response, 401, { error:'Сессия истекла. Войдите в кабинет снова.', code:'AUTH_REQUIRED' });
       if (payload.action === 'save_profile') {
@@ -254,6 +254,16 @@ export default async function handler(request, response) {
         await database.createEvent({ order_id:order.id, event_type:'customer_requested_extension_from_cabinet', actor_type:'customer', metadata:{ extra_days:days, estimated_extra_amount:amount, proposed_end_date:newEndDate } });
         await notifyManager(`📅 Запрос на продление с сайта\n\nЗаявка ${orderRef(order)} · ${laptop?.title || 'Ноутбук'}\nКлиент: ${order.customer_name || '—'}\n+${days} дн. · до ${newEndDate}\nПредварительная доплата: ${amount} сом`);
         return json(response, 201, { ok:true, request:customerRequest, message:`Запрос передан менеджеру. Предварительная доплата: ${amount.toLocaleString('ru-RU')} сом.` });
+      }
+      if (payload.action === 'cancel_extension_request') {
+        if (!EXTENDABLE_STATUSES.has(order.status)) return json(response, 400, { error:'Отменить продление можно только для активной аренды.' });
+        const requestId = String(payload.requestId || '');
+        const extension = (await database.listCustomerRequests(order.id)).find(item => item.id === requestId && item.kind === 'extension' && item.status === 'open');
+        if (!extension) return json(response, 409, { error:'Этот запрос уже обрабатывается или для него создан счёт. Свяжитесь с менеджером, чтобы отменить его безопасно.' });
+        await database.updateCustomerRequest(extension.id, { status:'cancelled' });
+        await database.createEvent({ order_id:order.id, event_type:'customer_cancelled_extension_from_cabinet', actor_type:'customer', metadata:{ request_id:extension.id } });
+        await notifyManager(`↩️ Клиент отменил запрос продления\n\nЗаявка ${orderRef(order)} · ${laptop?.title || 'Ноутбук'}\nТеперь можно оформить возврат, если он нужен.`);
+        return json(response, 200, { ok:true, message:'Запрос продления отменён. Теперь можно выбрать возврат ноутбука.' });
       }
       if (payload.action === 'early_return_request') {
         const note = String(payload.message || '').trim().slice(0, 500);

@@ -19,6 +19,7 @@ let filter = 'all';
 let pendingManagerPhone = '';
 let isChiefAdmin = false;
 const transientOrderMessages = new Map();
+let openOrderDetails = new Set();
 
 const escape = value => String(value || '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' }[char]));
 const date = value => value ? new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }).format(new Date(value)) : '—';
@@ -72,12 +73,13 @@ function archaControls(order) {
   if (order.status === 'awaiting_locker_loading') return `<button class="secondary" data-mark-locker-loaded="${order.id}">Ноутбук помещён в ячейку</button>`;
   if (order.status === 'awaiting_pickup') return order.locker_status === 'access_sent'
     ? `<div class="manager-request">✓ SMS-код отмечен как отправленный клиенту. В кабинете клиента открыт этап видео и подтверждения получения.</div><div class="manager-actions"><button class="secondary" data-manual-pickup-code="${order.id}">Повторно отправить код вручную</button></div>`
-    : `<div class="manager-actions"><button class="secondary" data-archa-sms-sent="${order.id}">ARCHA отправил SMS-код</button><button class="secondary" data-manual-pickup-code="${order.id}">Отправить код клиенту вручную</button></div>`;
+    : `<div class="manager-actions"><button class="secondary" data-archa-sms-sent="${order.id}">Подтвердить: ARCHA уже отправил SMS</button><button class="secondary" data-manual-pickup-code="${order.id}">Отправить код клиенту вручную</button></div>`;
   if (order.status === 'awaiting_return_reservation') return `<div class="manager-actions"><button class="secondary" data-prepare-archa-return="${order.id}">Подготовить сообщение о возврате</button><button class="secondary" data-return-sms-sent="${order.id}">ARCHA отправил код возврата</button></div>`;
   return '';
 }
 
 function render() {
+  openOrderDetails = new Set([...ordersEl.querySelectorAll('.manager-order-details[open]')].map(item => item.closest('[data-manager-order]')?.dataset.managerOrder).filter(Boolean));
   const list = visibleOrders();
   const pendingDocs = orders.reduce((total, order) => total + order.documents.filter(document => document.status === 'pending_review').length, 0);
   const active = orders.filter(order => ['in_use','return_requested','awaiting_return_reservation','awaiting_return_dropoff','returned','incident'].includes(order.status)).length;
@@ -112,9 +114,9 @@ function render() {
     const documentsPanel = `<section class="manager-section"><h3>Документы</h3><div class="manager-docs">${order.documents.length ? order.documents.map(documentCard).join('') : '<span class="manager-empty">Документы ещё не загружены</span>'}</div></section>`;
     const requestsPanel = order.requests.length ? `<section class="manager-section"><h3>Запросы клиента</h3><div class="manager-requests">${order.requests.map(request => `<div class="manager-request">${escape(request.kind)} · ${escape(request.status)}${request.return_method ? ` · ${escape(request.return_method)}` : ''}${request.return_locker_address ? ` · ${escape(request.return_locker_address)}` : ''}${request.customer_message ? ` · ${escape(request.customer_message)}` : ''}</div>`).join('')}</div></section>` : '';
     const directDocuments = pending ? documentsPanel : '';
-    const details = `${pending ? '' : documentsPanel}${offerEvidence}${customerNote}${registry}${paymentState}${extensionAction}${lockerInstruction(order)}${handoffPanel}${assetTools}${loyaltyAction}${adminTools}${requestsPanel}`;
-    const workflowActions = `${pending ? `<button class="secondary" data-reject-all="${order.id}">Отклонить все с причиной</button>` : ''}${paymentAction}${manualPaymentAction}${archaControls(order)}${action ? `<button data-order-action="advance" data-order="${order.id}" data-next-status="${action.next}">${action.label}</button>` : ''}${canDelete(order) ? `<button class="danger" data-delete-order="${order.id}">Удалить тестовую заявку</button>` : ''}`;
-    return `<article class="manager-order"><div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p></div><span class="manager-status-pill ${escape(order.status)}">${escape(statusLabel(order.status))}</span></div><div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда</span><strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(deliveryLabel(order))}${order.locker_address ? `<br><small>${escape(order.locker_address)}</small>` : ''}</strong></div><div><span>Сумма аренды</span><strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div><span>Залог / скидка</span><strong>${Number(order.deposit_amount || 0).toLocaleString('ru-RU')} сом · ${Number(order.discount_percent || 0)}%</strong></div></div>${directDocuments}${supportPanel}<div class="manager-actions manager-workflow-actions">${workflowActions || '<span class="manager-action-note">Следующее действие появится после обновления статуса.</span>'}</div><p class="manager-order-feedback" data-order-feedback="${order.id}" hidden></p><details class="manager-order-details"><summary>Детали заявки, реестр и служебные данные</summary>${details}</details></article>`;
+    const details = `${pending ? '' : documentsPanel}${offerEvidence}${customerNote}${registry}${paymentState}${lockerInstruction(order)}${handoffPanel}${assetTools}${loyaltyAction}${adminTools}${requestsPanel}`;
+    const workflowActions = `${pending ? `<button class="secondary" data-reject-all="${order.id}">Отклонить все с причиной</button>` : ''}${extensionAction}${paymentAction}${manualPaymentAction}${archaControls(order)}${action ? `<button data-order-action="advance" data-order="${order.id}" data-next-status="${action.next}">${action.label}</button>` : ''}${canDelete(order) ? `<button class="danger" data-delete-order="${order.id}">Удалить тестовую заявку</button>` : ''}`;
+    return `<article class="manager-order" data-manager-order="${order.id}"><div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p></div><span class="manager-status-pill ${escape(order.status)}">${escape(statusLabel(order.status))}</span></div><div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда</span><strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(deliveryLabel(order))}${order.locker_address ? `<br><small>${escape(order.locker_address)}</small>` : ''}</strong></div><div><span>Сумма аренды</span><strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div><span>Залог / скидка</span><strong>${Number(order.deposit_amount || 0).toLocaleString('ru-RU')} сом · ${Number(order.discount_percent || 0)}%</strong></div></div>${directDocuments}${supportPanel}<div class="manager-actions manager-workflow-actions">${workflowActions || '<span class="manager-action-note">Следующее действие появится после обновления статуса.</span>'}</div><p class="manager-order-feedback" data-order-feedback="${order.id}" hidden></p><details class="manager-order-details" ${openOrderDetails.has(String(order.id)) ? 'open' : ''}><summary>Детали заявки, реестр и служебные данные</summary>${details}</details></article>`;
   }).join('') : '<div class="manager-empty">По этому фильтру заявок нет.</div>';
 }
 
@@ -234,7 +236,7 @@ ordersEl.addEventListener('click', async event => {
     successMessage = 'Закладка зафиксирована. Ожидаем SMS-код клиенту от ARCHA POINT.';
   } else if (archaSmsSent) {
     payload = { action:'mark_archa_access_sent', orderId:archaSmsSent.dataset.archaSmsSent };
-    successMessage = 'Отметили: ARCHA POINT отправил клиенту SMS-код.';
+    successMessage = 'Зафиксировано: ARCHA POINT сообщил, что отправил SMS. Rentop не отправлял код этой кнопкой.';
   } else if (manualPickupCode) {
     const code = window.prompt('Введите код получения, подтверждённый у ARCHA POINT. Он будет отправлен клиенту по SMS через Rentop:');
     if (!code?.trim()) return;
@@ -336,6 +338,13 @@ ordersEl.addEventListener('click', async event => {
     window.setTimeout(load, 900);
   } catch (error) { statusEl.textContent = error.message; showFeedback(error.message, 'error'); target.disabled = false; target.textContent = original; }
 });
+ordersEl.addEventListener('toggle', event => {
+  const details = event.target.closest('.manager-order-details');
+  if (!details) return;
+  const id = details.closest('[data-manager-order]')?.dataset.managerOrder;
+  if (!id) return;
+  if (details.open) openOrderDetails.add(id); else openOrderDetails.delete(id);
+}, true);
 document.getElementById('manager-document-viewer-close')?.addEventListener('click', closeDocumentViewer);
 documentViewer?.addEventListener('click', event => { if (event.target === documentViewer) closeDocumentViewer(); });
 document.addEventListener('keydown', event => { if (event.key === 'Escape' && !documentViewer?.hidden) closeDocumentViewer(); });
