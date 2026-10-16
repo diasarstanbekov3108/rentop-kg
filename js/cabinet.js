@@ -30,6 +30,8 @@ let offerSmsConsentRequired = false;
 let customerPromos = [];
 let cabinetOrders = [];
 let customerProfile = null;
+// Prevent an older "check session" response from replacing a newer SMS login.
+let sessionViewEpoch = 0;
 const ARCHA_LOCATIONS = [
   { value:'Bishkek Park — Киевская улица, 148, этаж B2', hours:'ежедневно 10:00–22:00', map:'https://2gis.kg/bishkek/search/%D0%9F%D0%BE%D1%81%D1%82%D0%B0%D0%BC%D0%B0%D1%82%D1%8B/rubricId/95584/firm/70000001092731465/74.589874%2C42.874488' },
   { value:'Гипермаркет «Азия» — ул. Максима Горького, 1/2а', hours:'круглосуточно', map:'https://2gis.kg/bishkek/firm/70000001092731520' },
@@ -141,10 +143,11 @@ function closePaymentDialog() {
 function watchPayment(orderId) {
   if (paymentPollingTimer) window.clearInterval(paymentPollingTimer);
   activePaymentOrderId = String(orderId);
+  const epoch = sessionViewEpoch;
   paymentPollingTimer = window.setInterval(async () => {
     try {
       const fresh = await request('GET');
-      if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos);
+      if (epoch === sessionViewEpoch && fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos);
     } catch { /* The customer can continue scanning; the next poll will retry. */ }
   }, 8000);
 }
@@ -152,12 +155,14 @@ function watchOrderUpdates(orders) {
   if (orderPollingTimer) window.clearInterval(orderPollingTimer);
   const needsLiveUpdates = orders.some(order => ['awaiting_payment', 'payment_review', 'confirmed', 'awaiting_archa_reservation', 'awaiting_locker_loading', 'awaiting_pickup', 'in_use', 'return_requested', 'awaiting_return_reservation', 'awaiting_return_dropoff', 'returned'].includes(order.status));
   if (!needsLiveUpdates) return;
+  const epoch = sessionViewEpoch;
   orderPollingTimer = window.setInterval(async () => {
     try {
       // A mobile file chooser temporarily hides the page. Re-rendering while a
       // document/video form is open would erase the selected local file.
       if (rentalsEl?.querySelector('.cabinet-request-panel:not([hidden])')) return;
       const fresh = await request('GET');
+      if (epoch !== sessionViewEpoch) return;
       if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos);
       else showLogin();
     } catch { /* A manual refresh remains available if the network is offline. */ }
@@ -376,6 +381,7 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   }
 }
 function showLogin() {
+  sessionViewEpoch += 1;
   if (orderPollingTimer) window.clearInterval(orderPollingTimer);
   if (paymentPollingTimer) window.clearInterval(paymentPollingTimer);
   orderPollingTimer = null; paymentPollingTimer = null;
@@ -384,15 +390,18 @@ function showLogin() {
   login.hidden = false;
 }
 async function loadSession() {
+  const epoch = ++sessionViewEpoch;
   // The account and the login screen must never be visible together.
   dashboard.hidden = true;
   login.hidden = true;
   loading.hidden = false;
   try {
     const data = await request('GET');
+    if (epoch !== sessionViewEpoch) return;
     if (data.authenticated) { showRentals(data.orders || [], data.phone, data.profile, data.whatsappUrl, data.offerSmsConsentRequired, data.promos); return; }
     showLogin();
   } catch {
+    if (epoch !== sessionViewEpoch) return;
     showLogin();
   }
 }
@@ -421,7 +430,7 @@ document.getElementById('cabinet-refresh')?.addEventListener('click', async even
 });
 
 phoneForm?.addEventListener('submit', async event => { event.preventDefault(); const phone = formatPhone(phoneInput.value); if (!phone) return message('Введите номер Кыргызстана: +996XXXXXXXXX.', 'error'); const button = phoneForm.querySelector('button'); button.disabled = true; message('Отправляем код…'); try { await request('POST', { action:'request_code', phone }); pendingPhone = phone; phoneForm.hidden = true; codeForm.hidden = false; codeInput.focus(); message('Код отправлен. Введите 6 цифр из сообщения.', 'success'); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
-codeForm?.addEventListener('submit', async event => { event.preventDefault(); const code = codeInput.value.replace(/\D/g, ''); if (code.length !== 6) return message('Введите все 6 цифр кода.', 'error'); const button = codeForm.querySelector('button'); button.disabled = true; message('Проверяем код…'); try { const remember = document.getElementById('cabinet-remember')?.checked !== false; const data = await request('POST', { action:'verify_code', phone:pendingPhone, code, remember }); showRentals(data.orders || [], data.phone, data.profile, data.whatsappUrl, data.offerSmsConsentRequired, data.promos); message(''); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
+codeForm?.addEventListener('submit', async event => { event.preventDefault(); const code = codeInput.value.replace(/\D/g, ''); if (code.length !== 6) return message('Введите все 6 цифр кода.', 'error'); const button = codeForm.querySelector('button'); button.disabled = true; message('Проверяем код…'); try { const remember = document.getElementById('cabinet-remember')?.checked !== false; const data = await request('POST', { action:'verify_code', phone:pendingPhone, code, remember }); sessionViewEpoch += 1; showRentals(data.orders || [], data.phone, data.profile, data.whatsappUrl, data.offerSmsConsentRequired, data.promos); message(''); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
 document.getElementById('change-phone')?.addEventListener('click', () => { codeForm.hidden = true; phoneForm.hidden = false; codeInput.value = ''; message(''); phoneInput.focus(); });
 document.getElementById('cabinet-logout')?.addEventListener('click', async () => { await request('POST', { action:'logout' }).catch(() => {}); showLogin(); phoneForm.hidden = false; codeForm.hidden = true; phoneInput.value = ''; codeInput.value = ''; pendingPhone = ''; message('Вы вышли из кабинета.'); });
 rentalsEl?.addEventListener('click', event => {
