@@ -209,6 +209,7 @@ function paymentPanel(order) {
 }
 function pickupInstruction(order) {
   if (order.delivery_type !== 'arca_locker') return '';
+  if (order.status === 'awaiting_pickup') return '';
   if (!['confirmed', 'awaiting_archa_reservation', 'awaiting_locker_loading', 'awaiting_pickup', 'issued', 'in_use', 'return_requested', 'awaiting_return_reservation', 'awaiting_return_dropoff', 'returned', 'completed'].includes(order.status)) return '';
   const location = order.locker_address || 'локация, выбранная при оформлении';
   const point = archaLocation(location);
@@ -232,21 +233,33 @@ function actionPanel(order) {
   const openReturn = order.requests?.find(request => request.kind === 'early_return' && ['open','in_progress'].includes(request.status));
   const docState = documentMode(order);
   const documentText = docState.mode === 'approved' ? 'Документы проверены' : docState.mode === 'submitted' ? 'Документы на проверке' : docState.mode === 'replacement' ? 'Заменить документ' : 'Документы и договор';
-  const documents = `<button class="cabinet-action secondary" data-panel="documents" data-document-mode="${docState.mode}" data-document-kinds="${docState.kinds.join(',')}" data-order="${order.id}">${documentText}</button>`;
+  const documents = docState.mode === 'approved' ? '' : `<button class="cabinet-action secondary" data-panel="documents" data-document-mode="${docState.mode}" data-document-kinds="${docState.kinds.join(',')}" data-order="${order.id}">${documentText}</button>`;
   const whatsapp = supportWhatsappUrl ? `<a class="cabinet-action ghost" href="${escape(supportWhatsappUrl)}?text=${encodeURIComponent(`Здравствуйте! Нужна помощь по заявке ${order.reference}.`)}" target="_blank" rel="noopener">Написать в WhatsApp</a>` : '';
   if (docState.mode === 'upload') return `<div class="cabinet-documents-cta"><strong>Следующий шаг — документы</strong><p>Нужны лицевая и обратная стороны паспорта/ID, селфи с документом и официальный подтверждающий документ. Комментарий можно добавить внутри формы. Без полного комплекта счёт на оплату не создаётся.</p>${documents}</div><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
   if (order.status === 'awaiting_pickup') {
     const accessSent = order.locker_status === 'access_sent';
     const issueVideo = (order.documents || []).find(document => document.kind === 'issue_video' && document.status !== 'rejected');
-    if (!accessSent) return `${documents}<div class="cabinet-request-state">Ноутбук уже помещён в ячейку. ARCHA POINT отправляет код на номер из заявки. Экран обновляется автоматически; если код не придёт, откройте обращение.</div><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Код не пришёл / проблема с постаматом</button></div>`;
-    return `${documents}<div class="cabinet-request-state is-success">✓ Код доступа отмечен как отправленный. Заберите ноутбук, снимите короткое видео комплекта и прикрепите его здесь.${issueVideo ? ' Видео получено — теперь подтвердите получение.' : ''}</div><div class="cabinet-actions">${issueVideo ? `<button class="cabinet-action" data-confirm-pickup="${order.id}">Подтвердить получение ноутбука</button>` : `<button class="cabinet-action secondary" data-panel="issue-video" data-order="${order.id}">Прикрепить видео получения</button>`}<button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Код не пришёл / проблема с постаматом</button></div>`;
+    const point = archaLocation(order.locker_address);
+    const location = order.locker_address || 'выбранная локация ARCHA POINT';
+    const title = accessSent ? 'Код доступа отправлен' : 'Ожидаем код доступа';
+    const lead = accessSent
+      ? 'Откройте ячейку кодом из SMS ARCHA POINT, осмотрите комплект и снимите короткое видео.'
+      : 'Ноутбук помещён в ячейку. ARCHA POINT отправляет код на номер из заявки. Экран обновится автоматически.';
+    const steps = accessSent
+      ? `<ol><li>Откройте ячейку кодом из SMS.</li><li>Снимите видео ноутбука, экрана, зарядки и комплекта.</li><li>Прикрепите видео и подтвердите получение.</li></ol>`
+      : '';
+    const primary = !accessSent
+      ? ''
+      : issueVideo
+        ? `<button class="cabinet-action" data-confirm-pickup="${order.id}">Подтвердить получение</button>`
+        : `<button class="cabinet-action" data-panel="issue-video" data-order="${order.id}">Прикрепить видео получения</button>`;
+    return `<section class="cabinet-pickup-flow ${accessSent ? 'is-ready' : ''}"><div><strong>${accessSent ? '✓ ' : ''}${title}</strong><span>${escape(location)}${point ? ` · ${escape(point.hours)}` : ''}</span></div>${point ? `<a class="cabinet-map-link" href="${escape(point.map)}" target="_blank" rel="noopener">Маршрут в 2ГИС ↗</a>` : ''}<p>${lead}${issueVideo ? ' Видео получено — подтвердите получение.' : ''}</p>${steps}<div class="cabinet-actions">${primary}<button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Помощь</button></div></section>`;
   }
-  if (docState.mode === 'approved') return `<div class="cabinet-action-disabled">Продление и досрочный возврат станут доступны после выдачи ноутбука.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
   if (order.status === 'awaiting_return_dropoff') return `${documents}<div class="cabinet-request-state">Снимите видео состояния ноутбука, зарядки и комплекта до помещения в ячейку. Затем используйте SMS-код ARCHA POINT.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="return-video" data-order="${order.id}">Прикрепить видео возврата</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Проблема с возвратом</button></div>`;
   if (openExtension || openReturn) return `${documents}<div class="cabinet-request-state">⌛ ${escape(requestLabel(openExtension || openReturn))}: ожидает решения менеджера</div><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>`;
   if (order.status === 'completed') return `${documents}${order.feedback ? '<div class="cabinet-request-state">Спасибо — ваш отзыв уже получен.</div>' : '<div class="cabinet-actions"><button class="cabinet-action" data-panel="feedback" data-order="' + order.id + '">Оставить отзыв</button><button class="cabinet-action ghost" data-panel="support" data-order="' + order.id + '">Предложить улучшение</button></div>'}`;
-  if (!canAct) return `${documents}<div class="cabinet-action-disabled">Продление и досрочный возврат станут доступны после выдачи ноутбука.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
-  return `<div class="cabinet-actions">${documents}<button class="cabinet-action" data-panel="extend" data-order="${order.id}">Продлить аренду</button><button class="cabinet-action secondary" data-panel="return" data-order="${order.id}">Вернуть раньше</button><button class="cabinet-action ghost" data-panel="comment" data-order="${order.id}">Комментарий к заказу</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
+  if (!canAct) return `${documents}<div class="cabinet-action-disabled">Продление и досрочный возврат станут доступны после выдачи ноутбука.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="support" data-order="${order.id}">Помощь</button>${whatsapp}</div>`;
+  return `<div class="cabinet-active-actions"><strong>Управление арендой</strong><p>До ${date(order.rental_end_date)}. Продление проверяется по доступности ноутбука, возврат — после выбора удобного способа.</p><div class="cabinet-actions"><button class="cabinet-action" data-panel="extend" data-order="${order.id}">Продлить аренду</button><button class="cabinet-action secondary" data-panel="return" data-order="${order.id}">Вернуть раньше</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Помощь</button>${whatsapp}</div></div>`;
 }
 function requestForm(order) {
   return `<div class="cabinet-request-panel" id="panel-${order.id}" hidden></div>`;
@@ -277,7 +290,7 @@ function panelMarkup(kind, orderId, documentState = {}) {
   if (kind === 'issue-video' || kind === 'return-video') {
     const documentKind = kind === 'issue-video' ? 'issue_video' : 'return_video';
     const title = kind === 'issue-video' ? 'Видео до получения' : 'Видео возврата';
-    return `<form class="cabinet-inline-form cabinet-evidence-form" data-document-upload="true" data-evidence-upload="true" data-required-kinds="${documentKind}" data-order="${orderId}"><label>${title}</label><p>Снимите короткое непрерывное видео: ноутбук, экран, корпус, зарядку и комплект. Допустимы MP4 или MOV до 50 МБ.</p><input name="${documentKind}" type="file" accept="video/mp4,video/quicktime" required><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Отправить на проверку</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
+    return `<form class="cabinet-inline-form cabinet-evidence-form" data-document-upload="true" data-evidence-upload="true" data-required-kinds="${documentKind}" data-order="${orderId}"><label>${title}</label><p>Снимите одно непрерывное видео до 30 секунд. Допустимы MP4 или MOV до 50 МБ; для iPhone выберите 720p или 1080p/30 fps. До отправки видео можно открыть, удалить и снять заново.</p>${videoControl(documentKind)}<div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Отправить видео</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
   }
   if (kind === 'extend') return `<form class="cabinet-inline-form" data-request="extension_request" data-order="${orderId}"><label>На сколько дней продлить?</label><div class="cabinet-inline-row"><input name="days" type="number" min="1" max="30" value="3" required><button class="cabinet-action" type="submit">Отправить запрос</button></div><p>Менеджер проверит доступность и пришлёт сумму к оплате.</p></form>`;
   if (kind === 'return') return `<form class="cabinet-inline-form" data-request="early_return_request" data-order="${orderId}"><label>Как вам удобнее вернуть ноутбук?</label><select name="returnMethod" required><option value="">Выберите способ</option><option value="arca_locker">Через постамат ARCHA POINT</option><option value="courier">Заказать курьера Rentop</option><option value="warehouse">Привезти на склад Rentop</option></select><div class="cabinet-return-locker" hidden><label>Выберите постамат возврата</label><select name="returnLockerAddress"><option value="">Выберите постамат</option>${ARCHA_LOCATIONS.map(location => `<option value="${escape(location.value)}">${escape(location.value)} · ${escape(location.hours)}</option>`).join('')}</select></div><label>Коротко опишите причину (необязательно)</label><textarea name="message" maxlength="500" placeholder="Например: изменились планы, хочу вернуть сегодня"></textarea><div class="cabinet-inline-row"><button class="cabinet-action danger" type="submit">Запросить возврат</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>Перед возвратом снимите короткое видео состояния ноутбука и комплекта. Не кладите устройство в ячейку, пока не придёт инструкция.</p></form>`;
@@ -290,6 +303,9 @@ function fileControl(kind) {
   const typeChoice = kind === 'supporting' ? `<select name="supportingType" class="cabinet-document-type"><option value="">Выберите документ</option><option value="Справка с места работы">Справка с места работы</option><option value="Справка с места жительства">Справка с места жительства</option><option value="Тундук">Документ / скрин из Тундук</option><option value="Иной официальный документ">Иной официальный документ</option></select>` : '';
   const selfie = kind === 'selfie';
   return `<div class="cabinet-file-control"><label for="document-${kind}">${title} <span>${hint}</span></label>${typeChoice}<input id="document-${kind}" name="${kind}" type="file" accept="${selfie ? 'image/jpeg,image/png' : 'image/jpeg,image/png,application/pdf'}" ${selfie ? 'capture="user"' : ''} hidden><div><button class="cabinet-file-choose" type="button" data-file-trigger="${kind}">${selfie ? 'Снять селфи камерой' : 'Выберите файл'}</button><button class="cabinet-file-preview" type="button" data-file-preview="${kind}" disabled>Файл не выбран</button><button class="cabinet-file-remove" type="button" data-file-remove="${kind}" hidden>Удалить</button></div></div>`;
+}
+function videoControl(kind) {
+  return `<div class="cabinet-file-control"><input id="document-${kind}" name="${kind}" type="file" accept="video/mp4,video/quicktime" capture="environment" hidden><div><button class="cabinet-file-choose" type="button" data-file-trigger="${kind}">Снять или выбрать видео</button><button class="cabinet-file-preview" type="button" data-file-preview="${kind}" disabled>Видео не выбрано</button><button class="cabinet-file-remove" type="button" data-file-remove="${kind}" hidden>Удалить</button></div><p class="cabinet-video-hint" data-video-hint="${kind}"></p></div>`;
 }
 
 function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequired = false, promos = []) {
@@ -493,6 +509,27 @@ rentalsEl?.addEventListener('change', event => {
   preview.textContent = file ? `Открыть: ${file.name}` : 'Файл не выбран';
   const remove = input.closest('.cabinet-file-control')?.querySelector('[data-file-remove]');
   if (remove) remove.hidden = !file;
+  const hint = input.closest('.cabinet-file-control')?.querySelector('[data-video-hint]');
+  delete input.dataset.videoTooLong;
+  if (hint) hint.textContent = '';
+  if (file?.type?.startsWith('video/')) {
+    const objectUrl = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    video.onloadedmetadata = () => {
+      const seconds = Math.round(video.duration || 0);
+      URL.revokeObjectURL(objectUrl);
+      if (!seconds) return;
+      if (seconds > 30) {
+        input.dataset.videoTooLong = '1';
+        if (hint) hint.textContent = `Видео длится ${seconds} сек. Снимите ролик до 30 секунд.`;
+      } else if (hint) {
+        hint.textContent = `Длительность: ${seconds} сек. · Размер: ${(file.size / 1024 / 1024).toFixed(1)} МБ из 50 МБ.`;
+      }
+    };
+    video.onerror = () => { URL.revokeObjectURL(objectUrl); if (hint) hint.textContent = 'Не удалось определить длительность — проверьте, что ролик короткий и меньше 50 МБ.'; };
+    video.src = objectUrl;
+  }
 });
 rentalsEl?.addEventListener('submit', async event => {
   const documentForm = event.target.closest('[data-document-upload]');
@@ -513,6 +550,8 @@ rentalsEl?.addEventListener('submit', async event => {
       if (!isReplacement) await request('POST', { action:'accept_offer', orderId:documentForm.dataset.order });
       for (let index = 0; index < files.length; index += 1) {
         const { kind, file } = files[index];
+        const input = documentForm.elements[kind];
+        if (['issue_video', 'return_video'].includes(kind) && input?.dataset.videoTooLong === '1') throw new Error('Снимите видео короче 30 секунд и выберите его заново.');
         const selectedType = kind === 'supporting' ? documentForm.elements.supportingType.value : '';
         const fileName = selectedType ? `${selectedType} — ${file.name}` : file.name;
         button.textContent = `Загружаем ${index + 1}/${files.length}…`;
