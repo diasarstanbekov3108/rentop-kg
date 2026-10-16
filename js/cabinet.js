@@ -29,6 +29,7 @@ let supportWhatsappUrl = '';
 let offerSmsConsentRequired = false;
 let customerPromos = [];
 let cabinetOrders = [];
+let customerProfile = null;
 const ARCHA_LOCATIONS = [
   { value:'Bishkek Park — Киевская улица, 148, этаж B2', hours:'ежедневно 10:00–22:00', map:'https://2gis.kg/bishkek/search/%D0%9F%D0%BE%D1%81%D1%82%D0%B0%D0%BC%D0%B0%D1%82%D1%8B/rubricId/95584/firm/70000001092731465/74.589874%2C42.874488' },
   { value:'Гипермаркет «Азия» — ул. Максима Горького, 1/2а', hours:'круглосуточно', map:'https://2gis.kg/bishkek/firm/70000001092731520' },
@@ -300,7 +301,8 @@ function panelMarkup(kind, orderId, documentState = {}) {
     const offer = replacement ? '' : `<div class="cabinet-offer-compact"><button class="cabinet-action secondary" type="button" data-open-offer="true">Открыть договор-оферту</button><label class="cabinet-document-consent"><input name="offerConsent" type="checkbox" required><span>Я ознакомился(лась) с публичной офертой и принимаю её условия.</span></label>${smsConsent}</div>`;
     const warnings = replacement ? '' : `<details class="cabinet-safety-notice"><summary>Важно о документах и технике</summary><p>Подделка, использование чужих или заведомо недостоверных документов может повлечь ответственность по законодательству Кыргызской Республики. Rentop проверяет документы до выдачи.</p><p>На выдаваемом оборудовании установлены средства контроля местонахождения и целостности, включая GPS-трекеры и гарантийные пломбы. Несанкционированное вскрытие, нарушение пломб или попытка отключить средства контроля считаются нарушением правил эксплуатации и могут повлечь штраф, возмещение ущерба и обращение в уполномоченные органы.</p></details>`;
     const orderComment = replacement ? '' : `<label>Комментарий к заявке <span>необязательно</span></label><textarea name="orderComment" maxlength="1000" placeholder="Например: цель аренды, пожелания по комплектации или вопрос менеджеру"></textarea>`;
-    return `<form class="cabinet-inline-form cabinet-documents-form" data-document-upload="true" data-document-replacement="${replacement ? '1' : ''}" data-required-kinds="${requiredKinds.join(',')}" data-order="${orderId}"><label>${replacement ? 'Прикрепите исправленный документ' : 'Подтвердите данные для заявки'}</label><p>${replacement ? 'Менеджер открыл замену для отмеченного файла. После повторной загрузки заявка снова уйдёт на проверку.' : 'Документы увидит только команда Rentop для проверки заявки. Допустимы JPG, PNG или PDF до 8 МБ.'}</p>${kinds.map(fileControl).join('')}${orderComment}${offer}${warnings}<label class="cabinet-document-consent"><input name="documentConsent" type="checkbox" required><span>Согласен(на) на передачу документов команде Rentop исключительно для проверки заявки и оформления договора.</span></label><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">${replacement ? 'Отправить замену' : 'Отправить на проверку'}</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>После отправки повторная загрузка будет заблокирована до решения менеджера.</p></form>`;
+    const profileField = replacement || customerProfile?.full_name ? '' : `<label>ФИО для договора <span>заполняется один раз</span></label><input name="fullName" autocomplete="name" placeholder="Фамилия Имя Отчество" required>`;
+    return `<form class="cabinet-inline-form cabinet-documents-form" data-document-upload="true" data-document-replacement="${replacement ? '1' : ''}" data-required-kinds="${requiredKinds.join(',')}" data-order="${orderId}"><label>${replacement ? 'Прикрепите исправленный документ' : 'Подтвердите данные для заявки'}</label><p>${replacement ? 'Менеджер открыл замену для отмеченного файла. После повторной загрузки заявка снова уйдёт на проверку.' : 'Документы увидит только команда Rentop для проверки заявки. Допустимы JPG, PNG или PDF до 8 МБ.'}</p>${profileField}${kinds.map(fileControl).join('')}${orderComment}${offer}${warnings}<label class="cabinet-document-consent"><input name="documentConsent" type="checkbox" required><span>Согласен(на) на передачу документов команде Rentop исключительно для проверки заявки и оформления договора.</span></label><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">${replacement ? 'Отправить замену' : 'Загрузить документы'}</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>После отправки повторная загрузка будет заблокирована до решения менеджера.</p></form>`;
   }
   if (kind === 'issue-video' || kind === 'return-video') {
     const documentKind = kind === 'issue-video' ? 'issue_video' : 'return_video';
@@ -324,6 +326,7 @@ function videoControl(kind) {
 }
 
 function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequired = false, promos = []) {
+  customerProfile = profile;
   offerSmsConsentRequired = Boolean(smsRequired);
   customerPromos = Array.isArray(promos) ? promos : [];
   cabinetOrders = Array.isArray(orders) ? orders : [];
@@ -560,6 +563,12 @@ rentalsEl?.addEventListener('submit', async event => {
     if (supporting && !documentForm.elements.supportingType?.value) return message('Выберите, какой официальный документ вы прикрепляете.', 'error');
     button.disabled = true;
     try {
+      const fullName = String(documentForm.elements.fullName?.value || '').trim();
+      if (!isReplacement && !customerProfile?.full_name) {
+        if (!fullName) throw new Error('Укажите ФИО для договора в этой форме.');
+        const saved = await request('POST', { action:'save_profile', fullName });
+        customerProfile = saved.profile || { full_name:fullName };
+      }
       const orderComment = String(documentForm.elements.orderComment?.value || '').trim();
       if (orderComment.length >= 3) await request('POST', { action:'save_order_comment', orderId:documentForm.dataset.order, message:orderComment });
       if (!isReplacement) await request('POST', { action:'accept_offer', orderId:documentForm.dataset.order });
