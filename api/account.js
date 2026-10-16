@@ -129,14 +129,14 @@ export default async function handler(request, response) {
       if (payload.action === 'request_offer_sms_consent') {
         if (!order.offer_accepted_at) return json(response, 409, { error:'Сначала откройте оферту и подтвердите, что ознакомились с её условиями.' });
         if (order.offer_otp_verified_at) return json(response, 200, { ok:true, alreadyVerified:true });
-        if (!config.offerOtpHmacSecret || !config.nikitaSms.enabled) return json(response, 503, { error:'SMS-подтверждение оферты ещё настраивается. Менеджер не сможет перевести заявку к выдаче без этого шага после его включения.' });
+        if (!config.offerOtpHmacSecret || !config.nikitaSms.enabled) return json(response, 503, { error:'Подтверждение оферты одноразовым кодом ещё настраивается. Менеджер не сможет перевести заявку к выдаче без этого шага после его включения.' });
         if (order.offer_otp_expires_at && new Date(order.offer_otp_expires_at).getTime() > Date.now() - (OTP_TTL_MS - 60_000)) return json(response, 429, { error:'Код уже отправлен. Подождите минуту перед повторной отправкой.' });
         const otp = code();
         const expiresAt = new Date(Date.now() + OTP_TTL_MS).toISOString();
         await database.updateOrder(order.id, { offer_otp_hash:hash(config.offerOtpHmacSecret, `${order.id}:${otp}`), offer_otp_expires_at:expiresAt, offer_otp_attempts:0 });
         await createNikitaSmsClient(config.nikitaSms).send({ phone:session.phone, text:`RENTOP.KG: код подтверждения оферты ${otp}. Код действует 10 минут. Никому не сообщайте его.` });
-        await database.createEvent({ order_id:order.id, event_type:'offer_sms_code_sent_from_cabinet', actor_type:'customer', metadata:{ offer_version:order.offer_version || config.offerVersion, expires_at:expiresAt } });
-        return json(response, 200, { ok:true, expiresAt });
+        await database.createEvent({ order_id:order.id, event_type:'offer_sms_code_sent_from_cabinet', actor_type:'customer', metadata:{ offer_version:order.offer_version || config.offerVersion, expires_at:expiresAt, delivery_channel:config.nikitaOtpChannel } });
+        return json(response, 200, { ok:true, expiresAt, deliveryChannel:config.nikitaOtpChannel });
       }
       if (payload.action === 'verify_offer_sms_consent') {
         const otp = String(payload.code || '').replace(/\D/g, '');
@@ -148,7 +148,7 @@ export default async function handler(request, response) {
         const received = Buffer.from(hash(config.offerOtpHmacSecret, `${order.id}:${otp}`), 'hex');
         if (expected.length !== received.length || !timingSafeEqual(expected, received)) {
           await database.updateOrder(order.id, { offer_otp_attempts:Number(order.offer_otp_attempts || 0) + 1 });
-          return json(response, 400, { error:'Неверный код. Проверьте SMS и попробуйте снова.' });
+          return json(response, 400, { error:'Неверный код. Проверьте сообщение с кодом и попробуйте снова.' });
         }
         const verifiedAt = new Date().toISOString();
         await database.updateOrder(order.id, { offer_otp_verified_at:verifiedAt, offer_otp_hash:null, offer_otp_expires_at:null, offer_consent_ip:clientIp(request) || null, offer_consent_user_agent:String(request.headers['user-agent'] || '').slice(0, 300) || null });
@@ -197,7 +197,7 @@ export default async function handler(request, response) {
         const byteSize = Number(payload.byteSize);
         const fileName = String(payload.fileName || 'document').replace(/[\\/\0]/g, '_').slice(0, 180);
         if (!order.offer_accepted_at) return json(response, 409, { error:'Перед отправкой документов ознакомьтесь и согласитесь с публичной офертой.' });
-        if (config.offerSmsConsentRequired && !order.offer_otp_verified_at) return json(response, 409, { error:'Подтвердите согласие с офертой одноразовым SMS-кодом.' });
+        if (config.offerSmsConsentRequired && !order.offer_otp_verified_at) return json(response, 409, { error:'Подтвердите согласие с офертой одноразовым кодом.' });
         if (!DOCUMENT_TYPES.has(kind) || !path.startsWith(`${order.id}/${kind}/`) || !DOCUMENT_MIME_TYPES.has(contentType) || !Number.isInteger(byteSize) || byteSize < 1 || byteSize > MAX_DOCUMENT_BYTES) {
           return json(response, 400, { error:'Не удалось зарегистрировать документ.' });
         }
@@ -287,20 +287,20 @@ export default async function handler(request, response) {
     }
     const phone = `+${normalizeKyrgyzPhone(payload.phone)}`;
     if (payload.action === 'request_code') {
-      if (!config.nikitaSms.enabled) return json(response, 503, { error:'SMS-подтверждение ещё подключается. Попробуйте после запуска Nikita SMS.' });
+      if (!config.nikitaSms.enabled) return json(response, 503, { error:'Подтверждение одноразовым кодом ещё подключается. Попробуйте после запуска Nikita.' });
       const recent = await database.getRecentCabinetChallenge(phone);
       if (recent && new Date(recent.created_at).getTime() > Date.now() - 60_000) return json(response, 429, { error:'Код уже отправлен. Подождите минуту перед повторной отправкой.' });
       const otp = code();
       await database.createCabinetChallenge({ phone, code_hash:hash(secret, `${phone}:${otp}`), expires_at:new Date(Date.now()+OTP_TTL_MS).toISOString() });
       await createNikitaSmsClient(config.nikitaSms).send({ phone, text:`RENTOP.KG: код входа ${otp}. Никому не сообщайте код. Он действует 10 минут.` });
-      return json(response, 200, { ok:true });
+      return json(response, 200, { ok:true, deliveryChannel:config.nikitaOtpChannel });
     }
     if (payload.action === 'verify_code') {
       const otp = String(payload.code || '').replace(/\D/g, ''); if (!/^\d{6}$/.test(otp)) return json(response, 400, { error:'Код должен состоять из 6 цифр.' });
       const challenge = await database.getRecentCabinetChallenge(phone); if (!challenge || challenge.consumed_at || new Date(challenge.expires_at) <= now) return json(response, 400, { error:'Код истёк. Запросите новый.' });
       if (Number(challenge.attempts) >= 5) return json(response, 429, { error:'Слишком много попыток. Запросите новый код.' });
       const expected = Buffer.from(challenge.code_hash, 'hex'); const received = Buffer.from(hash(secret, `${phone}:${otp}`), 'hex');
-      if (expected.length !== received.length || !timingSafeEqual(expected, received)) { await database.incrementCabinetChallenge(challenge.id, Number(challenge.attempts || 0) + 1); return json(response, 400, { error:'Неверный код. Проверьте SMS и попробуйте снова.' }); }
+      if (expected.length !== received.length || !timingSafeEqual(expected, received)) { await database.incrementCabinetChallenge(challenge.id, Number(challenge.attempts || 0) + 1); return json(response, 400, { error:'Неверный код. Проверьте сообщение с кодом и попробуйте снова.' }); }
       await database.consumeCabinetChallenge(challenge.id);
       const raw = randomBytes(32).toString('base64url');
       const sessionTtl = payload.remember === false ? SHORT_SESSION_TTL_MS : SESSION_TTL_MS;

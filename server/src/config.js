@@ -32,6 +32,10 @@ export function loadConfig(env = process.env) {
   const nikitaLogin = env.NIKITA_LOGIN || env.NIKITA_SMS_LOGIN || '';
   const nikitaPassword = env.NIKITA_PASSWORD || env.NIKITA_SMS_PASSWORD || '';
   const nikitaSender = env.NIKITA_SENDER_ID || env.NIKITA_SMS_SENDER || '';
+  const nikitaOtpChannel = String(env.NIKITA_OTP_CHANNEL || 'sms').trim().toLowerCase();
+  if (!['sms', 'whatsapp'].includes(nikitaOtpChannel)) {
+    throw new Error('NIKITA_OTP_CHANNEL должен быть sms или whatsapp.');
+  }
 
   return Object.freeze({
     port: Number(env.PORT || 3000),
@@ -55,6 +59,9 @@ export function loadConfig(env = process.env) {
       sender: nikitaSender,
       enabled: Boolean(nikitaLogin && nikitaPassword && nikitaSender)
     },
+    // Nikita configures WhatsApp routing on its side. The existing delivery
+    // request remains unchanged unless the provider supplies another endpoint.
+    nikitaOtpChannel,
     offerOtpHmacSecret: env.OFFER_OTP_HMAC_SECRET || '',
     customerOtpHmacSecret: env.CUSTOMER_OTP_HMAC_SECRET || '',
     managerPhone: String(env.RENTOP_MANAGER_PHONE || '').replace(/[^0-9+]/g, ''),
