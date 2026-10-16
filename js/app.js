@@ -403,17 +403,15 @@ function updateOrderAuthUi() {
   const signedIn = Boolean(cabinetSession?.authenticated);
   const nameInput = document.getElementById('user-name');
   const verifiedName = String(cabinetSession?.profile?.full_name || '').trim();
-  const legacyName = String((cabinetSession?.orders || []).find(order => String(order.customer_name || '').trim())?.customer_name || '').trim();
   if (nameInput) {
     if (signedIn && verifiedName) nameInput.value = verifiedName;
-    else if (signedIn && legacyName && !nameInput.value.trim()) nameInput.value = legacyName;
     nameInput.readOnly = Boolean(signedIn && verifiedName);
-    nameInput.required = !(signedIn && verifiedName);
+    nameInput.required = !signedIn;
     nameInput.title = signedIn && verifiedName
       ? 'ФИО берётся из личного кабинета. Для исправления откройте личный кабинет.'
-      : legacyName ? 'ФИО подставлено из прежней заявки. Проверьте и при необходимости исправьте перед оформлением.' : '';
+      : '';
   }
-  if (orderNameGroup) orderNameGroup.hidden = Boolean(signedIn && verifiedName);
+  if (orderNameGroup) orderNameGroup.hidden = signedIn;
   const phoneInput = document.getElementById('user-phone');
   if (phoneInput) {
     phoneInput.hidden = signedIn;
@@ -423,7 +421,7 @@ function updateOrderAuthUi() {
   if (orderPhoneLabel) orderPhoneLabel.textContent = signedIn ? 'Вы оформляете заявку с профиля' : 'Номер телефона / WhatsApp';
   if (cabinetOrderPhone) {
     cabinetOrderPhone.hidden = !signedIn;
-    cabinetOrderPhone.textContent = signedIn ? `${verifiedName || 'Укажите ФИО выше'} · ${cabinetSession.phone}` : '';
+    cabinetOrderPhone.textContent = signedIn ? `${verifiedName || 'ФИО заполните в личном кабинете перед отправкой документов'} · ${cabinetSession.phone}` : '';
   }
   if (submitBtn && !submitInFlight) submitBtn.textContent = signedIn ? 'Продолжить оформление' : 'Войти и продолжить';
 }

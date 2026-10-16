@@ -24,8 +24,9 @@ function sessionHash(secret, token) {
   return createHmac('sha256', secret).update(token).digest('hex');
 }
 
-function normalizeFullName(value) {
+function normalizeFullName(value, required = true) {
   const fullName = String(value || '').trim().replace(/\s+/g, ' ');
+  if (!fullName && !required) return null;
   const parts = fullName.split(' ').filter(Boolean);
   if (parts.length < 3 || parts.some((part) => part.length < 2)) {
     throw new Error('Для оформления укажите полные ФИО: фамилию, имя и отчество. На этом шаге документы ещё не проверяются.');
@@ -51,7 +52,8 @@ export default async function handler(request, response) {
       return response.status(401).json({ error: 'Сначала войдите в личный кабинет.', code: 'AUTH_REQUIRED' });
     }
     const payload = request.body || {};
-    const fullName = normalizeFullName(payload.customerName);
+    const profile = await database.getCustomerProfile(session.phone).catch(() => null);
+    const fullName = profile?.full_name || normalizeFullName(payload.customerName, false);
     const laptopId = Number(payload.laptopId);
     if (!Number.isFinite(laptopId) || !['delivery', 'pickup', 'arca_locker'].includes(payload.deliveryType)) throw new Error('Некорректные данные заявки.');
     if (payload.deliveryType === 'arca_locker' && !payload.lockerAddress) throw new Error('Выберите локацию ARCHA POINT.');
@@ -74,11 +76,11 @@ export default async function handler(request, response) {
       locker_address: payload.lockerAddress || null,
       client_token: token
     });
-    await database.saveCustomerProfile({ phone:session.phone, full_name:fullName });
+    if (fullName && !profile?.full_name) await database.saveCustomerProfile({ phone:session.phone, full_name:fullName });
     const bot = createTelegramApi(config.telegramBotToken);
     await bot.sendMessage(config.adminChatId,
       `🆕 Новая заявка с сайта\n\nЗаявка ${order.id.slice(0, 8).toUpperCase()}\n` +
-      `${laptop.title}\nКлиент: ${fullName}\nТелефон: ${session.phone}\n` +
+      `${laptop.title}\nКлиент: ${fullName || 'ФИО заполняется в кабинете'}\nТелефон: ${session.phone}\n` +
       `Срок: ${payload.startDate} — ${payload.endDate}\nСумма: ${rental.total} сом\nПолучение: ${payload.deliveryType}`
     ).catch((error) => console.error('Manager notification failed:', error.message));
     return response.status(201).json({ orderId: order.id, accountUrl: `/account?created=${encodeURIComponent(order.id)}` });

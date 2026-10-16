@@ -111,6 +111,9 @@ export default async function handler(request, response) {
       const order = await database.getOrder(String(payload.orderId || ''));
       if (!order || order.customer_phone !== session.phone) return json(response, 404, { error:'Заявка не найдена.' });
       if (payload.action === 'accept_offer') {
+        const profile = await database.getCustomerProfile(session.phone).catch(() => null);
+        const nameParts = String(profile?.full_name || '').trim().split(/\s+/).filter(Boolean);
+        if (nameParts.length < 3 || nameParts.some((part) => part.length < 2)) return json(response, 409, { error:'Перед отправкой документов заполните ФИО в верхней части личного кабинета.' });
         if (order.offer_accepted_at) return json(response, 200, { ok:true, acceptedAt:order.offer_accepted_at, offerVersion:order.offer_version, smsRequired:config.offerSmsConsentRequired, smsVerified:Boolean(order.offer_otp_verified_at) });
         const acceptedAt = new Date().toISOString();
         const offerVersion = String(config.offerVersion || '2026-09-30').slice(0, 80);
