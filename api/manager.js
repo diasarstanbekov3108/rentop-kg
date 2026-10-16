@@ -369,10 +369,20 @@ export default async function handler(request, response) {
         bank_payload:{ source:'manager_manual_confirmation', reference },
         paid_at:now
       });
-      const updatedOrder = order.status === 'awaiting_payment'
-        ? await database.updateOrder(order.id, { status:'confirmed', payment_channel:'bakai_manual_review', payment_receipt_received_at:now, payment_confirmed_at:now })
-        : order;
-      await database.createEvent({ order_id:order.id, event_type:'bakai_payment_manually_confirmed_from_web', actor_type:'manager', metadata:{ operation_id:payment.operation_id, reference, amount:payment.amount } }).catch(error => console.error('Manual Bakai payment audit event failed:', error.message));
+      let updatedOrder = order;
+      if (payment.purpose === 'extension' && payment.proposed_return_date) {
+        const start = new Date(`${order.rental_start_date}T00:00:00Z`);
+        const end = new Date(`${payment.proposed_return_date}T00:00:00Z`);
+        const rentalDays = Math.max(1, Math.round((end - start) / 86_400_000));
+        updatedOrder = await database.updateOrder(order.id, { rental_end_date:payment.proposed_return_date, rental_days:rentalDays });
+        if (payment.request_id) await database.updateCustomerRequest(payment.request_id, { status:'resolved', resolved_at:now });
+        await database.createEvent({ order_id:order.id, event_type:'bakai_extension_payment_manually_confirmed_from_web', actor_type:'manager', metadata:{ operation_id:payment.operation_id, reference, amount:payment.amount, proposed_return_date:payment.proposed_return_date } }).catch(error => console.error('Manual Bakai extension payment audit failed:', error.message));
+      } else {
+        updatedOrder = order.status === 'awaiting_payment'
+          ? await database.updateOrder(order.id, { status:'confirmed', payment_channel:'bakai_manual_review', payment_receipt_received_at:now, payment_confirmed_at:now })
+          : order;
+        await database.createEvent({ order_id:order.id, event_type:'bakai_payment_manually_confirmed_from_web', actor_type:'manager', metadata:{ operation_id:payment.operation_id, reference, amount:payment.amount } }).catch(error => console.error('Manual Bakai payment audit event failed:', error.message));
+      }
       return reply(response, 200, { ok:true, payment:updatedPayment, order:updatedOrder });
     }
     return reply(response, 400, { error:'Неизвестное действие.' });

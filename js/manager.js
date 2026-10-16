@@ -26,7 +26,13 @@ const statusLabel = status => ({ draft:'Новая заявка', pending_review
 const docLabel = kind => ({ identity:'Документ', identity_front:'Документ — лицевая сторона', identity_back:'Документ — обратная сторона', selfie:'Селфи', supporting:'Подтверждение', issue_video:'Видео до получения', return_video:'Видео возврата' }[kind] || 'Документ');
 const canDelete = order => ['draft', 'pending_review', 'awaiting_payment', 'payment_review', 'confirmed', 'awaiting_archa_reservation', 'awaiting_locker_loading', 'awaiting_pickup', 'cancelled', 'rejected'].includes(order.status);
 const deliveryLabel = order => order.delivery_type === 'arca_locker' ? 'ARCHA POINT 24/7' : order.delivery_type === 'delivery' ? 'Доставка' : order.delivery_type === 'pickup' ? 'Самовывоз' : 'Уточняется';
-const nextAction = order => ({ pending_review:{ next:'awaiting_payment', label:'Перевести к оплате' }, return_requested:{ next:'returned', label:'Техника получена' }, awaiting_return_dropoff:{ next:'returned', label:'Техника возвращена в ячейку' }, returned:{ next:'completed', label:'Завершить аренду' } })[order.status] || null;
+const nextAction = order => {
+  if (order.status === 'pending_review') return { next:'awaiting_payment', label:'Перевести к оплате' };
+  if (order.status === 'return_requested') return { next:'returned', label:order.return_method === 'courier' ? 'Подтвердить получение от курьера' : 'Подтвердить приём на складе' };
+  if (order.status === 'awaiting_return_dropoff') return { next:'returned', label:'Подтвердить возврат из ячейки' };
+  if (order.status === 'returned') return { next:'completed', label:'Завершить после осмотра' };
+  return null;
+};
 
 function closeDocumentViewer() { if (!documentViewer) return; documentViewer.hidden = true; if (documentViewerContent) documentViewerContent.innerHTML = ''; document.body.style.overflow = ''; }
 function openDocumentViewer(url, name = 'Документ', contentType = '') { if (!documentViewer || !documentViewerContent || !url) return; const isPdf = contentType === 'application/pdf' || /\.pdf(?:[?#]|$)/i.test(name); const isVideo = contentType.startsWith('video/') || /\.(?:mp4|mov)(?:[?#]|$)/i.test(name); documentViewerContent.innerHTML = isVideo ? `<video controls preload="metadata" src="${escape(url)}">Ваш браузер не поддерживает просмотр видео.</video>` : isPdf ? `<iframe src="${escape(url)}" title="${escape(name)}"></iframe>` : `<img src="${escape(url)}" alt="${escape(name)}">`; documentViewer.hidden = false; document.body.style.overflow = 'hidden'; }
@@ -310,7 +316,8 @@ ordersEl.addEventListener('click', async event => {
     if (payload.action === 'advance_order') { const order = orders.find(item => item.id === payload.orderId); if (order) order.status = result.order?.status || payload.nextStatus; }
     if (payload.action === 'create_bakai_payment') { const order = orders.find(item => item.id === payload.orderId); if (order) order.payment = result.payment; }
     if (payload.action === 'revoke_bakai_payment') { const order = orders.find(item => item.id === payload.orderId); if (order) order.payment = result.payment; }
-    if (payload.action === 'confirm_bakai_payment_manually') { const order = orders.find(item => item.id === payload.orderId); if (order) { order.payment = result.payment; order.status = result.order?.status || 'confirmed'; } }
+    if (payload.action === 'confirm_bakai_payment_manually') { const order = orders.find(item => item.id === payload.orderId); if (order) { order.payment = result.payment; if (result.order) Object.assign(order, result.order); } }
+    if (payload.action === 'create_extension_bakai_payment') await load();
     if (['admin_close_rental_early','admin_open_incident'].includes(payload.action)) { const order = orders.find(item => item.id === payload.orderId); if (order && result.order) Object.assign(order, result.order); }
     if (payload.action === 'admin_resolve_incident') { const order = orders.find(item => item.id === payload.orderId); if (order && result.order) Object.assign(order, result.order); }
     if (payload.action === 'admin_update_laptop_asset') { orders.forEach(order => { if (order.laptop_id === payload.laptopId) { order.laptop_serial_number = result.laptop?.serial_number || ''; order.laptop_inventory_code = result.laptop?.inventory_code || ''; } }); }
