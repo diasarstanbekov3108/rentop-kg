@@ -159,6 +159,7 @@ function watchOrderUpdates(orders) {
       if (rentalsEl?.querySelector('.cabinet-request-panel:not([hidden])')) return;
       const fresh = await request('GET');
       if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos);
+      else showLogin();
     } catch { /* A manual refresh remains available if the network is offline. */ }
   }, 15000);
 }
@@ -246,7 +247,8 @@ function pickupInstruction(order) {
 }
 function actionPanel(order) {
   const canAct = order.status === 'in_use';
-  const openExtension = order.requests?.find(request => request.kind === 'extension' && ['open','in_progress'].includes(request.status));
+  const paidExtension = order.extensionPayment?.status === 'paid';
+  const openExtension = paidExtension ? null : order.requests?.find(request => request.kind === 'extension' && ['open','in_progress'].includes(request.status));
   const openReturn = order.requests?.find(request => request.kind === 'early_return' && ['open','in_progress'].includes(request.status));
   const docState = documentMode(order);
   const documentText = docState.mode === 'approved' ? 'Документы проверены' : docState.mode === 'submitted' ? 'Документы на проверке' : docState.mode === 'replacement' ? 'Заменить документ' : 'Документы и договор';
@@ -350,7 +352,7 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   supportWhatsappUrl = whatsappUrl || '';
   paymentByOrder = new Map(cabinetOrders.filter(order => order.payment || order.extensionPayment).map(order => [String(order.id), order.extensionPayment || order.payment]));
   if (activePaymentOrderId && paymentByOrder.get(activePaymentOrderId)?.status !== 'awaiting_payment') closePaymentDialog();
-  login.hidden = true; dashboard.hidden = false;
+  loading.hidden = true; login.hidden = true; dashboard.hidden = false;
   const fullName = String(profile?.full_name || '').trim();
   const hasValidProfileName = isValidFullName(fullName);
   document.getElementById('cabinet-greeting').textContent = fullName ? `Здравствуйте, ${fullName.split(' ')[1] || fullName}!` : 'Здравствуйте!';
@@ -373,15 +375,25 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
     window.setTimeout(() => window.location.assign('/?resume_booking=1'), 250);
   }
 }
+function showLogin() {
+  if (orderPollingTimer) window.clearInterval(orderPollingTimer);
+  if (paymentPollingTimer) window.clearInterval(paymentPollingTimer);
+  orderPollingTimer = null; paymentPollingTimer = null;
+  dashboard.hidden = true;
+  loading.hidden = true;
+  login.hidden = false;
+}
 async function loadSession() {
+  // The account and the login screen must never be visible together.
+  dashboard.hidden = true;
+  login.hidden = true;
+  loading.hidden = false;
   try {
     const data = await request('GET');
-    loading.hidden = true;
     if (data.authenticated) { showRentals(data.orders || [], data.phone, data.profile, data.whatsappUrl, data.offerSmsConsentRequired, data.promos); return; }
-    login.hidden = false;
+    showLogin();
   } catch {
-    loading.hidden = true;
-    login.hidden = false;
+    showLogin();
   }
 }
 
@@ -411,7 +423,7 @@ document.getElementById('cabinet-refresh')?.addEventListener('click', async even
 phoneForm?.addEventListener('submit', async event => { event.preventDefault(); const phone = formatPhone(phoneInput.value); if (!phone) return message('Введите номер Кыргызстана: +996XXXXXXXXX.', 'error'); const button = phoneForm.querySelector('button'); button.disabled = true; message('Отправляем код…'); try { await request('POST', { action:'request_code', phone }); pendingPhone = phone; phoneForm.hidden = true; codeForm.hidden = false; codeInput.focus(); message('Код отправлен. Введите 6 цифр из сообщения.', 'success'); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
 codeForm?.addEventListener('submit', async event => { event.preventDefault(); const code = codeInput.value.replace(/\D/g, ''); if (code.length !== 6) return message('Введите все 6 цифр кода.', 'error'); const button = codeForm.querySelector('button'); button.disabled = true; message('Проверяем код…'); try { const remember = document.getElementById('cabinet-remember')?.checked !== false; const data = await request('POST', { action:'verify_code', phone:pendingPhone, code, remember }); showRentals(data.orders || [], data.phone, data.profile, data.whatsappUrl, data.offerSmsConsentRequired, data.promos); message(''); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
 document.getElementById('change-phone')?.addEventListener('click', () => { codeForm.hidden = true; phoneForm.hidden = false; codeInput.value = ''; message(''); phoneInput.focus(); });
-document.getElementById('cabinet-logout')?.addEventListener('click', async () => { await request('POST', { action:'logout' }).catch(() => {}); dashboard.hidden = true; login.hidden = false; phoneForm.hidden = false; codeForm.hidden = true; phoneInput.value = ''; codeInput.value = ''; pendingPhone = ''; message('Вы вышли из кабинета.'); });
+document.getElementById('cabinet-logout')?.addEventListener('click', async () => { await request('POST', { action:'logout' }).catch(() => {}); showLogin(); phoneForm.hidden = false; codeForm.hidden = true; phoneInput.value = ''; codeInput.value = ''; pendingPhone = ''; message('Вы вышли из кабинета.'); });
 rentalsEl?.addEventListener('click', event => {
   const paymentButton = event.target.closest('[data-open-payment]');
   if (paymentButton) {
