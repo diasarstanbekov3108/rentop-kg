@@ -645,7 +645,7 @@ rentalsEl?.addEventListener('submit', async event => {
     const supporting = files.find(item => item.kind === 'supporting');
     if (supporting && !documentForm.elements.supportingType?.value) return formError('Выберите тип официального подтверждающего документа.');
     const residenceAddress = String(documentForm.elements.residenceAddress?.value || '').trim();
-    if (!isReplacement && residenceAddress.length < 8) return formError('Укажите полный адрес проживания: город, улица, дом и квартира (если есть).');
+    if (!isEvidence && !isReplacement && residenceAddress.length < 8) return formError('Укажите полный адрес проживания: город, улица, дом и квартира (если есть).');
     const fullName = String(documentForm.elements.fullName?.value || '').trim();
     if (!isReplacement && !isValidFullName(customerProfile?.full_name) && !isValidFullName(fullName)) return formError('Укажите фамилию, имя и отчество — как в документе.');
     const unsupported = files.find(({ file }) => !['image/jpeg', 'image/png', 'application/pdf', 'video/mp4', 'video/quicktime'].includes(contentTypeForFile(file)));
