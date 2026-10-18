@@ -98,7 +98,7 @@ export default async function handler(request, response) {
     if (request.method !== 'POST') return json(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
     if (payload.action === 'logout') { const raw = readCookie(request, COOKIE); if (raw) await database.revokeCabinetSession(hash(secret, raw)); response.setHeader('Set-Cookie', `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`); return json(response, 200, { ok:true }); }
-    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'delete_draft_document' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'request_offer_sms_consent' || payload.action === 'verify_offer_sms_consent' || payload.action === 'save_profile' || payload.action === 'extension_request' || payload.action === 'cancel_extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup' || payload.action === 'confirm_return_access_received' || payload.action === 'confirm_return_dropoff' || payload.action === 'submit_feedback') {
+    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'delete_draft_document' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'request_offer_sms_consent' || payload.action === 'verify_offer_sms_consent' || payload.action === 'save_profile' || payload.action === 'save_residence_address' || payload.action === 'extension_request' || payload.action === 'cancel_extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup' || payload.action === 'confirm_return_access_received' || payload.action === 'confirm_return_dropoff' || payload.action === 'submit_feedback') {
       const session = await verifySession();
       if (!session) return json(response, 401, { error:'Сессия истекла. Войдите в кабинет снова.', code:'AUTH_REQUIRED' });
       if (payload.action === 'save_profile') {
@@ -110,6 +110,17 @@ export default async function handler(request, response) {
       }
       const order = await database.getOrder(String(payload.orderId || ''));
       if (!order || order.customer_phone !== session.phone) return json(response, 404, { error:'Заявка не найдена.' });
+      if (payload.action === 'save_residence_address') {
+        if (order.status !== 'draft') return json(response, 409, { error:'Адрес уже зафиксирован в заявке. Для исправления обратитесь к менеджеру.' });
+        const residenceAddress = String(payload.residenceAddress || '').trim().replace(/\s+/g, ' ').slice(0, 500);
+        const supportingDocumentType = String(payload.supportingDocumentType || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+        if (residenceAddress.length < 8) return json(response, 400, { error:'Укажите полный адрес проживания: город, улица, дом и квартира (если есть).' });
+        if (supportingDocumentType.length < 3) return json(response, 400, { error:'Выберите тип официального подтверждающего документа.' });
+        const profile = await database.getCustomerProfile(session.phone).catch(() => null);
+        const updated = await database.updateOrder(order.id, { residence_address:residenceAddress, supporting_document_type:supportingDocumentType, customer_name:profile?.full_name || order.customer_name || null });
+        await database.createEvent({ order_id:order.id, event_type:'customer_saved_residence_address_from_cabinet', actor_type:'customer', metadata:{ supporting_document_type:supportingDocumentType, address_length:residenceAddress.length } });
+        return json(response, 200, { ok:true, order:updated });
+      }
       if (payload.action === 'accept_offer') {
         const profile = await database.getCustomerProfile(session.phone).catch(() => null);
         const nameParts = String(profile?.full_name || '').trim().split(/\s+/).filter(Boolean);
@@ -203,7 +214,7 @@ export default async function handler(request, response) {
         const uploaded = await database.listOrderDocuments(order.id);
         const latestKinds = new Set(uploaded.filter(item => item.status !== 'rejected').map(item => item.kind));
         const hasFront = latestKinds.has('identity_front') || latestKinds.has('identity');
-        if (hasFront && ['identity_back', 'selfie', 'supporting'].every(requiredKind => latestKinds.has(requiredKind)) && order.status === 'draft') {
+        if (hasFront && ['identity_back', 'selfie', 'supporting'].every(requiredKind => latestKinds.has(requiredKind)) && String(order.residence_address || '').trim().length >= 8 && String(order.supporting_document_type || '').trim().length >= 3 && order.status === 'draft') {
           await database.updateOrder(order.id, { status:'pending_review' });
         }
         await notifyDocumentManager(order, document);

@@ -8,8 +8,7 @@ const COOKIE = '__Host-rentop_session';
 const allowedDocumentStates = new Set(['accepted', 'rejected']);
 const removableStatuses = new Set(['draft', 'pending_review', 'awaiting_payment', 'payment_review', 'confirmed', 'awaiting_pickup', 'cancelled', 'rejected']);
 const statusTransitions = Object.freeze({
-  pending_review:['awaiting_payment'],
-  returned:['completed']
+  pending_review:['awaiting_payment']
 });
 function readCookie(request, name) { const source = String(request.headers.cookie || ''); return source.split(';').map(value => value.trim()).find(value => value.startsWith(`${name}=`))?.slice(name.length + 1) || ''; }
 function hash(secret, value) { return createHmac('sha256', secret).update(value).digest('hex'); }
@@ -94,8 +93,14 @@ export default async function handler(request, response) {
       const rentalPurpose = String(payload.rentalPurpose || '').trim().replace(/\s+/g, ' ').slice(0, 600);
       const managerNote = String(payload.managerNote || '').trim().slice(0, 2000);
       const returnConditionNote = String(payload.returnConditionNote || '').trim().slice(0, 2000);
-      const updated = await database.updateOrder(order.id, { rental_purpose:rentalPurpose || null, manager_note:managerNote || null, return_condition_note:returnConditionNote || null });
-      await database.createEvent({ order_id:order.id, event_type:'manager_updated_rental_registry_from_web', actor_type:'manager', metadata:{ has_rental_purpose:Boolean(rentalPurpose), has_manager_note:Boolean(managerNote), has_return_condition_note:Boolean(returnConditionNote) } }).catch(error => console.error('Manager registry audit event failed:', error.message));
+      const identityDocumentNumber = String(payload.identityDocumentNumber || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+      const identityDocumentIssuer = String(payload.identityDocumentIssuer || '').trim().replace(/\s+/g, ' ').slice(0, 240);
+      const hasIdentityPair = Boolean(identityDocumentNumber) || Boolean(identityDocumentIssuer);
+      if (hasIdentityPair && (identityDocumentNumber.length < 3 || identityDocumentIssuer.length < 3)) return reply(response, 400, { error:'Для проверки личности укажите и номер документа, и кем он выдан — строго по загруженному документу.' });
+      const patch = { rental_purpose:rentalPurpose || null, manager_note:managerNote || null, return_condition_note:returnConditionNote || null };
+      if (hasIdentityPair) Object.assign(patch, { identity_document_number:identityDocumentNumber, identity_document_issuer:identityDocumentIssuer, identity_verified_at:new Date().toISOString(), identity_verified_by:session.phone });
+      const updated = await database.updateOrder(order.id, patch);
+      await database.createEvent({ order_id:order.id, event_type:'manager_updated_rental_registry_from_web', actor_type:'manager', metadata:{ has_rental_purpose:Boolean(rentalPurpose), has_manager_note:Boolean(managerNote), has_return_condition_note:Boolean(returnConditionNote), identity_verified:hasIdentityPair } }).catch(error => console.error('Manager registry audit event failed:', error.message));
       return reply(response, 200, { ok:true, order:updated, message:'Внутренний реестр аренды сохранён.' });
     }
     if (payload.action === 'issue_loyalty_promo') {
@@ -226,6 +231,10 @@ export default async function handler(request, response) {
       const nextStatus = String(payload.nextStatus || '');
       if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
       if (!statusTransitions[order.status]?.includes(nextStatus)) return reply(response, 409, { error:'Этот переход недоступен для текущего статуса заявки.' });
+      if (nextStatus === 'awaiting_payment') {
+        if (String(order.residence_address || '').trim().length < 8 || String(order.supporting_document_type || '').trim().length < 3) return reply(response, 409, { error:'До оплаты клиент должен указать адрес проживания и загрузить обязательное подтверждение адреса, работы или учёбы.' });
+        if (String(order.identity_document_number || '').trim().length < 3 || String(order.identity_document_issuer || '').trim().length < 3 || !order.identity_verified_at) return reply(response, 409, { error:'Сначала сверьте паспорт/ID по файлам и сохраните в реестре номер документа и кем он выдан.' });
+      }
       if (['returned', 'completed'].includes(nextStatus)) {
         const documents = await database.listOrderDocuments(order.id);
         const returnVideo = documents.find(document => document.kind === 'return_video');
