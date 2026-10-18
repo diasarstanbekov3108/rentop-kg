@@ -79,7 +79,7 @@ function archaControls(order) {
   if (order.status === 'awaiting_return_reservation') return order.returnHandoffPrepared
     ? `<div class="manager-actions"><button class="secondary" data-return-sms-sent="${order.id}">Подтвердить: ARCHA отправил код возврата</button></div>`
     : `<div class="manager-actions"><button class="secondary" data-prepare-archa-return="${order.id}">Подготовить сообщение о возврате</button></div>`;
-  if (order.status === 'awaiting_return_dropoff') return `<div class="manager-request">Код возврата отмечен как отправленный. Ожидаем, пока клиент прикрепит видео, поместит ноутбук в ячейку и сам подтвердит закрытие. После этого заявка перейдёт в «Проверка возврата».</div>`;
+  if (order.status === 'awaiting_return_dropoff') return `<div class="manager-request">${order.locker_status === 'return_access_received' ? 'Клиент подтвердил получение SMS-кода.' : 'Код возврата отмечен как отправленный.'} Ожидаем, пока клиент прикрепит видео, поместит ноутбук в ячейку и сам подтвердит закрытие. После этого заявка перейдёт в «Проверка возврата».</div>`;
   return '';
 }
 

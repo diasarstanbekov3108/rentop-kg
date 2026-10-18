@@ -98,7 +98,7 @@ export default async function handler(request, response) {
     if (request.method !== 'POST') return json(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
     if (payload.action === 'logout') { const raw = readCookie(request, COOKIE); if (raw) await database.revokeCabinetSession(hash(secret, raw)); response.setHeader('Set-Cookie', `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`); return json(response, 200, { ok:true }); }
-    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'delete_draft_document' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'request_offer_sms_consent' || payload.action === 'verify_offer_sms_consent' || payload.action === 'save_profile' || payload.action === 'extension_request' || payload.action === 'cancel_extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup' || payload.action === 'confirm_return_dropoff' || payload.action === 'submit_feedback') {
+    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'delete_draft_document' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'request_offer_sms_consent' || payload.action === 'verify_offer_sms_consent' || payload.action === 'save_profile' || payload.action === 'extension_request' || payload.action === 'cancel_extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup' || payload.action === 'confirm_return_access_received' || payload.action === 'confirm_return_dropoff' || payload.action === 'submit_feedback') {
       const session = await verifySession();
       if (!session) return json(response, 401, { error:'Сессия истекла. Войдите в кабинет снова.', code:'AUTH_REQUIRED' });
       if (payload.action === 'save_profile') {
@@ -229,8 +229,17 @@ export default async function handler(request, response) {
         await database.createEvent({ order_id:order.id, event_type:'customer_confirmed_pickup_from_cabinet', actor_type:'customer', metadata:{} });
         return json(response, 200, { ok:true, order:updated, message:'Получение подтверждено. Аренда стала активной.' });
       }
+      if (payload.action === 'confirm_return_access_received') {
+        if (order.status !== 'awaiting_return_reservation' || order.return_method !== 'arca_locker' || order.locker_status !== 'return_pending') return json(response, 409, { error:'Этот этап возврата уже обновлён. Нажмите «Обновить заявки».' });
+        if (!await database.hasOrderEvent(order.id, 'manager_prepared_archa_return_handoff_from_web')) return json(response, 409, { error:'ARCHA POINT ещё не получил запрос на ячейку. Дождитесь следующего сообщения или обратитесь в поддержку.' });
+        const receivedAt = new Date().toISOString();
+        const updated = await database.updateOrder(order.id, { status:'awaiting_return_dropoff', locker_status:'return_access_received', return_access_sent_at:receivedAt });
+        await database.createEvent({ order_id:order.id, event_type:'customer_confirmed_archa_return_code_received_from_cabinet', actor_type:'customer', metadata:{} });
+        await notifyManager(`📩 Клиент подтвердил получение кода возврата ARCHA POINT\n\nЗаявка ${orderRef(order)} · ${laptop?.title || 'Ноутбук'}\nКлиент переходит к видео возврата и помещению устройства в ячейку.`);
+        return json(response, 200, { ok:true, order:updated, message:'Код отмечен. Снимите и прикрепите видео возврата, затем поместите ноутбук в ячейку.' });
+      }
       if (payload.action === 'confirm_return_dropoff') {
-        if (order.status !== 'awaiting_return_dropoff' || order.return_method !== 'arca_locker' || order.locker_status !== 'return_access_sent') return json(response, 409, { error:'Подтверждение доступно только после отправки кода возврата ARCHA POINT.' });
+        if (order.status !== 'awaiting_return_dropoff' || order.return_method !== 'arca_locker' || !['return_access_sent','return_access_received'].includes(String(order.locker_status || ''))) return json(response, 409, { error:'Подтверждение доступно только после получения кода возврата ARCHA POINT.' });
         const evidence = await database.listOrderDocuments(order.id);
         const returnVideo = evidence.find(document => document.kind === 'return_video' && document.status !== 'rejected');
         if (!returnVideo) return json(response, 409, { error:'Сначала прикрепите короткое видео состояния ноутбука и комплекта.' });

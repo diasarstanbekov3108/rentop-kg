@@ -286,7 +286,7 @@ function actionPanel(order) {
   }
   const returnVideo = (order.documents || []).find(document => document.kind === 'return_video' && document.status !== 'rejected');
   const returnMethod = openReturn?.return_method || order.return_method;
-  if (order.status === 'awaiting_return_reservation') return `${documents}<section class="cabinet-pickup-flow"><strong>Резервируем ячейку для возврата</strong><p>ARCHA POINT готовит ячейку в точке ${escape(order.return_locker_address || order.locker_address || 'из вашей заявки')}. Код доступа придёт напрямую от ARCHA POINT на номер из заявки. Не оставляйте ноутбук в постамате без кода.</p><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Код не приходит / помощь</button>${whatsapp}</div></section>`;
+  if (order.status === 'awaiting_return_reservation') return `${documents}<section class="cabinet-pickup-flow"><strong>Резервируем ячейку для возврата</strong><p>ARCHA POINT готовит ячейку в точке ${escape(order.return_locker_address || order.locker_address || 'из вашей заявки')}. Код придёт отдельным SMS напрямую на номер из заявки — не в личный кабинет. Как только SMS с кодом действительно пришла, нажмите кнопку ниже: откроется загрузка видео возврата.</p><div class="cabinet-actions"><button class="cabinet-action" data-return-access-received="${order.id}">Код из SMS получен</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Код не приходит / помощь</button>${whatsapp}</div></section>`;
   if (order.status === 'awaiting_return_dropoff') return `${documents}<section class="cabinet-pickup-flow is-ready"><strong>✓ Код возврата отправлен</strong><p>До помещения в ячейку снимите короткое видео ноутбука, корпуса, экрана, зарядки и комплекта. Затем используйте только код из сообщения ARCHA POINT и положите технику в назначенную ячейку.</p><ol><li>Снимите видео состояния и комплекта.</li><li>Прикрепите видео ниже.</li><li>Поместите устройство в ячейку по коду ARCHA POINT.</li><li>Только после закрытия ячейки нажмите «Ноутбук помещён».</li></ol><div class="cabinet-actions">${returnVideo ? `<span class="cabinet-request-state is-success">✓ Видео отправлено. После помещения ноутбука подтвердите это ниже.</span><button class="cabinet-action" data-confirm-return-dropoff="${order.id}">Ноутбук помещён в ячейку</button>` : `<button class="cabinet-action secondary" data-panel="return-video" data-order="${order.id}">Прикрепить видео возврата</button>`}<button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Проблема с возвратом</button></div></section>`;
   if (order.status === 'returned') return `${documents}<section class="cabinet-pickup-flow"><strong>Возврат подтверждён</strong><p>Мы получили вашу отметку о помещении ноутбука. Менеджер проверит видео, заберёт устройство из ячейки и проведёт итоговый осмотр. Аренда будет завершена только после этой проверки.</p><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Проблема с возвратом</button>${whatsapp}</div></section>`;
   if (order.status === 'return_requested') {
@@ -530,6 +530,15 @@ rentalsEl?.addEventListener('click', event => {
     request('POST', { action:'confirm_return_dropoff', orderId:returnDropoffConfirm.dataset.confirmReturnDropoff })
       .then(async result => { message(result.message, 'success'); const fresh = await request('GET'); if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos); })
       .catch(error => { message(error.message, 'error'); returnDropoffConfirm.disabled = false; });
+    return;
+  }
+  const returnAccessReceived = event.target.closest('[data-return-access-received]');
+  if (returnAccessReceived) {
+    if (!window.confirm('Нажимайте только если ARCHA POINT действительно прислал SMS с кодом возврата. После этого откроется загрузка видео.')) return;
+    returnAccessReceived.disabled = true;
+    request('POST', { action:'confirm_return_access_received', orderId:returnAccessReceived.dataset.returnAccessReceived })
+      .then(async result => { message(result.message, 'success'); const fresh = await request('GET'); if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos); })
+      .catch(error => { message(error.message, 'error'); returnAccessReceived.disabled = false; });
     return;
   }
   const button = event.target.closest('[data-panel]');
