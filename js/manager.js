@@ -31,7 +31,6 @@ const deliveryLabel = order => order.delivery_type === 'arca_locker' ? 'ARCHA PO
 const nextAction = order => {
   if (order.status === 'pending_review') return { next:'awaiting_payment', label:'Перевести к оплате' };
   if (order.status === 'return_requested') return { next:'returned', label:order.return_method === 'courier' ? 'Подтвердить получение от курьера' : 'Подтвердить приём на складе' };
-  if (order.status === 'awaiting_return_dropoff') return { next:'returned', label:'Подтвердить возврат из ячейки' };
   if (order.status === 'returned') return { next:'completed', label:'Завершить после осмотра' };
   return null;
 };
@@ -80,6 +79,7 @@ function archaControls(order) {
   if (order.status === 'awaiting_return_reservation') return order.returnHandoffPrepared
     ? `<div class="manager-actions"><button class="secondary" data-return-sms-sent="${order.id}">Подтвердить: ARCHA отправил код возврата</button></div>`
     : `<div class="manager-actions"><button class="secondary" data-prepare-archa-return="${order.id}">Подготовить сообщение о возврате</button></div>`;
+  if (order.status === 'awaiting_return_dropoff') return `<div class="manager-request">Код возврата отмечен как отправленный. Ожидаем, пока клиент прикрепит видео, поместит ноутбук в ячейку и сам подтвердит закрытие. После этого заявка перейдёт в «Проверка возврата».</div>`;
   return '';
 }
 

@@ -10,7 +10,6 @@ const removableStatuses = new Set(['draft', 'pending_review', 'awaiting_payment'
 const statusTransitions = Object.freeze({
   pending_review:['awaiting_payment'],
   return_requested:['returned'],
-  awaiting_return_dropoff:['returned'],
   returned:['completed']
 });
 function readCookie(request, name) { const source = String(request.headers.cookie || ''); return source.split(';').map(value => value.trim()).find(value => value.startsWith(`${name}=`))?.slice(name.length + 1) || ''; }
