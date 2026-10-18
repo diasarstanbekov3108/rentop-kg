@@ -30,8 +30,6 @@ const canDelete = order => ['draft', 'pending_review', 'awaiting_payment', 'paym
 const deliveryLabel = order => order.delivery_type === 'arca_locker' ? 'ARCHA POINT 24/7' : order.delivery_type === 'delivery' ? 'Доставка' : order.delivery_type === 'pickup' ? 'Самовывоз' : 'Уточняется';
 const nextAction = order => {
   if (order.status === 'pending_review') return { next:'awaiting_payment', label:'Перевести к оплате' };
-  if (order.status === 'return_requested') return { next:'returned', label:order.return_method === 'courier' ? 'Подтвердить получение от курьера' : 'Подтвердить приём на складе' };
-  if (order.status === 'returned') return { next:'completed', label:'Завершить после осмотра' };
   return null;
 };
 
@@ -126,7 +124,13 @@ function render() {
     const requestsPanel = order.requests.length ? `<section class="manager-section"><h3>Запросы клиента</h3><div class="manager-requests">${order.requests.map(request => `<div class="manager-request">${escape(request.kind)} · ${escape(request.status)}${request.return_method ? ` · ${escape(request.return_method)}` : ''}${request.return_locker_address ? ` · ${escape(request.return_locker_address)}` : ''}${request.customer_message ? ` · ${escape(request.customer_message)}` : ''}</div>`).join('')}</div></section>` : '';
     const directDocuments = pending ? documentsPanel : '';
     const details = `${pending ? '' : documentsPanel}${offerEvidence}${customerNote}${registry}${paymentState}${lockerInstruction(order)}${handoffPanel}${assetTools}${loyaltyAction}${adminTools}${requestsPanel}`;
-    const workflowActions = `${pending ? `<button class="secondary" data-reject-all="${order.id}">Отклонить все с причиной</button>` : ''}${extensionAction}${paymentAction}${manualPaymentAction}${archaControls(order)}${action ? `<button data-order-action="advance" data-order="${order.id}" data-next-status="${action.next}">${action.label}</button>` : ''}${canDelete(order) ? `<button class="danger" data-delete-order="${order.id}">Удалить тестовую заявку</button>` : ''}`;
+    const acceptedReturnVideo = order.documents.some(document => document.kind === 'return_video' && document.status === 'accepted');
+    const returnAcceptance = ['return_requested','returned'].includes(order.status)
+      ? (acceptedReturnVideo
+        ? `<button data-complete-return="${order.id}">Подтвердить приём и сформировать акт</button>`
+        : `<span class="manager-action-note">Ожидаем видео возврата от клиента. После его проверки появится подтверждение приёма и акт.</span>`)
+      : '';
+    const workflowActions = `${pending ? `<button class="secondary" data-reject-all="${order.id}">Отклонить все с причиной</button>` : ''}${extensionAction}${paymentAction}${manualPaymentAction}${archaControls(order)}${returnAcceptance}${action ? `<button data-order-action="advance" data-order="${order.id}" data-next-status="${action.next}">${action.label}</button>` : ''}${canDelete(order) ? `<button class="danger" data-delete-order="${order.id}">Удалить тестовую заявку</button>` : ''}`;
     return `<article class="manager-order" data-manager-order="${order.id}"><div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p></div><span class="manager-status-pill ${escape(order.status)}">${escape(statusLabel(order.status))}</span></div><div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда</span><strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(deliveryLabel(order))}${order.locker_address ? `<br><small>${escape(order.locker_address)}</small>` : ''}</strong></div><div><span>Сумма аренды</span><strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div><span>Залог / скидка</span><strong>${Number(order.deposit_amount || 0).toLocaleString('ru-RU')} сом · ${Number(order.discount_percent || 0)}%</strong></div></div>${directDocuments}${supportPanel}<div class="manager-actions manager-workflow-actions">${workflowActions || '<span class="manager-action-note">Следующее действие появится после обновления статуса.</span>'}</div><p class="manager-order-feedback" data-order-feedback="${order.id}" hidden></p><details class="manager-order-details" ${openOrderDetails.has(String(order.id)) ? 'open' : ''}><summary>Детали заявки, реестр и служебные данные</summary>${details}</details></article>`;
   }).join('') : '<div class="manager-empty">По этому фильтру заявок нет.</div>';
 }
@@ -190,6 +194,7 @@ ordersEl.addEventListener('click', async event => {
   const archaSmsSent = event.target.closest('[data-archa-sms-sent]');
   const manualPickupCode = event.target.closest('[data-manual-pickup-code]');
   const prepareArchaReturn = event.target.closest('[data-prepare-archa-return]');
+  const completeReturn = event.target.closest('[data-complete-return]');
   const adminClose = event.target.closest('[data-admin-close]');
   const adminIncident = event.target.closest('[data-admin-incident]');
   const adminResolveIncident = event.target.closest('[data-admin-resolve-incident]');
@@ -199,8 +204,8 @@ ordersEl.addEventListener('click', async event => {
   const resolveSupport = event.target.closest('[data-resolve-support]');
   const replySupport = event.target.closest('[data-reply-support]');
   const button = event.target.closest('[data-document], [data-order-action]');
-  if (!rejectAll && !deleteOrder && !createPayment && !createExtensionPayment && !revokePayment && !manualPayment && !prepareArcha && !recordArchaReservation && !markLockerLoaded && !archaSmsSent && !manualPickupCode && !prepareArchaReturn && !adminClose && !adminIncident && !adminResolveIncident && !saveAsset && !saveRegistry && !issuePromo && !resolveSupport && !replySupport && !button) return;
-  const target = rejectAll || deleteOrder || createPayment || createExtensionPayment || revokePayment || manualPayment || prepareArcha || recordArchaReservation || markLockerLoaded || archaSmsSent || manualPickupCode || prepareArchaReturn || adminClose || adminIncident || adminResolveIncident || saveAsset || saveRegistry || issuePromo || resolveSupport || replySupport || button;
+  if (!rejectAll && !deleteOrder && !createPayment && !createExtensionPayment && !revokePayment && !manualPayment && !prepareArcha && !recordArchaReservation && !markLockerLoaded && !archaSmsSent && !manualPickupCode && !prepareArchaReturn && !completeReturn && !adminClose && !adminIncident && !adminResolveIncident && !saveAsset && !saveRegistry && !issuePromo && !resolveSupport && !replySupport && !button) return;
+  const target = rejectAll || deleteOrder || createPayment || createExtensionPayment || revokePayment || manualPayment || prepareArcha || recordArchaReservation || markLockerLoaded || archaSmsSent || manualPickupCode || prepareArchaReturn || completeReturn || adminClose || adminIncident || adminResolveIncident || saveAsset || saveRegistry || issuePromo || resolveSupport || replySupport || button;
   if (target.disabled) return;
   const feedback = target.closest('.manager-order')?.querySelector('[data-order-feedback]');
   const showFeedback = (text, type = '') => { if (!feedback) return; feedback.textContent = text; feedback.className = `manager-order-feedback${type ? ` is-${type}` : ''}`; feedback.hidden = !text; };
@@ -263,6 +268,13 @@ ordersEl.addEventListener('click', async event => {
   } else if (prepareArchaReturn) {
     payload = { action:'prepare_archa_return_handoff', orderId:prepareArchaReturn.dataset.prepareArchaReturn };
     successMessage = 'Сообщение о возврате для ARCHA POINT подготовлено.';
+  } else if (completeReturn) {
+    const card = completeReturn.closest('.manager-order');
+    const returnConditionNote = card?.querySelector('[data-registry-return]')?.value?.trim() || '';
+    if (returnConditionNote.length < 3) { showFeedback('После осмотра заполните «Состояние при возврате» — корпус, экран, зарядка и комплектность.', 'error'); return; }
+    if (!window.confirm('Подтвердите: ноутбук физически получен, видео принято и состояние описано. Будет создан акт приёма-передачи и аренда завершится.')) return;
+    payload = { action:'complete_return_acceptance', orderId:completeReturn.dataset.completeReturn, returnConditionNote };
+    successMessage = 'Приём ноутбука и акт зафиксированы. Аренда завершена.';
   } else if (adminClose) {
     const reason = window.prompt('Причина досрочного завершения. Подтвердите, что ноутбук физически возвращён и видео принято:');
     if (!reason?.trim()) return;
@@ -330,6 +342,7 @@ ordersEl.addEventListener('click', async event => {
     if (payload.action === 'reject_all_documents') orders.forEach(order => { if (order.id === payload.orderId) order.documents.forEach(document => { if (document.status === 'pending_review') { document.status = 'rejected'; document.reviewer_note = payload.note; } }); });
     if (payload.action === 'review_document') orders.forEach(order => order.documents.forEach(document => { if (document.id === payload.documentId) { document.status = result.document?.status || payload.status; document.reviewer_note = payload.note || document.reviewer_note; if (result.order?.status) order.status = result.order.status; } }));
     if (payload.action === 'advance_order') { const order = orders.find(item => item.id === payload.orderId); if (order) order.status = result.order?.status || payload.nextStatus; }
+    if (payload.action === 'complete_return_acceptance') { const order = orders.find(item => item.id === payload.orderId); if (order && result.order) Object.assign(order, result.order); }
     if (payload.action === 'create_bakai_payment') { const order = orders.find(item => item.id === payload.orderId); if (order) order.payment = result.payment; }
     if (payload.action === 'revoke_bakai_payment') { const order = orders.find(item => item.id === payload.orderId); if (order) order.payment = result.payment; }
     if (payload.action === 'confirm_bakai_payment_manually') { const order = orders.find(item => item.id === payload.orderId); if (order) { order.payment = result.payment; if (result.order) Object.assign(order, result.order); } }

@@ -9,7 +9,6 @@ const allowedDocumentStates = new Set(['accepted', 'rejected']);
 const removableStatuses = new Set(['draft', 'pending_review', 'awaiting_payment', 'payment_review', 'confirmed', 'awaiting_pickup', 'cancelled', 'rejected']);
 const statusTransitions = Object.freeze({
   pending_review:['awaiting_payment'],
-  return_requested:['returned'],
   returned:['completed']
 });
 function readCookie(request, name) { const source = String(request.headers.cookie || ''); return source.split(';').map(value => value.trim()).find(value => value.startsWith(`${name}=`))?.slice(name.length + 1) || ''; }
@@ -238,6 +237,20 @@ export default async function handler(request, response) {
         : { status:nextStatus });
       await database.createEvent({ order_id:order.id, event_type:`manager_changed_status_to_${nextStatus}_from_web`, actor_type:'manager', metadata:{ previous_status:order.status } }).catch(error => console.error('Manager transition audit event failed:', error.message));
       return reply(response, 200, { ok:true, order:updated });
+    }
+    if (payload.action === 'complete_return_acceptance') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      const returnConditionNote = String(payload.returnConditionNote || '').trim().replace(/\s+/g, ' ').slice(0, 2000);
+      if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
+      if (!['return_requested','returned'].includes(order.status)) return reply(response, 409, { error:'Акт приёма доступен после запроса возврата или подтверждения помещения в ячейку.' });
+      if (returnConditionNote.length < 3) return reply(response, 400, { error:'Опишите состояние ноутбука после физического осмотра: корпус, экран, зарядка и комплектность.' });
+      const documents = await database.listOrderDocuments(order.id);
+      const returnVideo = documents.find(document => document.kind === 'return_video');
+      if (returnVideo?.status !== 'accepted') return reply(response, 409, { error:'Сначала примите видео возврата. Затем проверьте ноутбук физически.' });
+      const returnedAt = new Date().toISOString();
+      const updated = await database.updateOrder(order.id, { status:'completed', return_condition_note:returnConditionNote, returned_at:returnedAt });
+      await database.createEvent({ order_id:order.id, event_type:'manager_completed_return_with_acceptance_act_from_web', actor_type:'manager', metadata:{ previous_status:order.status, return_condition_note:returnConditionNote, accepted_at:returnedAt, manager_phone:session.phone } });
+      return reply(response, 200, { ok:true, order:updated, message:'Приём ноутбука и акт зафиксированы. Аренда завершена.' });
     }
     if (payload.action === 'prepare_archa_handoff') {
       const order = await database.getOrder(String(payload.orderId || ''));
