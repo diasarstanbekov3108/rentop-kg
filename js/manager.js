@@ -131,10 +131,16 @@ function render() {
   }).join('') : '<div class="manager-empty">По этому фильтру заявок нет.</div>';
 }
 
-async function load() { statusEl.textContent = 'Загружаем заявки…'; try { const data = await api(); orders = data.orders || []; isChiefAdmin = Boolean(data.isChiefAdmin); gate.hidden = true; dashboard.hidden = false; statusEl.textContent = `Обновлено: ${new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit'}).format(new Date())}`; render(); } catch (error) { dashboard.hidden = true; gate.hidden = error.status !== 401; statusEl.textContent = error.status === 401 ? '' : error.message; } }
+async function load(silent = false) { if (!silent) statusEl.textContent = 'Загружаем заявки…'; try { const data = await api(); orders = data.orders || []; isChiefAdmin = Boolean(data.isChiefAdmin); gate.hidden = true; dashboard.hidden = false; if (!silent) statusEl.textContent = `Обновлено: ${new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit'}).format(new Date())}`; render(); } catch (error) { dashboard.hidden = true; gate.hidden = error.status !== 401; statusEl.textContent = error.status === 401 ? '' : error.message; } }
 function setFilter(nextFilter) { filter = nextFilter; document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item.dataset.filter === filter)); render(); }
 
 document.getElementById('manager-refresh').addEventListener('click', load);
+window.setInterval(() => {
+  // Do not erase a manager's unsaved reply, registry note, or an expanded
+  // working card. The next automatic cycle will refresh when it is closed.
+  if (dashboard.hidden || document.querySelector('.manager-order-details[open], .manager-order textarea:focus, .manager-order input:focus, .manager-order select:focus')) return;
+  load(true);
+}, 15000);
 testBakaiButton?.addEventListener('click', async () => {
   testBakaiButton.disabled = true;
   const original = testBakaiButton.textContent;
