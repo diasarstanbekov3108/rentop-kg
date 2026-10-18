@@ -72,8 +72,8 @@ function archaControls(order) {
   if (order.status === 'awaiting_archa_reservation') return `<div class="manager-payment-create"><label>Код закладки ARCHA POINT<input data-archa-loading-code type="text" maxlength="200" placeholder="Код для менеджера"></label><label>Номер ячейки / комментарий<input data-archa-reference type="text" maxlength="200" placeholder="Необязательно"></label><button class="secondary" data-record-archa-reservation="${order.id}">Сохранить резерв ячейки</button></div>`;
   if (order.status === 'awaiting_locker_loading') return `<button class="secondary" data-mark-locker-loaded="${order.id}">Ноутбук помещён в ячейку</button>`;
   if (order.status === 'awaiting_pickup') return order.locker_status === 'access_sent'
-    ? `<div class="manager-request">✓ SMS-код отмечен как отправленный клиенту. В кабинете клиента открыт этап видео и подтверждения получения.</div><div class="manager-actions"><button class="secondary" data-manual-pickup-code="${order.id}">Повторно отправить код вручную</button></div>`
-    : `<div class="manager-actions"><button class="secondary" data-archa-sms-sent="${order.id}">Подтвердить: ARCHA уже отправил SMS</button><button class="secondary" data-manual-pickup-code="${order.id}">Отправить код клиенту вручную</button></div>`;
+    ? `<div class="manager-request">✓ Клиент сам подтвердил в кабинете получение SMS-кода ARCHA POINT. Теперь он проходит видео и подтверждение получения.</div><div class="manager-actions"><button class="secondary" data-manual-pickup-code="${order.id}">Повторно отправить код вручную</button></div>`
+    : `<div class="manager-request">Ноутбук помещён в ячейку. ARCHA POINT отправляет код напрямую клиенту; в кабинете клиента уже есть самостоятельная кнопка «Код из SMS получен». Менеджер не подтверждает получение SMS за клиента.</div><div class="manager-actions"><button class="secondary" data-manual-pickup-code="${order.id}">Отправить код вручную при сбое</button></div>`;
   if (order.status === 'awaiting_return_reservation') return order.returnHandoffPrepared
     ? `<div class="manager-request">Сообщение передано ARCHA POINT. Код возврата они отправляют напрямую клиенту. Когда клиент нажмёт «Код из SMS получен», заявка обновится здесь автоматически.</div>`
     : `<div class="manager-actions"><button class="secondary" data-prepare-archa-return="${order.id}">Подготовить сообщение о возврате</button></div>`;
@@ -258,9 +258,6 @@ ordersEl.addEventListener('click', async event => {
     if (!window.confirm('Подтвердите только после фактической закладки ноутбука, зарядки и комплекта в ячейку.')) return;
     payload = { action:'mark_locker_loaded', orderId:markLockerLoaded.dataset.markLockerLoaded };
     successMessage = 'Закладка зафиксирована. Ожидаем SMS-код клиенту от ARCHA POINT.';
-  } else if (archaSmsSent) {
-    payload = { action:'mark_archa_access_sent', orderId:archaSmsSent.dataset.archaSmsSent };
-    successMessage = 'Зафиксировано: ARCHA POINT сообщил, что отправил SMS. Rentop не отправлял код этой кнопкой.';
   } else if (manualPickupCode) {
     const code = window.prompt('Введите код получения, подтверждённый у ARCHA POINT. Он будет отправлен клиенту по SMS через Rentop:');
     if (!code?.trim()) return;
@@ -355,7 +352,7 @@ ordersEl.addEventListener('click', async event => {
     if (payload.action === 'save_order_registry') { const order = orders.find(item => item.id === payload.orderId); if (order && result.order) Object.assign(order, result.order); }
     if (payload.action === 'resolve_support_case') { const order = orders.find(item => item.id === payload.orderId); if (order) order.supportCases = (order.supportCases || []).map(item => item.kind === payload.kind ? { ...item, status:'resolved' } : item); }
     if (payload.action === 'reply_support_case') { const order = orders.find(item => item.id === payload.orderId); if (order && result.supportCase) order.supportCases = (order.supportCases || []).map(item => item.kind === payload.kind ? { ...item, ...result.supportCase } : item); }
-    if (['prepare_archa_handoff','record_archa_reservation','mark_locker_loaded','mark_archa_access_sent','send_manual_pickup_code'].includes(payload.action)) { const order = orders.find(item => item.id === payload.orderId); if (order && result.order) Object.assign(order, result.order); }
+    if (['prepare_archa_handoff','record_archa_reservation','mark_locker_loaded','send_manual_pickup_code'].includes(payload.action)) { const order = orders.find(item => item.id === payload.orderId); if (order && result.order) Object.assign(order, result.order); }
     if (payload.action === 'prepare_archa_return_handoff') { const order = orders.find(item => item.id === payload.orderId); if (order) order.returnHandoffPrepared = true; }
     if (['prepare_archa_handoff','prepare_archa_return_handoff'].includes(payload.action) && result.message) {
       transientOrderMessages.set(payload.orderId, result.message);

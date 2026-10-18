@@ -278,7 +278,7 @@ function actionPanel(order) {
       ? `<ol><li>Откройте ячейку кодом из SMS.</li><li>Снимите видео ноутбука, экрана, зарядки и комплекта.</li><li>Прикрепите видео и подтвердите получение.</li></ol>`
       : '';
     const primary = !accessSent
-      ? ''
+      ? `<button class="cabinet-action" data-pickup-access-received="${order.id}">Код из SMS получен</button>`
       : issueVideo
         ? `<button class="cabinet-action" data-confirm-pickup="${order.id}">Подтвердить получение</button>`
         : `<button class="cabinet-action" data-panel="issue-video" data-order="${order.id}">Прикрепить видео получения</button>`;
@@ -522,6 +522,15 @@ rentalsEl?.addEventListener('click', event => {
     request('POST', { action:'confirm_pickup', orderId:pickupConfirm.dataset.confirmPickup })
       .then(async result => { message(result.message, 'success'); const fresh = await request('GET'); if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos); })
       .catch(error => { message(error.message, 'error'); pickupConfirm.disabled = false; });
+    return;
+  }
+  const pickupAccessReceived = event.target.closest('[data-pickup-access-received]');
+  if (pickupAccessReceived) {
+    if (!window.confirm('Нажимайте только если ARCHA POINT действительно прислал SMS с кодом выдачи. После этого откроется загрузка видео получения.')) return;
+    pickupAccessReceived.disabled = true;
+    request('POST', { action:'confirm_pickup_access_received', orderId:pickupAccessReceived.dataset.pickupAccessReceived })
+      .then(async result => { message(result.message, 'success'); const fresh = await request('GET'); if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos); })
+      .catch(error => { message(error.message, 'error'); pickupAccessReceived.disabled = false; });
     return;
   }
   const returnDropoffConfirm = event.target.closest('[data-confirm-return-dropoff]');
