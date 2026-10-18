@@ -14,6 +14,7 @@ const managerLoginStatus = document.getElementById('manager-login-status');
 const clearTestsButton = document.getElementById('manager-clear-tests');
 const testBakaiButton = document.getElementById('manager-test-bakai');
 const bakaiCheck = document.getElementById('manager-bakai-check');
+const returnAlert = document.getElementById('manager-return-alert');
 let orders = [];
 let filter = 'all';
 let pendingManagerPhone = '';
@@ -49,10 +50,12 @@ function visibleOrders() {
   const query = String(searchInput?.value || '').trim().toLowerCase();
   return orders.filter(order => {
     if (query && !`${order.id} ${order.customer_name} ${order.customer_phone} ${order.laptop_title}`.toLowerCase().includes(query)) return false;
-    if (filter === 'new') return ['draft','pending_review','awaiting_payment','payment_review','confirmed','awaiting_archa_reservation','awaiting_locker_loading','awaiting_pickup','awaiting_return_reservation','awaiting_return_dropoff'].includes(order.status);
+    if (filter === 'new') return ['draft','pending_review','awaiting_payment','payment_review','confirmed','awaiting_archa_reservation','awaiting_locker_loading','awaiting_pickup'].includes(order.status);
     if (filter === 'documents') return order.documents.some(document => document.status === 'pending_review');
-    if (filter === 'active') return ['in_use','return_requested','awaiting_return_reservation','awaiting_return_dropoff','returned','incident'].includes(order.status);
-    if (filter === 'closed') return ['completed','cancelled','rejected'].includes(order.status);
+    if (filter === 'active') return ['in_use','incident'].includes(order.status);
+    if (filter === 'returns') return ['return_requested','awaiting_return_reservation','awaiting_return_dropoff','returned'].includes(order.status);
+    if (filter === 'completed') return order.status === 'completed';
+    if (filter === 'closed') return ['cancelled','rejected'].includes(order.status);
     return true;
   });
 }
@@ -74,7 +77,9 @@ function archaControls(order) {
   if (order.status === 'awaiting_pickup') return order.locker_status === 'access_sent'
     ? `<div class="manager-request">✓ SMS-код отмечен как отправленный клиенту. В кабинете клиента открыт этап видео и подтверждения получения.</div><div class="manager-actions"><button class="secondary" data-manual-pickup-code="${order.id}">Повторно отправить код вручную</button></div>`
     : `<div class="manager-actions"><button class="secondary" data-archa-sms-sent="${order.id}">Подтвердить: ARCHA уже отправил SMS</button><button class="secondary" data-manual-pickup-code="${order.id}">Отправить код клиенту вручную</button></div>`;
-  if (order.status === 'awaiting_return_reservation') return `<div class="manager-actions"><button class="secondary" data-prepare-archa-return="${order.id}">Подготовить сообщение о возврате</button><button class="secondary" data-return-sms-sent="${order.id}">ARCHA отправил код возврата</button></div>`;
+  if (order.status === 'awaiting_return_reservation') return order.returnHandoffPrepared
+    ? `<div class="manager-actions"><button class="secondary" data-return-sms-sent="${order.id}">Подтвердить: ARCHA отправил код возврата</button></div>`
+    : `<div class="manager-actions"><button class="secondary" data-prepare-archa-return="${order.id}">Подготовить сообщение о возврате</button></div>`;
   return '';
 }
 
@@ -82,12 +87,18 @@ function render() {
   openOrderDetails = new Set([...ordersEl.querySelectorAll('.manager-order-details[open]')].map(item => item.closest('[data-manager-order]')?.dataset.managerOrder).filter(Boolean));
   const list = visibleOrders();
   const pendingDocs = orders.reduce((total, order) => total + order.documents.filter(document => document.status === 'pending_review').length, 0);
-  const active = orders.filter(order => ['in_use','return_requested','awaiting_return_reservation','awaiting_return_dropoff','returned','incident'].includes(order.status)).length;
+  const active = orders.filter(order => ['in_use','incident'].includes(order.status)).length;
+  const returns = orders.filter(order => ['return_requested','awaiting_return_reservation','awaiting_return_dropoff','returned'].includes(order.status));
   const fresh = orders.filter(order => ['draft','pending_review','awaiting_payment','payment_review','confirmed','awaiting_archa_reservation','awaiting_locker_loading','awaiting_pickup'].includes(order.status)).length;
   const paidOrders = orders.filter(order => order.payment?.status === 'paid');
   const revenue = paidOrders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
   const deposits = paidOrders.reduce((sum, order) => sum + Number(order.deposit_amount || 0), 0);
-  statsEl.innerHTML = [[orders.length,'Всего заявок','all'],[fresh,'В работе','new'],[pendingDocs,'Документы на проверке','documents'],[active,'Активные аренды','active'],[`${revenue.toLocaleString('ru-RU')} сом`,'Выручка в реестре','all'],[`${deposits.toLocaleString('ru-RU')} сом`,'Залоги в учёте','all']].map(([value,label,key]) => `<button class="manager-stat ${filter === key ? 'is-active' : ''}" type="button" data-filter="${key}"><span>${label}</span><strong>${value}</strong></button>`).join('');
+  statsEl.innerHTML = [[orders.length,'Всего заявок','all'],[fresh,'В работе','new'],[pendingDocs,'Документы на проверке','documents'],[active,'Активные аренды','active'],[returns.length,'Возвраты требуют действий','returns'],[`${revenue.toLocaleString('ru-RU')} сом`,'Выручка в реестре','all'],[`${deposits.toLocaleString('ru-RU')} сом`,'Залоги в учёте','all']].map(([value,label,key]) => `<button class="manager-stat ${filter === key ? 'is-active' : ''}" type="button" data-filter="${key}"><span>${label}</span><strong>${value}</strong></button>`).join('');
+  if (returnAlert) {
+    const newest = returns[0];
+    returnAlert.hidden = !newest;
+    returnAlert.innerHTML = newest ? `<strong>↩ ${returns.length} возврат${returns.length === 1 ? '' : returns.length < 5 ? 'а' : 'ов'} требует действий</strong><span>Заявка ${escape(String(newest.id).slice(0,8).toUpperCase())} · ${escape(newest.customer_name || 'Клиент')} · ${escape(statusLabel(newest.status))}. Открыть возвраты →</span>` : '';
+  }
   ordersEl.innerHTML = list.length ? list.map(order => {
     const action = nextAction(order);
     const pending = order.documents.filter(document => document.status === 'pending_review').length;
@@ -156,6 +167,7 @@ clearTestsButton?.addEventListener('click', async () => {
 });
 document.querySelector('.manager-filters').addEventListener('click', event => { const button = event.target.closest('[data-filter]'); if (button) setFilter(button.dataset.filter); });
 statsEl.addEventListener('click', event => { const button = event.target.closest('[data-filter]'); if (button) setFilter(button.dataset.filter); });
+returnAlert?.addEventListener('click', () => { setFilter('returns'); document.querySelector('.manager-toolbar')?.scrollIntoView({ behavior:'smooth', block:'start' }); });
 searchInput?.addEventListener('input', render);
 ordersEl.addEventListener('click', async event => {
   const preview = event.target.closest('[data-document-view]');
@@ -327,6 +339,7 @@ ordersEl.addEventListener('click', async event => {
     if (payload.action === 'resolve_support_case') { const order = orders.find(item => item.id === payload.orderId); if (order) order.supportCases = (order.supportCases || []).map(item => item.kind === payload.kind ? { ...item, status:'resolved' } : item); }
     if (payload.action === 'reply_support_case') { const order = orders.find(item => item.id === payload.orderId); if (order && result.supportCase) order.supportCases = (order.supportCases || []).map(item => item.kind === payload.kind ? { ...item, ...result.supportCase } : item); }
     if (['prepare_archa_handoff','record_archa_reservation','mark_locker_loaded','mark_archa_access_sent','send_manual_pickup_code','mark_return_access_sent'].includes(payload.action)) { const order = orders.find(item => item.id === payload.orderId); if (order && result.order) Object.assign(order, result.order); }
+    if (payload.action === 'prepare_archa_return_handoff') { const order = orders.find(item => item.id === payload.orderId); if (order) order.returnHandoffPrepared = true; }
     if (['prepare_archa_handoff','prepare_archa_return_handoff'].includes(payload.action) && result.message) {
       transientOrderMessages.set(payload.orderId, result.message);
       navigator.clipboard?.writeText(result.message).catch(() => {});

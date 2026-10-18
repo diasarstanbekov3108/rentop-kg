@@ -39,12 +39,13 @@ export default async function handler(request, response) {
       if (String(request.query?.access || '') === '1') return reply(response, 200, { manager:true });
       const orders = await database.listRecentOrders(50);
       const hydrated = await Promise.all(orders.map(async order => {
-        const [laptop, documents, requests, payments, supportCases] = await Promise.all([
+        const [laptop, documents, requests, payments, supportCases, returnHandoffEvent] = await Promise.all([
           database.getLaptop(order.laptop_id),
           database.listOrderDocuments(order.id).catch(() => []),
           database.listCustomerRequests(order.id).catch(() => []),
           database.listOrderPayments(order.id).catch(() => []),
-          database.listOrderSupportCases(order.id).catch(() => [])
+          database.listOrderSupportCases(order.id).catch(() => []),
+          database.hasOrderEvent(order.id, 'manager_prepared_archa_return_handoff_from_web').catch(() => null)
         ]);
         const documentsWithLinks = await Promise.all(documents.map(async document => {
           const signed = await database.createSignedDocumentDownload(document.storage_path).catch(() => null);
@@ -60,7 +61,8 @@ export default async function handler(request, response) {
           requests,
           payment:(payments || []).find(payment => payment.purpose !== 'extension') || null,
           payments,
-          supportCases
+          supportCases,
+          returnHandoffPrepared:Boolean(returnHandoffEvent)
         };
       }));
       return reply(response, 200, { authenticated:true, managerPhone:session.phone, isChiefAdmin, orders:hydrated });
@@ -226,10 +228,10 @@ export default async function handler(request, response) {
       const nextStatus = String(payload.nextStatus || '');
       if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
       if (!statusTransitions[order.status]?.includes(nextStatus)) return reply(response, 409, { error:'Этот переход недоступен для текущего статуса заявки.' });
-      if (nextStatus === 'returned') {
+      if (['returned', 'completed'].includes(nextStatus)) {
         const documents = await database.listOrderDocuments(order.id);
         const returnVideo = documents.find(document => document.kind === 'return_video');
-        if (returnVideo?.status !== 'accepted') return reply(response, 409, { error:'До отметки возврата менеджер должен принять видео состояния устройства при возврате.' });
+        if (returnVideo?.status !== 'accepted') return reply(response, 409, { error:'До завершения возврата менеджер должен принять видео состояния устройства.' });
       }
       const updated = await database.updateOrder(order.id, nextStatus === 'awaiting_payment'
         ? { status:nextStatus, hold_expires_at:new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() }
@@ -291,6 +293,7 @@ export default async function handler(request, response) {
     if (payload.action === 'mark_return_access_sent') {
       const order = await database.getOrder(String(payload.orderId || ''));
       if (!order || order.status !== 'awaiting_return_reservation') return reply(response, 409, { error:'Нет ожидающего резервирования возврата.' });
+      if (!await database.hasOrderEvent(order.id, 'manager_prepared_archa_return_handoff_from_web')) return reply(response, 409, { error:'Сначала подготовьте и отправьте сообщение о возврате в рабочую группу ARCHA POINT.' });
       const now = new Date().toISOString();
       const updated = await database.updateOrder(order.id, { status:'awaiting_return_dropoff', locker_status:'return_access_sent', return_access_sent_at:now });
       await database.createEvent({ order_id:order.id, event_type:'manager_confirmed_archa_return_sms_from_web', actor_type:'manager', metadata:{} });
