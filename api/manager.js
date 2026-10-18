@@ -232,6 +232,7 @@ export default async function handler(request, response) {
         const returnVideo = documents.find(document => document.kind === 'return_video');
         if (returnVideo?.status !== 'accepted') return reply(response, 409, { error:'До завершения возврата менеджер должен принять видео состояния устройства.' });
       }
+      if (nextStatus === 'completed' && String(order.return_condition_note || '').trim().length < 3) return reply(response, 409, { error:'После физического осмотра заполните в реестре «Состояние при возврате» и сохраните его. Затем завершите аренду.' });
       const updated = await database.updateOrder(order.id, nextStatus === 'awaiting_payment'
         ? { status:nextStatus, hold_expires_at:new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() }
         : { status:nextStatus });
@@ -290,13 +291,7 @@ export default async function handler(request, response) {
       return reply(response, 200, { ok:true, message:archaMessage(order, laptop, 'return') });
     }
     if (payload.action === 'mark_return_access_sent') {
-      const order = await database.getOrder(String(payload.orderId || ''));
-      if (!order || order.status !== 'awaiting_return_reservation') return reply(response, 409, { error:'Нет ожидающего резервирования возврата.' });
-      if (!await database.hasOrderEvent(order.id, 'manager_prepared_archa_return_handoff_from_web')) return reply(response, 409, { error:'Сначала подготовьте и отправьте сообщение о возврате в рабочую группу ARCHA POINT.' });
-      const now = new Date().toISOString();
-      const updated = await database.updateOrder(order.id, { status:'awaiting_return_dropoff', locker_status:'return_access_sent', return_access_sent_at:now });
-      await database.createEvent({ order_id:order.id, event_type:'manager_confirmed_archa_return_sms_from_web', actor_type:'manager', metadata:{} });
-      return reply(response, 200, { ok:true, order:updated });
+      return reply(response, 409, { error:'Код возврата ARCHA POINT отправляет напрямую клиенту. Этап видео откроет сам клиент после получения SMS.' });
     }
     if (payload.action === 'create_bakai_payment') {
       const order = await database.getOrder(String(payload.orderId || ''));

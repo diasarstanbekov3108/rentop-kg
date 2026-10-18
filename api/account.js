@@ -231,7 +231,6 @@ export default async function handler(request, response) {
       }
       if (payload.action === 'confirm_return_access_received') {
         if (order.status !== 'awaiting_return_reservation' || order.return_method !== 'arca_locker' || order.locker_status !== 'return_pending') return json(response, 409, { error:'Этот этап возврата уже обновлён. Нажмите «Обновить заявки».' });
-        if (!await database.hasOrderEvent(order.id, 'manager_prepared_archa_return_handoff_from_web')) return json(response, 409, { error:'ARCHA POINT ещё не получил запрос на ячейку. Дождитесь следующего сообщения или обратитесь в поддержку.' });
         const receivedAt = new Date().toISOString();
         const updated = await database.updateOrder(order.id, { status:'awaiting_return_dropoff', locker_status:'return_access_received', return_access_sent_at:receivedAt });
         await database.createEvent({ order_id:order.id, event_type:'customer_confirmed_archa_return_code_received_from_cabinet', actor_type:'customer', metadata:{} });
