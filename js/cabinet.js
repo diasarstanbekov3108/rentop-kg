@@ -647,20 +647,20 @@ rentalsEl?.addEventListener('submit', async event => {
     const residenceAddress = String(documentForm.elements.residenceAddress?.value || '').trim();
     if (!isEvidence && !isReplacement && residenceAddress.length < 8) return formError('Укажите полный адрес проживания: город, улица, дом и квартира (если есть).');
     const fullName = String(documentForm.elements.fullName?.value || '').trim();
-    if (!isReplacement && !isValidFullName(customerProfile?.full_name) && !isValidFullName(fullName)) return formError('Укажите фамилию, имя и отчество — как в документе.');
+    if (!isEvidence && !isReplacement && !isValidFullName(customerProfile?.full_name) && !isValidFullName(fullName)) return formError('Укажите фамилию, имя и отчество — как в документе.');
     const unsupported = files.find(({ file }) => !['image/jpeg', 'image/png', 'application/pdf', 'video/mp4', 'video/quicktime'].includes(contentTypeForFile(file)));
     if (unsupported) return formError(`Файл «${unsupported.file.name}» имеет неподдерживаемый формат. Нужен JPG, PNG или PDF.`);
     button.disabled = true;
     button.textContent = 'Подготавливаем загрузку…';
     try {
-      if (!isReplacement && !isValidFullName(customerProfile?.full_name)) {
+      if (!isEvidence && !isReplacement && !isValidFullName(customerProfile?.full_name)) {
         const saved = await request('POST', { action:'save_profile', fullName });
         customerProfile = saved.profile || { full_name:fullName };
       }
-      if (!isReplacement) await request('POST', { action:'save_residence_address', orderId:documentForm.dataset.order, residenceAddress, supportingDocumentType:documentForm.elements.supportingType?.value || '' });
+      if (!isEvidence && !isReplacement) await request('POST', { action:'save_residence_address', orderId:documentForm.dataset.order, residenceAddress, supportingDocumentType:documentForm.elements.supportingType?.value || '' });
       const orderComment = String(documentForm.elements.orderComment?.value || '').trim();
-      if (orderComment.length >= 3) await request('POST', { action:'save_order_comment', orderId:documentForm.dataset.order, message:orderComment });
-      if (!isReplacement) await request('POST', { action:'accept_offer', orderId:documentForm.dataset.order });
+      if (!isEvidence && orderComment.length >= 3) await request('POST', { action:'save_order_comment', orderId:documentForm.dataset.order, message:orderComment });
+      if (!isEvidence && !isReplacement) await request('POST', { action:'accept_offer', orderId:documentForm.dataset.order });
       for (let index = 0; index < files.length; index += 1) {
         const { kind, file } = files[index];
         const input = documentForm.elements[kind];
@@ -676,13 +676,13 @@ rentalsEl?.addEventListener('submit', async event => {
         if (!upload.ok) throw new Error('Не удалось загрузить файл. Проверьте соединение и попробуйте снова.');
         await request('POST', { action:'register_document', orderId:documentForm.dataset.order, kind, path:ticket.path, fileName, contentType, byteSize:file.size });
       }
-      message('Документы загружены. Менеджер проверит их и сообщит следующий шаг.', 'success');
+      message(isEvidence ? 'Видео загружено. Выполните следующий шаг в заявке.' : 'Документы загружены. Менеджер проверит их и сообщит следующий шаг.', 'success');
       const fresh = await request('GET');
       if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos);
     } catch (error) {
       const output = documentForm.querySelector('.cabinet-form-error') || document.createElement('p');
       output.className = 'cabinet-form-error'; output.textContent = error.message; documentForm.append(output);
-      button.disabled = false; button.textContent = isEvidence ? 'Отправить на проверку' : 'Загрузить документы';
+      button.disabled = false; button.textContent = isEvidence ? 'Отправить видео' : 'Загрузить документы';
     }
     return;
   }
