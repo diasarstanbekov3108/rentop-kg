@@ -62,6 +62,9 @@ export function loadConfig(env = process.env) {
     // Nikita configures WhatsApp routing on its side. The existing delivery
     // request remains unchanged unless the provider supplies another endpoint.
     nikitaOtpChannel,
+    // Vercel sends this value in Authorization when it invokes a configured
+    // cron route. It must never be exposed to browser code.
+    cronSecret: String(env.CRON_SECRET || '').trim(),
     offerOtpHmacSecret: env.OFFER_OTP_HMAC_SECRET || '',
     customerOtpHmacSecret: env.CUSTOMER_OTP_HMAC_SECRET || '',
     managerPhone: String(env.RENTOP_MANAGER_PHONE || '').replace(/[^0-9+]/g, ''),

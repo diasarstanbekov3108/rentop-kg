@@ -1,4 +1,8 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    { "path": "/api/jobs/rental-reminders", "schedule": "0 3 * * *" }
+  ],
   "rewrites": [
     { "source": "/offer", "destination": "/offer.html" },
     { "source": "/account", "destination": "/account.html" },

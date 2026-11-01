@@ -128,6 +128,12 @@ export function createSupabaseApi(config) {
         `rental_orders?select=id,laptop_id,customer_name,customer_phone,rental_start_date,rental_end_date,rental_days,daily_rate,discount_percent,status,total_amount,deposit_amount,delivery_type,locker_address,locker_status,offer_version,offer_accepted_at,offer_otp_verified_at,residence_address,supporting_document_type,identity_document_number,identity_document_issuer,identity_verified_at,identity_verified_by,customer_note,rental_purpose,manager_note,return_condition_note,admin_note,archa_handoff_sent_at,locker_loading_reference,locker_loading_code,locker_loaded_at,customer_access_sent_at,return_method,return_locker_address,return_access_code,return_access_sent_at,created_at,updated_at&order=created_at.desc&limit=${Math.min(Math.max(Number(limit) || 12, 1), 100)}${statusFilter}`
       );
     },
+    listRentalReminderCandidates: (throughDate) => request(
+      'rental_orders?select=id,customer_name,customer_phone,rental_end_date,status' +
+      '&status=eq.in_use' +
+      `&rental_end_date=lte.${encodeURIComponent(throughDate)}` +
+      '&order=rental_end_date.asc&limit=500'
+    ),
     findOverlappingBlockingOrder: (orderId, laptopId, startDate, endDate) => request(
       `rental_orders?select=id,status,rental_start_date,rental_end_date&laptop_id=eq.${encodeURIComponent(laptopId)}` +
       `&id=neq.${encodeURIComponent(orderId)}&rental_start_date=lt.${encodeURIComponent(endDate)}` +

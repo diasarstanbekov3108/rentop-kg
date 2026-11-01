@@ -76,6 +76,24 @@ const statusInfo = (status) => ({
   rejected:{ title:'Заявка не подтверждена', text:'Свяжитесь с поддержкой, если остались вопросы.', step:0 }
 }[status] || { title:'Заявка обрабатывается', text:'Мы сообщим, когда потребуется действие.', step:1 });
 const date = (value) => value ? new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',year:'numeric'}).format(new Date(`${value}T00:00:00`)) : '—';
+function bishkekIsoDate() {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Bishkek', year:'numeric', month:'2-digit', day:'2-digit' })
+    .formatToParts(new Date())
+    .reduce((result, part) => ({ ...result, [part.type]:part.value }), {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+function addIsoDays(isoDate, days) {
+  const result = new Date(`${isoDate}T00:00:00Z`);
+  result.setUTCDate(result.getUTCDate() + days);
+  return result.toISOString().slice(0, 10);
+}
+function rentalDeadline(order) {
+  if (order.status !== 'in_use' || !order.rental_end_date) return null;
+  const today = bishkekIsoDate();
+  if (order.rental_end_date <= today) return { due:true, title:'Срок возврата наступил', text:'Оформите возврат сегодня или запросите продление. Не оставляйте технику в постамате без SMS-кода ARCHA POINT.' };
+  if (order.rental_end_date === addIsoDays(today, 1)) return { due:false, title:'Аренда заканчивается завтра', text:'Подготовьте ноутбук, зарядку и комплект. Выберите продление или оформление возврата заранее.' };
+  return null;
+}
 const escape = (value) => String(value || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 const archaLocation = (value) => ARCHA_LOCATIONS.find(location => location.value === value) || null;
 const isValidFullName = (value) => String(value || '').trim().split(/\s+/).filter(Boolean).filter(part => part.length >= 2).length >= 3;
@@ -257,6 +275,7 @@ function pickupInstruction(order) {
 }
 function actionPanel(order) {
   const canAct = order.status === 'in_use';
+  const deadline = rentalDeadline(order);
   const paidExtension = order.extensionPayment?.status === 'paid';
   const openExtension = paidExtension ? null : order.requests?.find(request => request.kind === 'extension' && ['open','in_progress'].includes(request.status));
   const openReturn = order.requests?.find(request => request.kind === 'early_return' && ['open','in_progress'].includes(request.status));
@@ -304,7 +323,9 @@ function actionPanel(order) {
   }
   if (order.status === 'completed') return `${documents}${order.feedback ? '<div class="cabinet-request-state">Спасибо — ваш отзыв уже получен.</div>' : '<div class="cabinet-actions"><button class="cabinet-action" data-panel="feedback" data-order="' + order.id + '">Оставить отзыв</button><button class="cabinet-action ghost" data-panel="support" data-order="' + order.id + '">Предложить улучшение</button></div>'}`;
   if (!canAct) return `${documents}<div class="cabinet-action-disabled">Продление и досрочный возврат станут доступны после выдачи ноутбука.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="support" data-order="${order.id}">Помощь</button>${whatsapp}</div>`;
-  return `<div class="cabinet-active-actions"><strong>Управление арендой</strong><p>До ${date(order.rental_end_date)}. Продление проверяется по доступности ноутбука, возврат — после выбора удобного способа.</p><div class="cabinet-actions"><button class="cabinet-action" data-panel="extend" data-order="${order.id}">Продлить аренду</button><button class="cabinet-action secondary" data-panel="return" data-order="${order.id}">Вернуть раньше</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Помощь</button>${whatsapp}</div></div>`;
+  const deadlineNotice = deadline ? `<div class="cabinet-request-state ${deadline.due ? 'is-warning' : ''}"><strong>${deadline.title}</strong><p>${deadline.text}</p></div>` : '';
+  const returnLabel = deadline?.due ? 'Оформить возврат' : 'Вернуть раньше';
+  return `${deadlineNotice}<div class="cabinet-active-actions"><strong>Управление арендой</strong><p>До ${date(order.rental_end_date)}. Продление проверяется по доступности ноутбука, возврат — после выбора удобного способа.</p><div class="cabinet-actions"><button class="cabinet-action" data-panel="extend" data-order="${order.id}">Продлить аренду</button><button class="cabinet-action secondary" data-panel="return" data-order="${order.id}">${returnLabel}</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Помощь</button>${whatsapp}</div></div>`;
 }
 function requestForm(order) {
   return `<div class="cabinet-request-panel" id="panel-${order.id}" hidden></div>`;
