@@ -258,7 +258,9 @@ export default async function handler(request, response) {
       if (returnVideo?.status !== 'accepted') return reply(response, 409, { error:'Сначала примите видео возврата. Затем проверьте ноутбук физически.' });
       const returnedAt = new Date().toISOString();
       const updated = await database.updateOrder(order.id, { status:'completed', return_condition_note:returnConditionNote, returned_at:returnedAt });
-      await database.createEvent({ order_id:order.id, event_type:'manager_completed_return_with_acceptance_act_from_web', actor_type:'manager', metadata:{ previous_status:order.status, return_condition_note:returnConditionNote, accepted_at:returnedAt, manager_phone:session.phone } });
+      const returnRequests = (await database.listCustomerRequests(order.id)).filter(request => request.kind === 'early_return' && ['open','in_progress'].includes(request.status));
+      await Promise.all(returnRequests.map(request => database.updateCustomerRequest(request.id, { status:'resolved', resolved_at:returnedAt })));
+      await database.createEvent({ order_id:order.id, event_type:'manager_completed_return_with_acceptance_act_from_web', actor_type:'manager', metadata:{ previous_status:order.status, return_condition_note:returnConditionNote, accepted_at:returnedAt, manager_phone:session.phone, resolved_return_requests:returnRequests.map(request => request.id) } });
       return reply(response, 200, { ok:true, order:updated, message:'Приём ноутбука и акт зафиксированы. Аренда завершена.' });
     }
     if (payload.action === 'prepare_archa_handoff') {
