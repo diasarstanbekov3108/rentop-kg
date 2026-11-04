@@ -38,14 +38,10 @@ export default async function handler(request, response) {
     const orders = await database.listOrdersByCustomerPhone(phone);
     const laptops = await Promise.all(orders.map(order => database.getLaptop(order.laptop_id)));
     const requests = await Promise.all(orders.map((order) => database.listCustomerRequests(order.id).catch(() => [])));
-    const documents = await Promise.all(orders.map(async (order) => {
-      const items = await database.listOrderDocuments(order.id).catch(() => []);
-      return Promise.all(items.map(async (document) => {
-        const signed = await database.createSignedDocumentDownload(document.storage_path).catch(() => null);
-        const path = signed?.signedURL || signed?.signedUrl || signed?.url || '';
-        return { ...document, view_url:path ? (path.startsWith('http') ? path : `${config.supabaseUrl}/storage/v1${path}`) : '' };
-      }));
-    }));
+    // Do not sign every historic image/video while opening the account. On a
+    // phone that becomes dozens of Storage requests; a link is created only
+    // after the customer explicitly opens one file.
+    const documents = await Promise.all(orders.map((order) => database.listOrderDocuments(order.id).catch(() => [])));
     const payments = await Promise.all(orders.map((order) => database.listOrderPayments(order.id).catch(() => [])));
     const feedback = await Promise.all(orders.map((order) => database.getOrderFeedback(order.id).catch(() => null)));
     const supportCases = await Promise.all(orders.map((order) => database.listOrderSupportCases(order.id).catch(() => [])));
@@ -62,14 +58,14 @@ export default async function handler(request, response) {
       extensionPayment:(payments[index] || []).find(payment => payment.purpose === 'extension' && ['awaiting_payment', 'paid'].includes(payment.status)) || null
     }));
   };
-  const accountData = async (phone) => ({
-    phone,
-    whatsappUrl: config.rentopWhatsappPhone ? `https://wa.me/${config.rentopWhatsappPhone}` : '',
-    offerSmsConsentRequired: config.offerSmsConsentRequired,
-    profile:await database.getCustomerProfile(phone).catch(() => null),
-    promos:await database.listPromosByPhone(phone).catch(() => []),
-    orders:await hydrate(phone)
-  });
+  const accountData = async (phone) => {
+    const [profile, promos, orders] = await Promise.all([
+      database.getCustomerProfile(phone).catch(() => null),
+      database.listPromosByPhone(phone).catch(() => []),
+      hydrate(phone)
+    ]);
+    return { phone, whatsappUrl: config.rentopWhatsappPhone ? `https://wa.me/${config.rentopWhatsappPhone}` : '', offerSmsConsentRequired:config.offerSmsConsentRequired, profile, promos, orders };
+  };
   const verifySession = async () => {
     const raw = readCookie(request, COOKIE); if (!raw) return null;
     const session = await database.getCabinetSession(hash(secret, raw));
@@ -98,7 +94,7 @@ export default async function handler(request, response) {
     if (request.method !== 'POST') return json(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
     if (payload.action === 'logout') { const raw = readCookie(request, COOKIE); if (raw) await database.revokeCabinetSession(hash(secret, raw)); response.setHeader('Set-Cookie', `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`); return json(response, 200, { ok:true }); }
-    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'delete_draft_document' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'request_offer_sms_consent' || payload.action === 'verify_offer_sms_consent' || payload.action === 'save_profile' || payload.action === 'save_residence_address' || payload.action === 'extension_request' || payload.action === 'cancel_extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup_access_received' || payload.action === 'confirm_pickup' || payload.action === 'confirm_return_access_received' || payload.action === 'confirm_return_dropoff' || payload.action === 'submit_feedback') {
+    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'delete_draft_document' || payload.action === 'create_document_download' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'request_offer_sms_consent' || payload.action === 'verify_offer_sms_consent' || payload.action === 'save_profile' || payload.action === 'save_residence_address' || payload.action === 'extension_request' || payload.action === 'cancel_extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup_access_received' || payload.action === 'confirm_pickup' || payload.action === 'confirm_return_access_received' || payload.action === 'confirm_return_dropoff' || payload.action === 'submit_feedback') {
       const session = await verifySession();
       if (!session) return json(response, 401, { error:'Сессия истекла. Войдите в кабинет снова.', code:'AUTH_REQUIRED' });
       if (payload.action === 'save_profile') {
@@ -110,6 +106,14 @@ export default async function handler(request, response) {
       }
       const order = await database.getOrder(String(payload.orderId || ''));
       if (!order || order.customer_phone !== session.phone) return json(response, 404, { error:'Заявка не найдена.' });
+      if (payload.action === 'create_document_download') {
+        const document = await database.getOrderDocument(String(payload.documentId || ''));
+        if (!document || document.order_id !== order.id) return json(response, 404, { error:'Файл не найден.' });
+        const signed = await database.createSignedDocumentDownload(document.storage_path);
+        const path = signed?.signedURL || signed?.signedUrl || signed?.url || '';
+        if (!path) throw new Error('Не удалось подготовить защищённый просмотр файла.');
+        return json(response, 200, { ok:true, url:path.startsWith('http') ? path : `${config.supabaseUrl}/storage/v1${path}` });
+      }
       if (payload.action === 'save_residence_address') {
         if (order.status !== 'draft') return json(response, 409, { error:'Адрес уже зафиксирован в заявке. Для исправления обратитесь к менеджеру.' });
         const residenceAddress = String(payload.residenceAddress || '').trim().replace(/\s+/g, ' ').slice(0, 500);

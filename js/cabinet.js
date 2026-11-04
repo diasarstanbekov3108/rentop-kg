@@ -30,6 +30,7 @@ let offerSmsConsentRequired = false;
 let customerPromos = [];
 let cabinetOrders = [];
 let customerProfile = null;
+let orderRefreshInFlight = false;
 // Prevent an older "check session" response from replacing a newer SMS login.
 let sessionViewEpoch = 0;
 const ARCHA_LOCATIONS = [
@@ -50,11 +51,18 @@ const formatPhone = (value, masked = false) => {
 };
 function bindPhoneMask(input) { if (!input) return; const update = () => { input.value = formatPhone(input.value, true); }; input.addEventListener('focus', update); input.addEventListener('input', update); input.addEventListener('keydown', event => { if (input.selectionStart <= 4 && ['Backspace', 'Delete'].includes(event.key)) event.preventDefault(); }); update(); }
 const message = (text = '', kind = '') => { statusEl.textContent = text; statusEl.className = `cabinet-status${kind ? ` is-${kind}` : ''}`; };
-const request = async (method, payload) => {
-  const response = await fetch('/api/account', { method, credentials: 'same-origin', cache: 'no-store', headers: payload ? { 'content-type': 'application/json' } : {}, body: payload ? JSON.stringify(payload) : undefined });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || 'Не удалось выполнить запрос.');
-  return body;
+const request = async (method, payload, timeoutMs = 20000) => {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch('/api/account', { method, credentials: 'same-origin', cache: 'no-store', signal:controller.signal, headers: payload ? { 'content-type': 'application/json' } : {}, body: payload ? JSON.stringify(payload) : undefined });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || 'Не удалось выполнить запрос.');
+    return body;
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('Загрузка заняла слишком много времени. Проверьте интернет и попробуйте ещё раз.');
+    throw error;
+  } finally { window.clearTimeout(timer); }
 };
 const statusInfo = (status) => ({
   draft:{ title:'Нужны документы', text:'Отправьте документы и подтвердите условия аренды, чтобы менеджер мог проверить заявку.', step:1 },
@@ -176,20 +184,24 @@ function watchPayment(orderId) {
 }
 function watchOrderUpdates(orders) {
   if (orderPollingTimer) window.clearInterval(orderPollingTimer);
-  const needsLiveUpdates = orders.some(order => ['awaiting_payment', 'payment_review', 'confirmed', 'awaiting_archa_reservation', 'awaiting_locker_loading', 'awaiting_pickup', 'in_use', 'return_requested', 'awaiting_return_reservation', 'awaiting_return_dropoff', 'returned'].includes(order.status));
+  // Active use does not need a network request every 15 seconds. Keep automatic
+  // refreshes only for handover/payment stages where the next action can change.
+  const needsLiveUpdates = orders.some(order => ['awaiting_payment', 'payment_review', 'confirmed', 'awaiting_archa_reservation', 'awaiting_locker_loading', 'awaiting_pickup', 'return_requested', 'awaiting_return_reservation', 'awaiting_return_dropoff', 'returned'].includes(order.status));
   if (!needsLiveUpdates) return;
   const epoch = sessionViewEpoch;
   orderPollingTimer = window.setInterval(async () => {
     try {
       // A mobile file chooser temporarily hides the page. Re-rendering while a
       // document/video form is open would erase the selected local file.
-      if (hasOpenCabinetForm()) return;
+      if (hasOpenCabinetForm() || orderRefreshInFlight) return;
+      orderRefreshInFlight = true;
       const fresh = await request('GET');
       if (epoch !== sessionViewEpoch) return;
       if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos);
       else showLogin();
     } catch { /* A manual refresh remains available if the network is offline. */ }
-  }, 15000);
+    finally { orderRefreshInFlight = false; }
+  }, 45000);
 }
 
 function requestLabel(request) {
@@ -215,6 +227,8 @@ function documentSummary(order) {
       : '';
     return document?.view_url
       ? `<span class="cabinet-doc-saved"><button type="button" class="cabinet-doc-chip" data-document-view="${escape(document.view_url)}" data-document-name="${escape(document.file_name || label)}" data-document-type="${escape(document.content_type || '')}">${text}</button>${remove}</span>`
+      : document?.id
+        ? `<span class="cabinet-doc-saved"><button type="button" class="cabinet-doc-chip" data-document-open="${escape(document.id)}" data-document-order="${escape(order.id)}" data-document-name="${escape(document.file_name || label)}" data-document-type="${escape(document.content_type || '')}">${text}</button>${remove}</span>`
       : `<span>${text}</span>`;
   };
   const reasons = [...latest.values()].filter(document => document.status === 'rejected' && document.reviewer_note).map(document => `<li><strong>${escape(({ identity:'Документ', identity_front:'Лицевая сторона', identity_back:'Обратная сторона', selfie:'Селфи', supporting:'Подтверждение' }[document.kind] || 'Документ'))}:</strong> ${escape(document.reviewer_note)}</li>`).join('');
@@ -436,6 +450,7 @@ async function loadSession() {
   } catch {
     if (epoch !== sessionViewEpoch) return;
     showLogin();
+    message('Не удалось быстро загрузить кабинет. Проверьте интернет и попробуйте войти ещё раз.', 'error');
   }
 }
 
@@ -539,6 +554,17 @@ rentalsEl?.addEventListener('click', event => {
   const savedDocument = event.target.closest('[data-document-view]');
   if (savedDocument) {
     openDocumentViewer(savedDocument.dataset.documentView, savedDocument.dataset.documentName, savedDocument.dataset.documentType);
+    return;
+  }
+  const documentToOpen = event.target.closest('[data-document-open]');
+  if (documentToOpen) {
+    documentToOpen.disabled = true;
+    const initialText = documentToOpen.textContent;
+    documentToOpen.textContent = 'Открываем…';
+    request('POST', { action:'create_document_download', orderId:documentToOpen.dataset.documentOrder, documentId:documentToOpen.dataset.documentOpen })
+      .then(result => openDocumentViewer(result.url, documentToOpen.dataset.documentName, documentToOpen.dataset.documentType))
+      .catch(error => message(error.message, 'error'))
+      .finally(() => { documentToOpen.disabled = false; documentToOpen.textContent = initialText; });
     return;
   }
   const pickupConfirm = event.target.closest('[data-confirm-pickup]');
