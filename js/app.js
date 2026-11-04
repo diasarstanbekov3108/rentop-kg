@@ -608,6 +608,49 @@ document.addEventListener('DOMContentLoaded', async () => {
     ? 'rentop_mascot_position_v2_mobile'
     : 'rentop_mascot_position_v2_desktop';
   const mascotMoodClasses = ['is-looking', 'is-waving', 'is-thinking', 'is-happy'];
+  const mascotAnswer = document.getElementById('rentop-mascot-answer');
+  const mascotForm = document.getElementById('rentop-mascot-form');
+  const mascotQuestion = document.getElementById('rentop-mascot-question');
+
+  const scrollToMascotCatalog = () => document.getElementById('catalog')?.scrollIntoView({ behavior:'smooth', block:'start' });
+  const mascotModels = (kind) => {
+    const source = laptops.filter((laptop) => laptop.category === 'rent');
+    const matched = kind === 'games' || kind === 'creative'
+      ? source.filter((laptop) => getLaptopUse(laptop) === 'gaming')
+      : source.filter((laptop) => getLaptopUse(laptop) !== 'gaming');
+    return (matched.length ? matched : source).slice(0, 3).map((laptop) => laptop.title).filter(Boolean);
+  };
+  const showMascotAdvice = (intent = '', question = '') => {
+    const directIntent = String(intent).toLowerCase();
+    const text = `${intent} ${question}`.toLowerCase();
+    const needsGames = ['games', 'creative'].includes(directIntent) || /игр|game|cs2|cyberpunk|gta|blender|3d|vfx|монтаж|premiere|after effects|дизайн/.test(text);
+    const needsStudy = ['study', 'work'].includes(directIntent) || /уч[её]б|zoom|word|excel|офис|браузер|созвон|лекци/.test(text);
+    const needsService = directIntent === 'service' || /сервис|аренд|оплат|получ|постамат|archa|возврат|договор/.test(text);
+    let answer;
+    if (needsService) {
+      answer = 'Выберите ноутбук и даты, загрузите документы, дождитесь проверки и оплаты. Для ARCHA POINT код доступа приходит после закладки устройства. Возврат и продление оформляются в личном кабинете.';
+    } else if (needsGames) {
+      const models = mascotModels('games');
+      answer = `Для игр, Blender, 3D и монтажа подойдут более мощные модели: ${models.join(', ') || 'игровые модели из каталога'}. Перед бронированием откройте карточку и проверьте процессор, видеокарту и объём памяти.`;
+      activeUseFilter = 'gaming';
+    } else if (needsStudy) {
+      const models = mascotModels('work');
+      answer = `Для учёбы, Word, Excel, браузера и созвонов достаточно рабочих моделей: ${models.join(', ') || 'рабочие модели из каталога'}. Это обычно самый разумный вариант по цене и автономности.`;
+      activeUseFilter = 'work';
+    } else {
+      const models = mascotModels('work');
+      answer = `Для офиса, программирования и обычной работы начните с: ${models.join(', ') || 'рабочих моделей каталога'}. Если нужны игры, монтаж или 3D — выберите «Игры» или «Монтаж / 3D».`;
+      activeUseFilter = 'work';
+    }
+    if (mascotAnswer) mascotAnswer.textContent = answer;
+    if (!needsService) {
+      useFilterButtons.forEach((button) => button.classList.toggle('active', button.dataset.use === activeUseFilter));
+      currentPage = 1;
+      filterAndSearch();
+      scrollToMascotCatalog();
+    }
+    setMascotMood(needsService ? 'waving' : 'thinking', 1600);
+  };
 
   const setMascotOpen = (open) => {
     if (!rentopMascot || !rentopMascotButton || !rentopMascotPanel) return;
@@ -627,6 +670,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   rentopMascotClose?.addEventListener('click', () => setMascotOpen(false));
   rentopMascotPanel?.querySelectorAll('a').forEach((link) => link.addEventListener('click', () => setMascotOpen(false)));
+  rentopMascotPanel?.querySelectorAll('[data-mascot-intent]').forEach((button) => button.addEventListener('click', () => showMascotAdvice(button.dataset.mascotIntent || '')));
+  rentopMascotPanel?.querySelector('[data-mascot-catalog]')?.addEventListener('click', () => scrollToMascotCatalog());
+  mascotForm?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const question = mascotQuestion?.value.trim() || '';
+    if (!question) { if (mascotAnswer) mascotAnswer.textContent = 'Напишите задачу: игры, учёба, офис, программирование, монтаж или 3D.'; return; }
+    showMascotAdvice('', question);
+  });
 
   const mascotSize = () => window.matchMedia('(max-width: 760px)').matches
     ? { width: 84, height: 84, inset: 8 }
