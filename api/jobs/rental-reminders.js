@@ -10,17 +10,10 @@ function json(response, status, body) {
   response.status(status).json(body);
 }
 
-function localIsoDate(now = new Date()) {
-  const values = new Intl.DateTimeFormat('en-CA', {
-    timeZone: TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit'
-  }).formatToParts(now).reduce((result, part) => ({ ...result, [part.type]: part.value }), {});
-  return `${values.year}-${values.month}-${values.day}`;
-}
-
-function addDays(isoDate, days) {
-  const result = new Date(`${isoDate}T00:00:00Z`);
-  result.setUTCDate(result.getUTCDate() + days);
-  return result.toISOString().slice(0, 10);
+function printableMoment(value) {
+  return new Intl.DateTimeFormat('ru-RU', {
+    timeZone:TIME_ZONE, day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit'
+  }).format(new Date(value));
 }
 
 function authorized(request, secret) {
@@ -41,30 +34,35 @@ export default async function handler(request, response) {
   if (!authorized(request, config.cronSecret)) return json(response, 401, { error:'Unauthorized.' });
   if (!config.nikitaSms.enabled) return json(response, 503, { error:'SMS-провайдер не настроен.' });
 
-  const today = localIsoDate();
-  const tomorrow = addDays(today, 1);
+  const now = new Date();
   const database = createSupabaseApi(config);
   const sms = createNikitaSmsClient(config.nikitaSms);
-  const candidates = await database.listRentalReminderCandidates(tomorrow);
+  const candidates = await database.listRentalReminderCandidates();
   const sent = [];
   const failed = [];
 
   for (const order of candidates) {
-    const isTomorrow = order.rental_end_date === tomorrow;
-    const isDue = order.rental_end_date <= today;
-    if (!isTomorrow && !isDue) continue;
-    const eventType = isTomorrow ? 'rental_due_tomorrow_sms_sent_from_cron' : 'rental_due_today_sms_sent_from_cron';
+    const deadline = order.rental_ends_at ? new Date(order.rental_ends_at) : null;
+    // Старые заявки без точного срока продолжают работать по прежней логике,
+    // но все новые используют момент оплаты плюс число оплаченных суток.
+    const hoursLeft = deadline ? (deadline.getTime() - now.getTime()) / 3_600_000 : null;
+    // На бесплатном Vercel задача запускается раз в сутки. Окно 48 часов
+    // гарантирует, что предупреждение придёт заранее при любом времени оплаты.
+    const isSoon = hoursLeft !== null && hoursLeft > 0 && hoursLeft <= 48;
+    const isDue = hoursLeft !== null && hoursLeft <= 0;
+    if (!isSoon && !isDue) continue;
+    const eventType = isSoon ? 'rental_due_24h_sms_sent_from_cron' : 'rental_due_at_time_sms_sent_from_cron';
     if (await database.hasOrderEvent(order.id, eventType)) continue;
-    const text = isTomorrow
-      ? `RENTOP.KG: срок аренды по заявке ${reference(order)} заканчивается завтра. Подготовьте ноутбук, зарядку и комплект. В личном кабинете выберите «Продлить аренду» или «Оформить возврат».`
-      : `RENTOP.KG: срок аренды по заявке ${reference(order)} наступил. Сегодня оформите возврат в личном кабинете или запросите продление. Не оставляйте ноутбук в постамате без кода ARCHA POINT.`;
+    const text = isSoon
+      ? `RENTOP.KG: аренда по заявке ${reference(order)} заканчивается ${printableMoment(deadline)}. Подготовьте ноутбук, зарядку и комплект. В личном кабинете выберите «Продлить аренду» или «Оформить возврат».`
+      : `RENTOP.KG: срок аренды по заявке ${reference(order)} закончился ${printableMoment(deadline)}. Оформите возврат в личном кабинете или запросите продление. Не оставляйте ноутбук в постамате без кода ARCHA POINT.`;
     try {
       await sms.send({ phone:order.customer_phone, text });
       await database.createEvent({
         order_id:order.id,
         event_type:eventType,
         actor_type:'system',
-        metadata:{ rental_end_date:order.rental_end_date, sent_at:new Date().toISOString(), channel:'sms' }
+        metadata:{ rental_ends_at:order.rental_ends_at, sent_at:now.toISOString(), channel:'sms' }
       });
       sent.push(reference(order));
     } catch (error) {
@@ -73,5 +71,5 @@ export default async function handler(request, response) {
     }
   }
 
-  return json(response, 200, { ok:true, date:today, checked:candidates.length, sent, failed });
+  return json(response, 200, { ok:true, checked:candidates.length, sent, failed });
 }

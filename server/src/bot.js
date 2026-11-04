@@ -1505,7 +1505,9 @@ export function createRentopBot({ config, telegram, database }) {
         }
       }
     } else if (action === 'paid') {
-      await database.updateOrder(order.id, { status: 'awaiting_pickup', payment_confirmed_at: new Date().toISOString() });
+      const paidAt = new Date().toISOString();
+      const rentalEndsAt = new Date(Date.parse(paidAt) + Math.max(1, Number(order.rental_days) || 1) * 86_400_000).toISOString();
+      await database.updateOrder(order.id, { status: 'awaiting_pickup', payment_confirmed_at: paidAt, rental_started_at:paidAt, rental_ends_at:rentalEndsAt });
       await telegram.sendMessage(session.telegram_chat_id,
         order.delivery_type === 'arca_locker'
           ? 'Оплата подтверждена. Rentop передаёт заявку в ARCHA POINT. Они отправят код/PIN или QR на ваш номер. После получения кода бот проведёт вас по инструкции осмотра и получения.'

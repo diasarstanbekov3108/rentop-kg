@@ -84,6 +84,7 @@ const statusInfo = (status) => ({
   rejected:{ title:'Заявка не подтверждена', text:'Свяжитесь с поддержкой, если остались вопросы.', step:0 }
 }[status] || { title:'Заявка обрабатывается', text:'Мы сообщим, когда потребуется действие.', step:1 });
 const date = (value) => value ? new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',year:'numeric'}).format(new Date(`${value}T00:00:00`)) : '—';
+const moment = (value) => value ? new Intl.DateTimeFormat('ru-RU',{timeZone:'Asia/Bishkek',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(value)) : '—';
 function bishkekIsoDate() {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Bishkek', year:'numeric', month:'2-digit', day:'2-digit' })
     .formatToParts(new Date())
@@ -96,7 +97,15 @@ function addIsoDays(isoDate, days) {
   return result.toISOString().slice(0, 10);
 }
 function rentalDeadline(order) {
-  if (order.status !== 'in_use' || !order.rental_end_date) return null;
+  if (order.status !== 'in_use') return null;
+  if (order.rental_ends_at) {
+    const deadline = new Date(order.rental_ends_at);
+    const hoursLeft = (deadline.getTime() - Date.now()) / 3_600_000;
+    if (hoursLeft <= 0) return { due:true, title:'Срок аренды закончился', text:`Срок возврата был ${moment(order.rental_ends_at)}. Оформите возврат или запросите продление.` };
+    if (hoursLeft <= 30) return { due:false, title:'Аренда скоро заканчивается', text:`Срок возврата: ${moment(order.rental_ends_at)}. Подготовьте ноутбук, зарядку и комплект заранее.` };
+    return null;
+  }
+  if (!order.rental_end_date) return null;
   const today = bishkekIsoDate();
   if (order.rental_end_date <= today) return { due:true, title:'Срок возврата наступил', text:'Оформите возврат сегодня или запросите продление. Не оставляйте технику в постамате без SMS-кода ARCHA POINT.' };
   if (order.rental_end_date === addIsoDays(today, 1)) return { due:false, title:'Аренда заканчивается завтра', text:'Подготовьте ноутбук, зарядку и комплект. Выберите продление или оформление возврата заранее.' };
@@ -344,7 +353,8 @@ function actionPanel(order) {
   if (!canAct) return `${documents}<div class="cabinet-action-disabled">Продление и досрочный возврат станут доступны после выдачи ноутбука.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="support" data-order="${order.id}">Помощь</button>${whatsapp}</div>`;
   const deadlineNotice = deadline ? `<div class="cabinet-request-state ${deadline.due ? 'is-warning' : ''}"><strong>${deadline.title}</strong><p>${deadline.text}</p></div>` : '';
   const returnLabel = deadline?.due ? 'Оформить возврат' : 'Вернуть раньше';
-  return `${deadlineNotice}<div class="cabinet-active-actions"><strong>Управление арендой</strong><p>До ${date(order.rental_end_date)}. Продление проверяется по доступности ноутбука, возврат — после выбора удобного способа.</p><div class="cabinet-actions"><button class="cabinet-action" data-panel="extend" data-order="${order.id}">Продлить аренду</button><button class="cabinet-action secondary" data-panel="return" data-order="${order.id}">${returnLabel}</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Помощь</button>${whatsapp}</div></div>`;
+  const exactTerm = order.rental_ends_at ? `До ${moment(order.rental_ends_at)} (Бишкек).` : `До ${date(order.rental_end_date)}.`;
+  return `${deadlineNotice}<div class="cabinet-active-actions"><strong>Управление арендой</strong><p>${exactTerm} Продление проверяется по доступности ноутбука, возврат — после выбора удобного способа.</p><div class="cabinet-actions"><button class="cabinet-action" data-panel="extend" data-order="${order.id}">Продлить аренду</button><button class="cabinet-action secondary" data-panel="return" data-order="${order.id}">${returnLabel}</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Помощь</button>${whatsapp}</div></div>`;
 }
 function requestForm(order) {
   return `<div class="cabinet-request-panel" id="panel-${order.id}" hidden></div>`;
@@ -419,7 +429,8 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   if (loyaltyPanelEl) loyaltyPanelEl.innerHTML = loyaltyPanel(customerPromos);
   rentalsEl.innerHTML = cabinetOrders.map(order => {
     const state = statusInfo(order.status);
-    return `<article class="cabinet-rental" data-rental="${order.id}"><div class="cabinet-rental-top"><div><h3>${escape(order.laptop_title || 'Ноутбук Rentop')}</h3><p class="cabinet-rental-ref">Заявка ${escape(order.reference)}</p></div><span class="cabinet-badge">${escape(state.title)}</span></div><div class="cabinet-progress" aria-label="Этап ${state.step} из 5"><span class="is-done"></span><span class="${state.step >= 2 ? 'is-done' : ''}"></span><span class="${state.step >= 3 ? 'is-done' : ''}"></span><span class="${state.step >= 4 ? 'is-done' : ''}"></span><span class="${state.step >= 5 ? 'is-done' : ''}"></span></div><p class="cabinet-next-step">${escape(state.text)}</p>${documentSummary(order)}${supportUpdates(order)}<div class="cabinet-rental-grid"><div>Срок<strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div>Получение<strong>${escape(order.delivery_label)}</strong></div><div>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div>Скидка<strong>${Number(order.discount_percent || 0)}%</strong></div></div>${pickupInstruction(order)}${paymentPanel(order)}${actionPanel(order)}${requestForm(order)}</article>`;
+    const rentalTerm = order.rental_started_at && order.rental_ends_at ? `${moment(order.rental_started_at)} — ${moment(order.rental_ends_at)} (Бишкек)` : `${date(order.rental_start_date)} — ${date(order.rental_end_date)}`;
+    return `<article class="cabinet-rental" data-rental="${order.id}"><div class="cabinet-rental-top"><div><h3>${escape(order.laptop_title || 'Ноутбук Rentop')}</h3><p class="cabinet-rental-ref">Заявка ${escape(order.reference)}</p></div><span class="cabinet-badge">${escape(state.title)}</span></div><div class="cabinet-progress" aria-label="Этап ${state.step} из 5"><span class="is-done"></span><span class="${state.step >= 2 ? 'is-done' : ''}"></span><span class="${state.step >= 3 ? 'is-done' : ''}"></span><span class="${state.step >= 4 ? 'is-done' : ''}"></span><span class="${state.step >= 5 ? 'is-done' : ''}"></span></div><p class="cabinet-next-step">${escape(state.text)}</p>${documentSummary(order)}${supportUpdates(order)}<div class="cabinet-rental-grid"><div>Срок<strong>${rentalTerm}</strong></div><div>Получение<strong>${escape(order.delivery_label)}</strong></div><div>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div>Скидка<strong>${Number(order.discount_percent || 0)}%</strong></div></div>${pickupInstruction(order)}${paymentPanel(order)}${actionPanel(order)}${requestForm(order)}</article>`;
   }).join('');
   emptyEl.hidden = cabinetOrders.length !== 0;
   watchOrderUpdates(cabinetOrders);

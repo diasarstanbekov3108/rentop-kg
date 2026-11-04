@@ -10,10 +10,27 @@ const removableStatuses = new Set(['draft', 'pending_review', 'awaiting_payment'
 const statusTransitions = Object.freeze({
   pending_review:['awaiting_payment']
 });
+const TIME_ZONE = 'Asia/Bishkek';
 function readCookie(request, name) { const source = String(request.headers.cookie || ''); return source.split(';').map(value => value.trim()).find(value => value.startsWith(`${name}=`))?.slice(name.length + 1) || ''; }
 function hash(secret, value) { return createHmac('sha256', secret).update(value).digest('hex'); }
 function reply(response, status, body) { response.setHeader('Cache-Control', 'private, no-store, max-age=0'); response.status(status).json(body); }
 function samePhone(a, b) { return String(a || '').replace(/\D/g, '') === String(b || '').replace(/\D/g, ''); }
+function exactDeadline(paidAt, days) { return new Date(Date.parse(paidAt) + Math.max(1, Number(days) || 1) * 86_400_000).toISOString(); }
+function extendExactDeadline(currentEnd, oldDate, newDate) {
+  if (!currentEnd) return null;
+  const extraDays = Math.round((new Date(`${newDate}T00:00:00Z`) - new Date(`${oldDate}T00:00:00Z`)) / 86_400_000);
+  return extraDays > 0 ? new Date(Date.parse(currentEnd) + extraDays * 86_400_000).toISOString() : currentEnd;
+}
+function printableMoment(value) { return new Intl.DateTimeFormat('ru-RU', { timeZone:TIME_ZONE, day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' }).format(new Date(value)); }
+async function sendExactDeadlineSms(config, database, order, paidAt, endsAt) {
+  if (!config.nikitaSms?.enabled || !order?.customer_phone) return;
+  const eventType = 'rental_exact_deadline_sms_sent_after_payment';
+  if (await database.hasOrderEvent(order.id, eventType)) return;
+  try {
+    await createNikitaSmsClient(config.nikitaSms).send({ phone:order.customer_phone, text:`RENTOP.KG: оплата по заявке ${String(order.id).slice(0, 8).toUpperCase()} подтверждена. Аренда действует с ${printableMoment(paidAt)} до ${printableMoment(endsAt)} (Бишкек). Заранее напомним о продлении или возврате.` });
+    await database.createEvent({ order_id:order.id, event_type:eventType, actor_type:'system', metadata:{ paid_at:paidAt, rental_ends_at:endsAt, channel:'sms' } });
+  } catch (error) { console.error('Exact rental deadline SMS failed:', error.message); }
+}
 function archaMessage(order, laptop, mode = 'issue') {
   const reference = String(order.id || '').slice(0, 8).toUpperCase();
   const location = mode === 'return' ? order.return_locker_address : order.locker_address;
@@ -395,13 +412,16 @@ export default async function handler(request, response) {
         const start = new Date(`${order.rental_start_date}T00:00:00Z`);
         const end = new Date(`${payment.proposed_return_date}T00:00:00Z`);
         const rentalDays = Math.max(1, Math.round((end - start) / 86_400_000));
-        updatedOrder = await database.updateOrder(order.id, { rental_end_date:payment.proposed_return_date, rental_days:rentalDays });
+        const rentalEndsAt = extendExactDeadline(order.rental_ends_at, order.rental_end_date, payment.proposed_return_date);
+        updatedOrder = await database.updateOrder(order.id, { rental_end_date:payment.proposed_return_date, rental_days:rentalDays, ...(rentalEndsAt ? { rental_ends_at:rentalEndsAt } : {}) });
         if (payment.request_id) await database.updateCustomerRequest(payment.request_id, { status:'resolved', resolved_at:now });
         await database.createEvent({ order_id:order.id, event_type:'bakai_extension_payment_manually_confirmed_from_web', actor_type:'manager', metadata:{ operation_id:payment.operation_id, reference, amount:payment.amount, proposed_return_date:payment.proposed_return_date } }).catch(error => console.error('Manual Bakai extension payment audit failed:', error.message));
       } else {
-        updatedOrder = order.status === 'awaiting_payment'
-          ? await database.updateOrder(order.id, { status:'confirmed', payment_channel:'bakai_manual_review', payment_receipt_received_at:now, payment_confirmed_at:now })
-          : order;
+        if (order.status === 'awaiting_payment') {
+          const endsAt = exactDeadline(now, order.rental_days);
+          updatedOrder = await database.updateOrder(order.id, { status:'confirmed', payment_channel:'bakai_manual_review', payment_receipt_received_at:now, payment_confirmed_at:now, rental_started_at:now, rental_ends_at:endsAt });
+          await sendExactDeadlineSms(config, database, order, now, endsAt);
+        } else updatedOrder = order;
         await database.createEvent({ order_id:order.id, event_type:'bakai_payment_manually_confirmed_from_web', actor_type:'manager', metadata:{ operation_id:payment.operation_id, reference, amount:payment.amount } }).catch(error => console.error('Manual Bakai payment audit event failed:', error.message));
       }
       return reply(response, 200, { ok:true, payment:updatedPayment, order:updatedOrder });
