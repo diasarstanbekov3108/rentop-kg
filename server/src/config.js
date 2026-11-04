@@ -74,9 +74,9 @@ export function loadConfig(env = process.env) {
     rentopWhatsappPhone: String(env.RENTOP_WHATSAPP_PHONE || '').replace(/\D/g, ''),
     offerVersion: env.OFFER_VERSION || 'draft-2026-09-25',
     offerUrl: env.OFFER_URL || '',
-    // Keep the customer journey testable until Nikita SMS credentials are verified.
-    // Set to "true" only when the live offer-confirmation SMS is ready.
-    offerSmsConsentRequired: String(env.OFFER_SMS_CONSENT_REQUIRED || '').trim().toLowerCase() === 'true',
+    // Для новых заявок SMS-подтверждение оферты обязательно. Временно
+    // отключить его можно только явным OFFER_SMS_CONSENT_REQUIRED=false.
+    offerSmsConsentRequired: String(env.OFFER_SMS_CONSENT_REQUIRED || 'true').trim().toLowerCase() !== 'false',
     bakai: {
       baseUrl: (env.BAKAI_API_BASE_URL || 'https://openbanking-api.bakai.kg').replace(/\/$/, ''),
       // Login/password from Bakai Business are used once in Swagger to obtain

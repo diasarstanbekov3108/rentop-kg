@@ -197,6 +197,10 @@ export default async function handler(request, response) {
         if (identityFrontAccepted && ['identity_back','selfie','supporting'].every(kind => latest.get(kind)?.status === 'accepted')) {
           const order = await database.getOrder(document.order_id);
           if (['draft','pending_review'].includes(order?.status)) {
+            if (config.offerSmsConsentRequired && !order.offer_otp_verified_at) {
+              await database.createEvent({ order_id:order.id, event_type:'manager_waiting_for_offer_sms_consent_from_web', actor_type:'manager', metadata:{} }).catch(() => {});
+              return reply(response, 200, { ok:true, document:reviewed, order:null, message:'Документы приняты. Заявка ждёт, пока клиент подтвердит оферту кодом из SMS.' });
+            }
             updatedOrder = await database.updateOrder(order.id, { status:'awaiting_payment', hold_expires_at:new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() });
             await database.createEvent({ order_id:order.id, event_type:'documents_accepted_waiting_payment_from_web', actor_type:'manager', metadata:{} }).catch(error => console.error('Manager order audit event failed:', error.message));
           }

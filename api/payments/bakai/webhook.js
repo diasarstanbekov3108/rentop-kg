@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { loadConfig } from '../../../server/src/config.js';
 import { createSupabaseApi } from '../../../server/src/supabase.js';
 import { createNikitaSmsClient } from '../../../server/src/sms.js';
+import { createTelegramApi } from '../../../server/src/telegram.js';
 
 const TIME_ZONE = 'Asia/Bishkek';
 
@@ -37,6 +38,15 @@ async function sendExactDeadlineSms(config, database, order, paidAt, endsAt) {
     // Подтверждение платежа не должно откатываться из-за временной ошибки SMS.
     console.error('Exact rental deadline SMS failed:', error.message);
   }
+}
+
+async function notifyManagerAboutPaidOrder(config, order) {
+  if (!config.telegramBotToken || !config.adminChatId || !order) return;
+  try {
+    await createTelegramApi(config.telegramBotToken).sendMessage(config.adminChatId,
+      `💳 Оплата подтверждена\n\nЗаявка ${String(order.id).slice(0, 8).toUpperCase()} · ${order.customer_name || 'Клиент'}\nARCHA POINT: ${order.locker_address || 'не выбран'}\n\nОткройте панель менеджера и нажмите «Подготовить сообщение для ARCHA POINT». Без этого шага заявка не передаётся в постамат.`
+    );
+  } catch (error) { console.error('Paid order manager notification failed:', error.message); }
 }
 
 function equal(left, right) {
@@ -115,6 +125,7 @@ export default async function handler(request, response) {
           rental_started_at:now, rental_ends_at:endsAt
         });
         await sendExactDeadlineSms(config, database, order, now, endsAt);
+        await notifyManagerAboutPaidOrder(config, order);
       }
       await database.createEvent({ order_id:payment.order_id, event_type:'bakai_payment_confirmed_webhook', actor_type:'bank', metadata:{ operation_id:operationId, elqr_id:bankElqrId, amount } }).catch(error => console.error('Bakai webhook audit event failed:', error.message));
     }
