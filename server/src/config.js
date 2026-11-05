@@ -71,7 +71,9 @@ export function loadConfig(env = process.env) {
     // The chief administrator may be separated from day-to-day managers later.
     // Until then the configured manager retains the responsibility and access.
     adminManagerPhone: String(env.RENTOP_ADMIN_MANAGER_PHONE || env.RENTOP_MANAGER_PHONE || '').replace(/[^0-9+]/g, ''),
-    rentopWhatsappPhone: String(env.RENTOP_WHATSAPP_PHONE || '').replace(/\D/g, ''),
+    // Keep direct support available even if the optional Vercel variable was
+    // not configured yet. It may still be overridden without a code change.
+    rentopWhatsappPhone: String(env.RENTOP_WHATSAPP_PHONE || '996707880857').replace(/\D/g, ''),
     offerVersion: env.OFFER_VERSION || 'draft-2026-09-25',
     offerUrl: env.OFFER_URL || '',
     // Для новых заявок SMS-подтверждение оферты обязательно. Временно

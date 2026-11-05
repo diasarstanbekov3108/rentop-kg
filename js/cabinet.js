@@ -217,14 +217,14 @@ async function refreshAccountIfSafe() {
 }
 function watchOrderUpdates(orders) {
   if (orderPollingTimer) window.clearInterval(orderPollingTimer);
-  // Active use does not need a network request every 15 seconds. Keep automatic
-  // refreshes only for handover/payment stages where the next action can change.
-  const needsLiveUpdates = orders.some(order => ['awaiting_payment', 'payment_review', 'confirmed', 'awaiting_archa_reservation', 'awaiting_locker_loading', 'awaiting_pickup', 'return_requested', 'awaiting_return_reservation', 'awaiting_return_dropoff', 'returned'].includes(order.status));
+  // Support replies and an extension QR can arrive while an аренда is active,
+  // not only during handover. Keep every non-final rental in live sync.
+  const needsLiveUpdates = orders.some(order => !['completed', 'cancelled', 'rejected'].includes(order.status));
   if (!needsLiveUpdates) return;
   const epoch = sessionViewEpoch;
   orderPollingTimer = window.setInterval(async () => {
     if (epoch === sessionViewEpoch) await refreshAccountIfSafe();
-  }, 15000);
+  }, 10000);
 }
 
 function requestLabel(request) {
@@ -405,7 +405,7 @@ function panelMarkup(kind, orderId, documentState = {}) {
   }
   if (kind === 'extend') return `<form class="cabinet-inline-form" data-request="extension_request" data-order="${orderId}"><label>На сколько дней продлить?</label><div class="cabinet-inline-row"><input name="days" type="number" min="1" max="30" value="3" required><button class="cabinet-action" type="submit">Отправить запрос</button></div><p>Менеджер проверит доступность и пришлёт сумму к оплате.</p></form>`;
   if (kind === 'cancel-extension') return `<form class="cabinet-inline-form" data-request="cancel_extension_request" data-order="${orderId}"><input name="requestId" type="hidden" value="${escape(documentState.requestId || '')}"><label>Отменить запрос продления?</label><p>Это отменит только ещё не оплаченный запрос. После отмены можно сразу оформить возврат ноутбука.</p><div class="cabinet-inline-row"><button class="cabinet-action danger" type="submit">Отменить продление</button><button class="cabinet-cancel-panel" type="button">Назад</button></div></form>`;
-  if (kind === 'return') return `<form class="cabinet-inline-form" data-request="early_return_request" data-order="${orderId}"><label>Как вам удобнее вернуть ноутбук?</label><select name="returnMethod" required><option value="">Выберите способ</option><option value="arca_locker">Через постамат ARCHA POINT</option><option value="courier">Заказать курьера Rentop</option><option value="warehouse">Привезти на склад Rentop</option></select><div class="cabinet-return-locker" hidden><label>Выберите постамат возврата</label><select name="returnLockerAddress"><option value="">Выберите постамат</option>${ARCHA_LOCATIONS.map(location => `<option value="${escape(location.value)}">${escape(location.value)} · ${escape(location.hours)}</option>`).join('')}</select></div><label>Коротко опишите причину (необязательно)</label><textarea name="message" maxlength="500" placeholder="Например: изменились планы, хочу вернуть сегодня"></textarea><div class="cabinet-inline-row"><button class="cabinet-action danger" type="submit">Запросить возврат</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>Перед возвратом снимите короткое видео состояния ноутбука и комплекта. Не кладите устройство в ячейку, пока не придёт инструкция.</p></form>`;
+  if (kind === 'return') return `<form class="cabinet-inline-form" data-request="early_return_request" data-order="${orderId}"><label>Как вам удобнее вернуть ноутбук?</label><select name="returnMethod" required><option value="">Выберите способ</option><option value="arca_locker">Через постамат ARCHA POINT</option><option value="courier">Заказать курьера Rentop</option><option value="warehouse">Привезти на склад Rentop</option></select><div class="cabinet-return-locker" hidden><label>Выберите постамат возврата</label><select name="returnLockerAddress"><option value="">Выберите постамат</option>${ARCHA_LOCATIONS.map(location => `<option value="${escape(location.value)}">${escape(location.value)} · ${escape(location.hours)}</option>`).join('')}</select></div><label>Коротко опишите причину (необязательно)</label><textarea name="message" maxlength="500" placeholder="Например: изменились планы, хочу вернуть сегодня"></textarea><div class="cabinet-inline-row"><button class="cabinet-action danger" type="submit">Запросить возврат</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>Шаг 1: отправьте запрос. После выбора постамата и получения SMS с кодом появится отдельная кнопка для видео возврата. Не кладите устройство в ячейку без кода и инструкции.</p></form>`;
   if (kind === 'comment') return `<form class="cabinet-inline-form cabinet-comment-form" data-request="save_order_comment" data-order="${orderId}"><label>Комментарий к заявке</label><textarea name="message" minlength="3" maxlength="1000" placeholder="Например: цель аренды, важные пожелания по комплектации или вопрос менеджеру"></textarea><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Сохранить комментарий</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>Комментарий увидит менеджер ещё до проверки документов.</p></form>`;
   if (kind === 'feedback') return `<form class="cabinet-inline-form" data-request="submit_feedback" data-order="${orderId}"><label>Спасибо, что выбрали Rentop</label><select name="rating"><option value="">Оценка — по желанию</option><option value="5">5 — отлично</option><option value="4">4 — хорошо</option><option value="3">3 — нормально</option><option value="2">2 — есть проблемы</option><option value="1">1 — плохо</option></select><label>Ваш отзыв</label><textarea name="review" maxlength="1500" placeholder="Что вам понравилось?"></textarea><label>Предложение по улучшению</label><textarea name="suggestion" maxlength="1500" placeholder="Что сделать удобнее?"></textarea><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Отправить отзыв</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
   return `<form class="cabinet-inline-form cabinet-support-form" data-request="support_request" data-order="${orderId}"><strong>Поддержка Rentop</strong><p>Опишите проблему — обращение появится в рабочей панели менеджера и будет продублировано в Telegram.</p><label>Тема обращения</label><select name="kind"><option value="rentop">Вопрос к Rentop</option><option value="archa_code_missing">Не пришёл код ARCHA POINT</option><option value="archa_locker_issue">Постамат не открывается или не выдаёт ноутбук</option><option value="archa">Другая проблема с ARCHA POINT</option><option value="rental_issue">Проблема с ноутбуком или комплектностью</option></select><label>Сообщение</label><textarea name="message" minlength="3" maxlength="1000" placeholder="Например: не могу открыть постамат, код не пришёл, нужна помощь"></textarea><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Отправить обращение</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
@@ -528,7 +528,18 @@ rentalsEl?.addEventListener('click', event => {
       .then(() => {
         const verify = requestOfferSms.closest('.cabinet-offer-box')?.querySelector('[data-offer-sms-verify]');
         if (verify) verify.hidden = false;
-        requestOfferSms.textContent = 'Код отправлен';
+        let secondsLeft = 60;
+        requestOfferSms.textContent = `Повторить через ${secondsLeft} сек.`;
+        const retryTimer = window.setInterval(() => {
+          secondsLeft -= 1;
+          if (secondsLeft > 0) {
+            requestOfferSms.textContent = `Повторить через ${secondsLeft} сек.`;
+            return;
+          }
+          window.clearInterval(retryTimer);
+          requestOfferSms.disabled = false;
+          requestOfferSms.textContent = 'Отправить код повторно';
+        }, 1000);
         message('Код согласия отправлен.', 'success');
       })
       .catch(error => { requestOfferSms.disabled = false; message(error.message, 'error'); });
