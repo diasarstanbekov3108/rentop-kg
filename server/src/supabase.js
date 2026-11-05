@@ -1,19 +1,32 @@
 export function createSupabaseApi(config) {
   async function request(path, options = {}) {
     const isLegacyJwtKey = config.supabaseServerKey.startsWith('eyJ');
-    const response = await fetch(`${config.supabaseUrl}/rest/v1/${path}`, {
-      ...options,
-      headers: {
-        apikey: config.supabaseServerKey,
-        ...(isLegacyJwtKey ? { Authorization: `Bearer ${config.supabaseServerKey}` } : {}),
-        'content-type': 'application/json',
-        Prefer: 'return=representation',
-        ...(options.headers || {})
+    let lastError;
+    // A cold edge connection to Supabase can occasionally fail on mobile.
+    // One very short retry makes account opening resilient without hiding a
+    // permanent database/configuration problem.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const response = await fetch(`${config.supabaseUrl}/rest/v1/${path}`, {
+          ...options,
+          headers: {
+            apikey: config.supabaseServerKey,
+            ...(isLegacyJwtKey ? { Authorization: `Bearer ${config.supabaseServerKey}` } : {}),
+            'content-type': 'application/json',
+            Prefer: 'return=representation',
+            ...(options.headers || {})
+          }
+        });
+        const body = await response.json().catch(() => null);
+        if (response.ok) return body;
+        lastError = new Error(body?.message || body?.hint || `Supabase request failed (${response.status})`);
+        if (response.status < 500 && response.status !== 429) throw lastError;
+      } catch (error) {
+        lastError = error;
       }
-    });
-    const body = await response.json().catch(() => null);
-    if (!response.ok) throw new Error(body?.message || body?.hint || `Supabase request failed (${response.status})`);
-    return body;
+      if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 180));
+    }
+    throw lastError || new Error('Supabase request failed.');
   }
 
   async function getOne(path) {

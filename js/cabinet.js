@@ -469,7 +469,16 @@ async function loadSession() {
   login.hidden = true;
   loading.hidden = false;
   try {
-    const data = await request('GET');
+    // Do not throw a customer back to the phone form because of a single
+    // transient mobile/cold-start failure. The second read is intentionally
+    // small and still uses the same secure session cookie.
+    let data;
+    try {
+      data = await request('GET');
+    } catch (firstError) {
+      await new Promise(resolve => window.setTimeout(resolve, 500));
+      data = await request('GET');
+    }
     if (epoch !== sessionViewEpoch) return;
     if (data.authenticated) { showRentals(data.orders || [], data.phone, data.profile, data.whatsappUrl, data.offerSmsConsentRequired, data.promos); return; }
     showLogin();

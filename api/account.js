@@ -4,7 +4,13 @@ import { createSupabaseApi } from '../server/src/supabase.js';
 import { createNikitaSmsClient, normalizeKyrgyzPhone } from '../server/src/sms.js';
 import { createTelegramApi } from '../server/src/telegram.js';
 
+// Keep the original host-only cookie, but also issue a compatible HttpOnly
+// cookie. Some mobile browsers were rejecting the __Host-prefixed value on
+// preview deployments, even though the SMS login itself succeeded. Both are
+// secure, host-only, SameSite=Lax cookies; the second is only a compatibility
+// name, not a client-readable token.
 const COOKIE = '__Host-rentop_session';
+const COMPAT_COOKIE = 'rentop_session';
 const OTP_TTL_MS = 10 * 60 * 1000;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const SHORT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -15,6 +21,7 @@ const DOCUMENT_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'application/pdf
 const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024;
 
 function readCookie(request, name) { const source = String(request.headers.cookie || ''); return source.split(';').map(v => v.trim()).find(v => v.startsWith(`${name}=`))?.slice(name.length + 1) || ''; }
+function sessionCookie(name, value, maxAge) { return `${name}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`; }
 function json(response, status, body) { response.setHeader('Cache-Control', 'private, no-store, max-age=0'); response.status(status).json(body); }
 function hash(secret, value) { return createHmac('sha256', secret).update(value).digest('hex'); }
 function code() { return String(randomInt(100000, 1_000_000)); }
@@ -73,7 +80,7 @@ export default async function handler(request, response) {
     return { phone, whatsappUrl: config.rentopWhatsappPhone ? `https://wa.me/${config.rentopWhatsappPhone}` : '', offerSmsConsentRequired:config.offerSmsConsentRequired, profile, promos, orders };
   };
   const verifySession = async () => {
-    const raw = readCookie(request, COOKIE); if (!raw) return null;
+    const raw = readCookie(request, COOKIE) || readCookie(request, COMPAT_COOKIE); if (!raw) return null;
     const session = await database.getCabinetSession(hash(secret, raw));
     if (!session || session.revoked_at || new Date(session.expires_at) <= now) return null;
     database.touchCabinetSession(session.id).catch(() => {});
@@ -99,7 +106,12 @@ export default async function handler(request, response) {
     if (request.method === 'GET') { const session = await verifySession(); if (!session) return json(response, 200, { authenticated:false }); return json(response, 200, { authenticated:true, ...(await accountData(session.phone)) }); }
     if (request.method !== 'POST') return json(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
-    if (payload.action === 'logout') { const raw = readCookie(request, COOKIE); if (raw) await database.revokeCabinetSession(hash(secret, raw)); response.setHeader('Set-Cookie', `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`); return json(response, 200, { ok:true }); }
+    if (payload.action === 'logout') {
+      const raw = readCookie(request, COOKIE) || readCookie(request, COMPAT_COOKIE);
+      if (raw) await database.revokeCabinetSession(hash(secret, raw));
+      response.setHeader('Set-Cookie', [sessionCookie(COOKIE, '', 0), sessionCookie(COMPAT_COOKIE, '', 0)]);
+      return json(response, 200, { ok:true });
+    }
     if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'delete_draft_document' || payload.action === 'create_document_download' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'request_offer_sms_consent' || payload.action === 'verify_offer_sms_consent' || payload.action === 'save_profile' || payload.action === 'save_residence_address' || payload.action === 'extension_request' || payload.action === 'cancel_extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup_access_received' || payload.action === 'confirm_pickup' || payload.action === 'confirm_return_access_received' || payload.action === 'confirm_return_dropoff' || payload.action === 'submit_feedback') {
       const session = await verifySession();
       if (!session) return json(response, 401, { error:'Сессия истекла. Войдите в кабинет снова.', code:'AUTH_REQUIRED' });
@@ -357,7 +369,8 @@ export default async function handler(request, response) {
       const raw = randomBytes(32).toString('base64url');
       const sessionTtl = payload.remember === false ? SHORT_SESSION_TTL_MS : SESSION_TTL_MS;
       await database.createCabinetSession({ phone, token_hash:hash(secret, raw), expires_at:new Date(Date.now()+sessionTtl).toISOString(), user_agent:String(request.headers['user-agent'] || '').slice(0, 300), ip:clientIp(request) || null });
-      response.setHeader('Set-Cookie', `${COOKIE}=${raw}; Path=/; Max-Age=${Math.floor(sessionTtl/1000)}; HttpOnly; Secure; SameSite=Lax`);
+      const maxAge = Math.floor(sessionTtl / 1000);
+      response.setHeader('Set-Cookie', [sessionCookie(COOKIE, raw, maxAge), sessionCookie(COMPAT_COOKIE, raw, maxAge)]);
       return json(response, 200, { authenticated:true, ...(await accountData(phone)) });
     }
     return json(response, 400, { error:'Неизвестное действие.' });
