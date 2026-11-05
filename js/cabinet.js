@@ -149,7 +149,7 @@ function closeDocumentViewer() {
   if (!documentViewer) return;
   documentViewer.hidden = true;
   if (documentViewerContent) documentViewerContent.innerHTML = '';
-  document.body.style.overflow = '';
+  syncBodyScrollLock();
   if (currentPreviewUrl.startsWith('blob:')) URL.revokeObjectURL(currentPreviewUrl);
   currentPreviewUrl = '';
 }
@@ -163,7 +163,7 @@ function openDocumentViewer(url, name = 'Документ', contentType = '') {
     ? `<video controls preload="metadata" src="${escape(url)}">Ваш браузер не поддерживает просмотр видео.</video>`
     : isFrame ? `<iframe src="${escape(url)}" title="${escape(name)}"></iframe>` : `<img src="${escape(url)}" alt="${escape(name)}">`;
   documentViewer.hidden = false;
-  document.body.style.overflow = 'hidden';
+  syncBodyScrollLock();
 }
 
 function openPaymentDialog(payment) {
@@ -180,7 +180,7 @@ function openPaymentDialog(payment) {
     if (payment.qr_link) paymentDialogLink.href = payment.qr_link;
   }
   paymentDialog.hidden = false;
-  document.body.style.overflow = 'hidden';
+  syncBodyScrollLock();
 }
 
 function closePaymentDialog() {
@@ -188,10 +188,16 @@ function closePaymentDialog() {
   paymentDialog.hidden = true;
   if (paymentDialogQr) paymentDialogQr.removeAttribute('src');
   if (paymentDialogLink) { paymentDialogLink.hidden = true; paymentDialogLink.removeAttribute('href'); }
-  document.body.style.overflow = '';
+  syncBodyScrollLock();
   activePaymentOrderId = '';
   if (paymentPollingTimer) window.clearInterval(paymentPollingTimer);
   paymentPollingTimer = null;
+}
+
+function syncBodyScrollLock() {
+  const hasOverlay = Boolean(document.querySelector('.cabinet-document-viewer:not([hidden]), .cabinet-payment-dialog:not([hidden])'));
+  document.documentElement.classList.toggle('cabinet-scroll-locked', hasOverlay);
+  document.body.style.overflow = hasOverlay ? 'hidden' : '';
 }
 
 function hasOpenCabinetForm() {
@@ -291,9 +297,9 @@ function documentMode(order) {
   return { mode:'submitted', kinds:[] };
 }
 function supportUpdates(order) {
-  const replies = (order.supportCases || []).filter(item => item.manager_reply);
-  if (!replies.length) return '';
-  return `<section class="cabinet-support-updates"><strong>Ответ Rentop</strong>${replies.map(item => `<div><span>${escape(item.manager_reply)}</span><small>${date(item.replied_at)}</small></div>`).join('')}</section>`;
+  const cases = (order.supportCases || []).filter(item => item.customer_message || item.manager_reply);
+  if (!cases.length) return '';
+  return `<section class="cabinet-support-updates" aria-label="Переписка по заявке"><div class="cabinet-conversation-head"><strong>Переписка по заявке</strong><span>Rentop</span></div>${cases.map(item => `<div class="cabinet-message customer"><b>Вы</b><p>${escape(item.customer_message || 'Обращение')}</p><time>${escape(dateTime(item.opened_at, { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }))}</time></div>${item.manager_reply ? `<div class="cabinet-message manager"><b>Rentop</b><p>${escape(item.manager_reply)}</p><time>${escape(dateTime(item.replied_at, { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }))}</time></div>` : '<div class="cabinet-message pending"><span>Ожидаем ответ менеджера</span></div>'}`).join('')}</section>`;
 }
 function paymentPanel(order) {
   const isExtension = Boolean(order.extensionPayment);
@@ -338,7 +344,7 @@ function actionPanel(order) {
   const docState = documentMode(order);
   const documentText = docState.mode === 'approved' ? 'Документы проверены' : docState.mode === 'submitted' ? 'Документы на проверке' : docState.mode === 'replacement' ? 'Заменить документ' : 'Документы и договор';
   const documents = docState.mode === 'approved' ? '' : `<button class="cabinet-action secondary" data-panel="documents" data-document-mode="${docState.mode}" data-document-kinds="${docState.kinds.join(',')}" data-order="${order.id}">${documentText}</button>`;
-  const whatsapp = supportWhatsappUrl ? `<a class="cabinet-action ghost" href="${escape(supportWhatsappUrl)}?text=${encodeURIComponent(`Здравствуйте! Нужна помощь по заявке ${order.reference}.`)}" target="_blank" rel="noopener">Написать в WhatsApp</a>` : '';
+  const whatsapp = supportWhatsappUrl ? `<a class="cabinet-action ghost cabinet-whatsapp" href="${escape(supportWhatsappUrl)}?text=${encodeURIComponent(`Здравствуйте! Нужна помощь по заявке ${order.reference}.`)}" target="_blank" rel="noopener" aria-label="Написать в WhatsApp по заявке ${escape(order.reference)}"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M27 5a15 15 0 0 0-23 18l-2 7 7-2A15 15 0 1 0 27 5Z" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M11 9c.4-1 1-1 1.5-.8l2 2.5c.4.5.3 1-.1 1.4l-1 1c1.2 2.3 3 4.1 5.3 5.3l1-1c.4-.4 1-.5 1.4-.1l2.5 2c.3.5.2 1.1-.8 1.5-1 .4-2 .7-3 .5-5.7-1.5-9.6-5.4-11.1-11.1-.2-1 .1-2 .5-3.2Z" fill="currentColor"/></svg><span>Написать в WhatsApp</span></a>` : '';
   if (docState.mode === 'upload') return `<div class="cabinet-documents-cta"><strong>Следующий шаг — документы</strong><p>Четыре файла: ID с двух сторон, селфи с ID и подтверждающий документ.</p>${documents}</div><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
   if (order.status === 'awaiting_pickup') {
     const accessSent = order.locker_status === 'access_sent';
