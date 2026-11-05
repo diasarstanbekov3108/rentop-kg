@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { loadConfig } from '../server/src/config.js';
 import { createSupabaseApi } from '../server/src/supabase.js';
 import { createNikitaSmsClient, normalizeKyrgyzPhone } from '../server/src/sms.js';
@@ -37,13 +37,6 @@ export default async function handler(request, response) {
   if (request.method === 'OPTIONS') { response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'); response.setHeader('Access-Control-Allow-Headers', 'content-type'); return response.status(204).end(); }
   let config;
   try { config = loadConfig(); } catch (error) { return json(response, 503, { error:'Сервис кабинета временно настраивается.' }); }
-  // This is a one-way fingerprint for operational diagnostics only. It lets
-  // us verify that a Preview deployment received the intended database key
-  // without exposing the key or any customer data in a response.
-  console.info('Rentop cabinet runtime', {
-    databaseHost:new URL(config.supabaseUrl).host,
-    databaseKeyFingerprint:createHash('sha256').update(config.supabaseServerKey).digest('hex').slice(0, 12)
-  });
   const secret = config.customerOtpHmacSecret;
   if (!secret) return json(response, 503, { error:'Вход в кабинет скоро будет доступен. Настраиваем защищённое подтверждение номера.' });
   const database = createSupabaseApi(config);

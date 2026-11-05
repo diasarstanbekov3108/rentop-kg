@@ -68,9 +68,13 @@ export function createSupabaseApi(config) {
     getOrder: (id) => getOne(`rental_orders?id=eq.${encodeURIComponent(id)}&select=*`),
     listOrdersByCustomerPhone: async (phone, limit = 30) => {
       const safeLimit = Math.min(Math.max(Number(limit) || 30, 1), 50);
+      // `created_at <= now` is always true for existing orders but varies the
+      // URL safely, preventing an empty edge-cached lookup from surviving
+      // after a customer creates an order for the same phone.
+      const readStamp = encodeURIComponent(new Date().toISOString());
       const exact = await request(
         `rental_orders?customer_phone=eq.${encodeURIComponent(phone)}` +
-        `&select=${customerOrderSelect}&order=updated_at.desc&limit=${safeLimit}`
+        `&created_at=lte.${readStamp}&select=${customerOrderSelect}&order=updated_at.desc&limit=${safeLimit}`
       );
       if (exact?.length) return exact;
 
@@ -83,7 +87,7 @@ export function createSupabaseApi(config) {
       if (!suffix) return [];
       const similar = await request(
         `rental_orders?customer_phone=ilike.*${encodeURIComponent(suffix)}` +
-        `&select=${customerOrderSelect}&order=updated_at.desc&limit=${safeLimit}`
+        `&created_at=lte.${readStamp}&select=${customerOrderSelect}&order=updated_at.desc&limit=${safeLimit}`
       );
       return (similar || []).filter((order) => phoneDigits(order.customer_phone) === digits);
     },
