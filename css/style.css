@@ -1847,6 +1847,24 @@ section {
   }
 }
 
+/* Desktop header: keep navigation readable instead of allowing individual
+   links such as "Вход менеджера" to squeeze into two lines. */
+@media (min-width: 993px) {
+  .header .container.header-content { max-width:1360px; }
+  .header-content { gap:18px; }
+  .nav { flex:1 1 auto; min-width:0; justify-content:center; gap:17px; }
+  .nav a, .nav-account-auth { white-space:nowrap; }
+  .nav-account-auth { flex-wrap:nowrap; }
+}
+
+@media (min-width: 993px) and (max-width: 1250px) {
+  .header-content { position:relative; }
+  .nav { display:none; position:absolute; top:calc(100% + 1px); right:0; left:0; flex-direction:column; align-items:stretch; gap:0; padding:12px 20px; background:#0f172a; border:1px solid rgba(255,255,255,.1); box-shadow:0 18px 32px rgba(0,0,0,.32); }
+  .nav.active { display:flex; }
+  .nav a, .nav-account-auth { padding:10px 0; }
+  .burger { display:flex; }
+}
+
 @media (max-width: 480px) {
   .header-content {
     padding: 8px 10px;
