@@ -9,10 +9,16 @@ export function createSupabaseApi(config) {
       try {
         const response = await fetch(`${config.supabaseUrl}/rest/v1/${path}`, {
           ...options,
+          // Account status must never be served from a stale edge/cache entry:
+          // a customer can create an order moments after a previous empty
+          // lookup for the same phone number.
+          cache: 'no-store',
           headers: {
             apikey: config.supabaseServerKey,
             ...(isLegacyJwtKey ? { Authorization: `Bearer ${config.supabaseServerKey}` } : {}),
             'content-type': 'application/json',
+            'cache-control': 'no-cache, no-store, max-age=0',
+            pragma: 'no-cache',
             Prefer: 'return=representation',
             ...(options.headers || {})
           }
