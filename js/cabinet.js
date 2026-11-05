@@ -660,6 +660,7 @@ rentalsEl?.addEventListener('click', event => {
       return;
     }
     panel.hidden = !panel.hidden;
+    panel.classList.toggle('is-document-result', button.dataset.panel === 'documents' && ['submitted', 'approved'].includes(button.dataset.documentMode || ''));
     const sourceOrder = cabinetOrders.find(order => String(order.id) === String(button.dataset.order));
     panel.innerHTML = panel.hidden ? '' : panelMarkup(button.dataset.panel, button.dataset.order, { mode:button.dataset.documentMode, kinds:button.dataset.documentKinds, requestId:button.dataset.requestId, offerSmsVerified:Boolean(sourceOrder?.offer_otp_verified_at) });
     if (!panel.hidden) {

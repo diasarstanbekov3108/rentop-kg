@@ -36,15 +36,21 @@ export default async function handler(request, response) {
   const now = new Date();
   const hydrate = async (phone) => {
     const orders = await database.listOrdersByCustomerPhone(phone);
-    const laptops = await Promise.all(orders.map(order => database.getLaptop(order.laptop_id)));
-    const requests = await Promise.all(orders.map((order) => database.listCustomerRequests(order.id).catch(() => [])));
     // Do not sign every historic image/video while opening the account. On a
     // phone that becomes dozens of Storage requests; a link is created only
     // after the customer explicitly opens one file.
-    const documents = await Promise.all(orders.map((order) => database.listOrderDocuments(order.id).catch(() => [])));
-    const payments = await Promise.all(orders.map((order) => database.listOrderPayments(order.id).catch(() => [])));
-    const feedback = await Promise.all(orders.map((order) => database.getOrderFeedback(order.id).catch(() => null)));
-    const supportCases = await Promise.all(orders.map((order) => database.listOrderSupportCases(order.id).catch(() => [])));
+    // Fetch independent sections together. Previously these six batches ran
+    // one after another, so a customer with test/history orders could wait long
+    // enough for a mobile request to time out. One missing old asset must not
+    // make the entire cabinet unavailable either.
+    const [laptops, requests, documents, payments, feedback, supportCases] = await Promise.all([
+      Promise.all(orders.map(order => database.getLaptop(order.laptop_id).catch(() => null))),
+      Promise.all(orders.map(order => database.listCustomerRequests(order.id).catch(() => []))),
+      Promise.all(orders.map(order => database.listOrderDocuments(order.id).catch(() => []))),
+      Promise.all(orders.map(order => database.listOrderPayments(order.id).catch(() => []))),
+      Promise.all(orders.map(order => database.getOrderFeedback(order.id).catch(() => null))),
+      Promise.all(orders.map(order => database.listOrderSupportCases(order.id).catch(() => [])))
+    ]);
     return orders.map((order, index) => ({
       ...order,
       laptop_title:laptops[index]?.title || laptops[index]?.name || 'Ноутбук Rentop',
