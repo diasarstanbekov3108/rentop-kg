@@ -179,6 +179,14 @@ function hasOpenCabinetForm() {
   return Boolean(rentalsEl?.querySelector('.cabinet-request-panel:not([hidden]) form'));
 }
 
+function hasUnsavedDocumentDraft() {
+  const form = rentalsEl?.querySelector('.cabinet-request-panel:not([hidden]) [data-document-upload]');
+  if (!form) return false;
+  if ([...form.querySelectorAll('input[type="file"]')].some(input => input.files?.length)) return true;
+  return [...form.querySelectorAll('input:not([type="file"]), textarea, select')]
+    .some(input => input.type === 'checkbox' ? input.checked : String(input.value || '').trim().length > 0);
+}
+
 function watchPayment(orderId) {
   if (paymentPollingTimer) window.clearInterval(paymentPollingTimer);
   activePaymentOrderId = String(orderId);
@@ -628,6 +636,12 @@ rentalsEl?.addEventListener('click', event => {
   if (button) {
     const panel = document.getElementById(`panel-${button.dataset.order}`);
     if (!panel) return;
+    if (!panel.hidden && hasUnsavedDocumentDraft()) {
+      // A second tap on "Documents" or a tap on support must not silently
+      // close the document form and discard local files.
+      message('Черновик документов открыт. Сначала загрузите его или нажмите «Отмена», если действительно хотите удалить выбранные файлы.', 'error');
+      return;
+    }
     panel.hidden = !panel.hidden;
     const sourceOrder = cabinetOrders.find(order => String(order.id) === String(button.dataset.order));
     panel.innerHTML = panel.hidden ? '' : panelMarkup(button.dataset.panel, button.dataset.order, { mode:button.dataset.documentMode, kinds:button.dataset.documentKinds, requestId:button.dataset.requestId, offerSmsVerified:Boolean(sourceOrder?.offer_otp_verified_at) });
@@ -649,6 +663,7 @@ rentalsEl?.addEventListener('click', event => {
   }
   if (event.target.closest('.cabinet-cancel-panel')) {
     const panel = event.target.closest('.cabinet-request-panel');
+    if (hasUnsavedDocumentDraft() && !window.confirm('Выбранные фото, видео и заполненные данные будут удалены. Закрыть форму?')) return;
     panel.hidden = true; panel.innerHTML = '';
   }
 });
@@ -657,6 +672,11 @@ documentViewer?.addEventListener('click', event => { if (event.target === docume
 document.getElementById('cabinet-payment-dialog-close')?.addEventListener('click', closePaymentDialog);
 paymentDialog?.addEventListener('click', event => { if (event.target === paymentDialog) closePaymentDialog(); });
 document.addEventListener('keydown', event => { if (event.key !== 'Escape') return; if (!documentViewer?.hidden) closeDocumentViewer(); if (!paymentDialog?.hidden) closePaymentDialog(); });
+window.addEventListener('beforeunload', event => {
+  if (!hasUnsavedDocumentDraft()) return;
+  event.preventDefault();
+  event.returnValue = '';
+});
 rentalsEl?.addEventListener('change', event => {
   const returnMethod = event.target.closest('select[name="returnMethod"]');
   if (returnMethod) {
