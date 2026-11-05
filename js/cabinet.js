@@ -526,7 +526,16 @@ rentalsEl?.addEventListener('click', event => {
     if (!/^\d{6}$/.test(code || '')) return message('Введите 6 цифр из сообщения.', 'error');
     verifyOfferSms.disabled = true;
     request('POST', { action:'verify_offer_sms_consent', orderId:verifyOfferSms.dataset.verifyOfferSms, code })
-      .then(async () => { const fresh = await request('GET'); if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos); message('Согласие с офертой подтверждено и зафиксировано.', 'success'); })
+      .then(() => {
+        // Do not redraw the whole rental card here. Browsers deliberately do
+        // not allow restoring selected Files after a redraw, which used to
+        // make passport photos disappear right after the OTP was accepted.
+        const form = verifyOfferSms.closest('form');
+        if (form) form.dataset.offerSmsVerified = '1';
+        const box = verifyOfferSms.closest('.cabinet-offer-box');
+        if (box) box.innerHTML = '<strong>✓ Оферта подтверждена по SMS</strong><p>Согласие зафиксировано. Выбранные документы сохранены в форме — теперь отправьте их на проверку.</p>';
+        message('Согласие с офертой подтверждено и зафиксировано.', 'success');
+      })
       .catch(error => { verifyOfferSms.disabled = false; message(error.message, 'error'); });
     return;
   }
