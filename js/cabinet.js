@@ -482,10 +482,12 @@ async function loadSession() {
     if (epoch !== sessionViewEpoch) return;
     if (data.authenticated) { showRentals(data.orders || [], data.phone, data.profile, data.whatsappUrl, data.offerSmsConsentRequired, data.promos); return; }
     showLogin();
-  } catch {
+  } catch (error) {
     if (epoch !== sessionViewEpoch) return;
     showLogin();
-    message('Не удалось быстро загрузить кабинет. Проверьте интернет и попробуйте войти ещё раз.', 'error');
+    // Preserve the actionable server reason. A generic "fast load" message
+    // made real account/data errors impossible to diagnose on one device.
+    message(error?.message || 'Не удалось загрузить кабинет. Проверьте интернет и попробуйте ещё раз.', 'error');
   }
 }
 
