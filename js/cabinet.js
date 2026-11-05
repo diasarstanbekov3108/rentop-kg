@@ -83,8 +83,27 @@ const statusInfo = (status) => ({
   cancelled:{ title:'Заявка отменена', text:'Эти даты снова доступны для бронирования.', step:0 },
   rejected:{ title:'Заявка не подтверждена', text:'Свяжитесь с поддержкой, если остались вопросы.', step:0 }
 }[status] || { title:'Заявка обрабатывается', text:'Мы сообщим, когда потребуется действие.', step:1 });
-const date = (value) => value ? new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',year:'numeric'}).format(new Date(`${value}T00:00:00`)) : '—';
-const moment = (value) => value ? new Intl.DateTimeFormat('ru-RU',{timeZone:'Asia/Bishkek',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(value)) : '—';
+function parseDate(value, assumeCalendarDate = false) {
+  if (!value) return null;
+  const source = assumeCalendarDate && !String(value).includes('T') ? `${value}T00:00:00` : value;
+  const parsed = new Date(source);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+const date = (value) => {
+  const parsed = parseDate(value, true);
+  if (!parsed) return '—';
+  try { return new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',year:'numeric'}).format(parsed); } catch { return '—'; }
+};
+const moment = (value) => {
+  const parsed = parseDate(value);
+  if (!parsed) return '—';
+  try { return new Intl.DateTimeFormat('ru-RU',{timeZone:'Asia/Bishkek',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(parsed); } catch { return '—'; }
+};
+const dateTime = (value, options = {}) => {
+  const parsed = parseDate(value);
+  if (!parsed) return '—';
+  try { return new Intl.DateTimeFormat('ru-RU', options).format(parsed); } catch { return '—'; }
+};
 function bishkekIsoDate() {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Bishkek', year:'numeric', month:'2-digit', day:'2-digit' })
     .formatToParts(new Date())
@@ -152,7 +171,7 @@ function openPaymentDialog(payment) {
   const rawImage = String(payment.qr_image || payment.qr_image_with_frame || '');
   const image = rawImage && !rawImage.startsWith('data:') && !rawImage.startsWith('http') ? `data:image/png;base64,${rawImage}` : rawImage;
   if (!image) return;
-  const expires = payment.expires_at ? new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}).format(new Date(payment.expires_at)) : '—';
+  const expires = dateTime(payment.expires_at, { day:'numeric', month:'long', hour:'2-digit', minute:'2-digit' });
   paymentDialogQr.src = image;
   paymentDialogAmount.textContent = `${Number(payment.amount || 0).toLocaleString('ru-RU')} сом`;
   paymentDialogExpiry.textContent = `Счёт действует до ${expires}`;
@@ -287,7 +306,7 @@ function paymentPanel(order) {
   if (['revoked', 'expired', 'failed'].includes(payment.status)) return `<div class="cabinet-payment waiting"><strong>Счёт обновляется</strong><p>Предыдущий QR больше не используйте. Менеджер подготовит новый защищённый счёт, если оплата ещё нужна.</p>${documentNotice}</div>`;
   const rawImage = String(payment.qr_image || payment.qr_image_with_frame || '');
   const image = rawImage && !rawImage.startsWith('data:') && !rawImage.startsWith('http') ? `data:image/png;base64,${rawImage}` : rawImage;
-  const expires = payment.expires_at ? new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(payment.expires_at)) : '—';
+  const expires = dateTime(payment.expires_at, { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
   return `<section class="cabinet-payment"><div><strong>${isExtension ? 'Оплата продления' : 'Оплата аренды'}</strong><span>${Number(payment.amount || 0).toLocaleString('ru-RU')} сом · до ${escape(expires)}</span></div><p>${image ? 'Нажмите «Оплатить по QR»: код откроется крупно на весь экран. Платёжная ссылка Банка доступна как дополнительный способ, но её поддержка зависит от приложения банка.' : 'Банк создал ссылку на QR. Откройте её в поддерживаемом банковском приложении или попросите менеджера перевыпустить счёт.'} Не переводите сумму вручную на другие реквизиты.</p>${documentNotice}${image ? `<button class="cabinet-action cabinet-payment-open" type="button" data-open-payment="${escape(order.id)}">Оплатить по QR</button>` : ''}${payment.qr_link ? `<a class="cabinet-action cabinet-payment-link secondary" href="${escape(payment.qr_link)}" target="_blank" rel="noopener">Открыть платёжную ссылку Банка</a>` : ''}</section>`;
 }
 function pickupInstruction(order) {
