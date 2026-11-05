@@ -199,6 +199,22 @@ function watchPayment(orderId) {
     } catch { /* The customer can continue scanning; the next poll will retry. */ }
   }, 8000);
 }
+async function refreshAccountIfSafe() {
+  // Never redraw a panel while the customer is choosing files or typing.
+  if (hasOpenCabinetForm() || orderRefreshInFlight) return;
+  orderRefreshInFlight = true;
+  const epoch = sessionViewEpoch;
+  try {
+    const fresh = await request('GET');
+    if (epoch !== sessionViewEpoch) return;
+    if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos);
+    else showLogin();
+  } catch {
+    // A later cycle or the visible "Обновить заявки" button can retry.
+  } finally {
+    orderRefreshInFlight = false;
+  }
+}
 function watchOrderUpdates(orders) {
   if (orderPollingTimer) window.clearInterval(orderPollingTimer);
   // Active use does not need a network request every 15 seconds. Keep automatic
@@ -207,18 +223,8 @@ function watchOrderUpdates(orders) {
   if (!needsLiveUpdates) return;
   const epoch = sessionViewEpoch;
   orderPollingTimer = window.setInterval(async () => {
-    try {
-      // A mobile file chooser temporarily hides the page. Re-rendering while a
-      // document/video form is open would erase the selected local file.
-      if (hasOpenCabinetForm() || orderRefreshInFlight) return;
-      orderRefreshInFlight = true;
-      const fresh = await request('GET');
-      if (epoch !== sessionViewEpoch) return;
-      if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos);
-      else showLogin();
-    } catch { /* A manual refresh remains available if the network is offline. */ }
-    finally { orderRefreshInFlight = false; }
-  }, 45000);
+    if (epoch === sessionViewEpoch) await refreshAccountIfSafe();
+  }, 15000);
 }
 
 function requestLabel(request) {
@@ -676,6 +682,11 @@ window.addEventListener('beforeunload', event => {
   if (!hasUnsavedDocumentDraft()) return;
   event.preventDefault();
   event.returnValue = '';
+});
+document.addEventListener('visibilitychange', () => {
+  // Mobile browsers can throttle timers in the background. As soon as the
+  // customer returns to the cabinet, fetch the current status immediately.
+  if (document.visibilityState === 'visible' && !dashboard.hidden) refreshAccountIfSafe();
 });
 rentalsEl?.addEventListener('change', event => {
   const returnMethod = event.target.closest('select[name="returnMethod"]');
