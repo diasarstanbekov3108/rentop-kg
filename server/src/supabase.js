@@ -1,4 +1,6 @@
 export function createSupabaseApi(config) {
+  const customerOrderSelect = 'id,laptop_id,customer_name,customer_phone,rental_start_date,rental_end_date,rental_started_at,rental_ends_at,rental_days,daily_rate,discount_percent,status,total_amount,deposit_amount,delivery_type,locker_address,locker_status,offer_version,offer_accepted_at,offer_otp_verified_at,customer_note,rental_purpose,archa_handoff_sent_at,locker_loading_reference,locker_loaded_at,customer_access_sent_at,return_method,return_locker_address,return_access_sent_at,created_at,updated_at';
+  const phoneDigits = (value) => String(value || '').replace(/\D/g, '').replace(/^0+/, '');
   async function request(path, options = {}) {
     const isLegacyJwtKey = config.supabaseServerKey.startsWith('eyJ');
     let lastError;
@@ -64,11 +66,27 @@ export function createSupabaseApi(config) {
     createOrder: (order) => request('rental_orders', { method: 'POST', body: JSON.stringify(order) }).then((rows) => rows?.[0] || null),
     getOrderByToken: (token) => getOne(`rental_orders?client_token=eq.${encodeURIComponent(token)}&select=*`),
     getOrder: (id) => getOne(`rental_orders?id=eq.${encodeURIComponent(id)}&select=*`),
-    listOrdersByCustomerPhone: (phone, limit = 30) => request(
-      `rental_orders?customer_phone=eq.${encodeURIComponent(phone)}` +
-      '&select=id,laptop_id,customer_name,customer_phone,rental_start_date,rental_end_date,rental_started_at,rental_ends_at,rental_days,daily_rate,discount_percent,status,total_amount,deposit_amount,delivery_type,locker_address,locker_status,offer_version,offer_accepted_at,offer_otp_verified_at,customer_note,rental_purpose,archa_handoff_sent_at,locker_loading_reference,locker_loaded_at,customer_access_sent_at,return_method,return_locker_address,return_access_sent_at,created_at,updated_at' +
-      `&order=updated_at.desc&limit=${Math.min(Math.max(Number(limit) || 30, 1), 50)}`
-    ),
+    listOrdersByCustomerPhone: async (phone, limit = 30) => {
+      const safeLimit = Math.min(Math.max(Number(limit) || 30, 1), 50);
+      const exact = await request(
+        `rental_orders?customer_phone=eq.${encodeURIComponent(phone)}` +
+        `&select=${customerOrderSelect}&order=updated_at.desc&limit=${safeLimit}`
+      );
+      if (exact?.length) return exact;
+
+      // Older orders may have been imported with a different visual phone
+      // format (+996 / 996 / 0...). A suffix lookup is a server-side fallback
+      // only after authentication; its result is filtered to the full number
+      // before anything reaches the browser.
+      const digits = phoneDigits(phone);
+      const suffix = digits.slice(-6);
+      if (!suffix) return [];
+      const similar = await request(
+        `rental_orders?customer_phone=ilike.*${encodeURIComponent(suffix)}` +
+        `&select=${customerOrderSelect}&order=updated_at.desc&limit=${safeLimit}`
+      );
+      return (similar || []).filter((order) => phoneDigits(order.customer_phone) === digits);
+    },
     getOrderPayment: (orderId) => getOne(`rental_order_payments?order_id=eq.${encodeURIComponent(orderId)}&select=*&order=created_at.desc&limit=1`),
     listOrderPayments: (orderId) => request(`rental_order_payments?order_id=eq.${encodeURIComponent(orderId)}&select=*&order=created_at.desc&limit=20`),
     getPaymentByOperationId: (operationId) => getOne(`rental_order_payments?operation_id=eq.${encodeURIComponent(operationId)}&select=*&limit=1`),
