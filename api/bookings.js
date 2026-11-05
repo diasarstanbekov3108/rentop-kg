@@ -53,7 +53,9 @@ export default async function handler(request, response) {
     }
     const payload = request.body || {};
     const profile = await database.getCustomerProfile(session.phone).catch(() => null);
-    const fullName = profile?.full_name || normalizeFullName(payload.customerName, false);
+    // Orders are always tied to the verified cabinet profile.  Accepting a
+    // name from the modal here was the source of "lost" first applications.
+    const fullName = normalizeFullName(profile?.full_name, true);
     const laptopId = Number(payload.laptopId);
     if (!Number.isFinite(laptopId) || !['delivery', 'pickup', 'arca_locker'].includes(payload.deliveryType)) throw new Error('Некорректные данные заявки.');
     if (payload.deliveryType === 'arca_locker' && !payload.lockerAddress) throw new Error('Выберите локацию ARCHA POINT.');
@@ -76,7 +78,6 @@ export default async function handler(request, response) {
       locker_address: payload.lockerAddress || null,
       client_token: token
     });
-    if (fullName && !profile?.full_name) await database.saveCustomerProfile({ phone:session.phone, full_name:fullName });
     const bot = createTelegramApi(config.telegramBotToken);
     await bot.sendMessage(config.adminChatId,
       `🆕 Новая заявка с сайта\n\nЗаявка ${order.id.slice(0, 8).toUpperCase()}\n` +

@@ -418,9 +418,10 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   const fullName = String(profile?.full_name || '').trim();
   const hasValidProfileName = isValidFullName(fullName);
   document.getElementById('cabinet-greeting').textContent = fullName ? `Здравствуйте, ${fullName.split(' ')[1] || fullName}!` : 'Здравствуйте!';
+  const returningToBooking = new URLSearchParams(window.location.search).get('return') === 'booking';
   profileEl.innerHTML = hasValidProfileName
     ? `<p class="cabinet-profile-name">Личный кабинет · ${escape(fullName)} · ${phone}</p>`
-    : `<form class="cabinet-profile-form" id="profile-form"><label for="profile-full-name">Заполните ФИО для договора</label><div><input id="profile-full-name" name="fullName" autocomplete="name" placeholder="Фамилия Имя Отчество" required><button class="cabinet-action" type="submit">Сохранить</button></div><p>Указывайте данные так же, как в документе.</p></form>`;
+    : `<form class="cabinet-profile-form" id="profile-form"><label for="profile-full-name">${returningToBooking ? 'Создайте профиль для оформления заявки' : 'Заполните ФИО для договора'}</label><div><input id="profile-full-name" name="fullName" autocomplete="name" placeholder="Фамилия Имя Отчество" required><button class="cabinet-action" type="submit">${returningToBooking ? 'Сохранить и продолжить' : 'Сохранить'}</button></div><p>Указывайте данные так же, как в документе. Номер уже подтверждён по SMS.</p></form>`;
   const created = new URLSearchParams(window.location.search).get('created');
   dashboardNotice.hidden = !created;
   if (created) dashboardNotice.textContent = 'Заявка создана и уже появилась в кабинете. Следующий шаг покажем здесь.';
@@ -434,7 +435,7 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   }).join('');
   emptyEl.hidden = cabinetOrders.length !== 0;
   watchOrderUpdates(cabinetOrders);
-  if (new URLSearchParams(window.location.search).get('return') === 'booking') {
+  if (returningToBooking && hasValidProfileName) {
     window.setTimeout(() => window.location.assign('/?resume_booking=1'), 250);
   }
 }
@@ -774,7 +775,9 @@ profileEl?.addEventListener('submit', async event => {
   try {
     await request('POST', { action:'save_profile', fullName:new FormData(form).get('fullName') });
     const fresh = await request('GET');
-    if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos);
+    if (fresh.authenticated) {
+      showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos);
+    }
   } catch (error) {
     const output = document.createElement('p'); output.className = 'cabinet-form-error'; output.textContent = error.message; form.append(output); button.disabled = false;
   }

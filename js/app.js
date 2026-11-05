@@ -426,29 +426,39 @@ function updateSiteAccountUi() {
 function updateOrderAuthUi() {
   updateSiteAccountUi();
   const signedIn = Boolean(cabinetSession?.authenticated);
+  const rentalBooking = currentLaptop?.category === 'rent';
   const nameInput = document.getElementById('user-name');
   const verifiedName = String(cabinetSession?.profile?.full_name || '').trim();
   if (nameInput) {
     if (signedIn && verifiedName) nameInput.value = verifiedName;
     nameInput.readOnly = Boolean(signedIn && verifiedName);
-    nameInput.required = !signedIn;
+    // A first booking is created only after the cabinet profile has been
+    // saved.  Do not leave a required, hidden field in the form for a new
+    // signed-in customer: it caused browsers to block the next step.
+    nameInput.required = !signedIn && !rentalBooking;
     nameInput.title = signedIn && verifiedName
       ? 'ФИО берётся из личного кабинета. Для исправления откройте личный кабинет.'
       : '';
   }
-  if (orderNameGroup) orderNameGroup.hidden = signedIn;
+  // Rental customers always enter their personal data in the protected
+  // cabinet. The booking popup only asks for the rental details.
+  if (orderNameGroup) orderNameGroup.hidden = signedIn || rentalBooking;
   const phoneInput = document.getElementById('user-phone');
   if (phoneInput) {
-    phoneInput.hidden = signedIn;
-    phoneInput.required = !signedIn;
+    phoneInput.hidden = signedIn || rentalBooking;
+    phoneInput.required = !signedIn && !rentalBooking;
   }
   if (orderPhoneGroup) orderPhoneGroup.classList.toggle('is-session-known', signedIn);
-  if (orderPhoneLabel) orderPhoneLabel.textContent = signedIn ? 'Вы оформляете заявку с профиля' : 'Номер телефона / WhatsApp';
+  if (orderPhoneLabel) orderPhoneLabel.textContent = rentalBooking ? 'Профиль Rentop' : (signedIn ? 'Вы оформляете заявку с профиля' : 'Номер телефона / WhatsApp');
   if (cabinetOrderPhone) {
-    cabinetOrderPhone.hidden = !signedIn;
-    cabinetOrderPhone.textContent = signedIn ? `${verifiedName || 'ФИО заполните в личном кабинете перед отправкой документов'} · ${cabinetSession.phone}` : '';
+    cabinetOrderPhone.hidden = !rentalBooking;
+    cabinetOrderPhone.textContent = signedIn
+      ? `${verifiedName || 'Сначала заполните профиль в личном кабинете'} · ${cabinetSession.phone}`
+      : 'Для аренды сначала подтвердите номер в личном кабинете.';
   }
-  if (submitBtn && !submitInFlight) submitBtn.textContent = signedIn ? 'Продолжить оформление' : 'Войти и продолжить';
+  if (submitBtn && !submitInFlight) submitBtn.textContent = signedIn
+    ? (verifiedName ? 'Продолжить оформление' : 'Заполнить профиль и продолжить')
+    : 'Войти и продолжить';
 }
 
 navAccountLogout?.addEventListener('click', async () => {
@@ -970,12 +980,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Отправка заявки: для аренды сначала запись в Supabase, затем уведомление
-  orderForm?.addEventListener('submit', async (e) => {
+  // Отправка заявки: для аренды сначала запись в Supabase, затем уведомление.
+  // This listener uses the current modal state, so it must be bound once only.
+  if (orderForm && orderForm.dataset.bookingBound !== '1') {
+    orderForm.dataset.bookingBound = '1';
+    orderForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!currentLaptop || submitInFlight) return;
 
-    const name = document.getElementById('user-name')?.value.trim() || '';
+    let name = document.getElementById('user-name')?.value.trim() || '';
     const phone = document.getElementById('user-phone')?.value.trim() || '';
     const promo = document.getElementById('user-promo')?.value.trim() || '';
     const isRent = currentLaptop.category === 'rent';
@@ -991,17 +1004,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         redirectToCabinet();
         return;
       }
+      const profileName = String(cabinetSession.profile?.full_name || '').trim();
+      if (profileName.split(/\s+/).filter(Boolean).length < 3) {
+        // New customers complete their profile in the cabinet before an order
+        // exists. This binds the order to the verified phone in one flow.
+        redirectToCabinet();
+        return;
+      }
+      name = profileName;
       clampRentalDates();
       const draft = currentRentalDraft();
       if (draft.validationError || draft.availabilityError) {
         updateCalculator();
         return;
       }
-      if (name.length < 2) {
-        showRentalMessage('Укажите имя, чтобы сохранить заявку.', 'error');
-        return;
-      }
-
       const selectedDelivery = deliveryTypeInput?.value;
       const deliveryType = ['pickup', 'arca_locker'].includes(selectedDelivery) ? selectedDelivery : 'delivery';
       const archaLocation = deliveryType === 'arca_locker' ? selectedArchaLocation() : '';
@@ -1032,6 +1048,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const backendUrl = RENTOP_BACKEND_URL || window.location.origin;
         const response = await fetch(`${backendUrl.replace(/\/$/, '')}/api/bookings`, {
           method: 'POST',
+          credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             laptopId: currentLaptop.id,
@@ -1107,7 +1124,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     orderForm.reset();
     closeModal();
     window.open(waUrl, '_blank');
-  });
+    });
+  }
 
   // Маска телефона
   const phoneInput = document.getElementById('user-phone');
