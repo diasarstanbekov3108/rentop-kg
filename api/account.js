@@ -40,7 +40,10 @@ export default async function handler(request, response) {
   // This is a one-way fingerprint for operational diagnostics only. It lets
   // us verify that a Preview deployment received the intended database key
   // without exposing the key or any customer data in a response.
-  console.info('Rentop cabinet runtime', { databaseKeyFingerprint:createHash('sha256').update(config.supabaseServerKey).digest('hex').slice(0, 12) });
+  console.info('Rentop cabinet runtime', {
+    databaseHost:new URL(config.supabaseUrl).host,
+    databaseKeyFingerprint:createHash('sha256').update(config.supabaseServerKey).digest('hex').slice(0, 12)
+  });
   const secret = config.customerOtpHmacSecret;
   if (!secret) return json(response, 503, { error:'Вход в кабинет скоро будет доступен. Настраиваем защищённое подтверждение номера.' });
   const database = createSupabaseApi(config);
