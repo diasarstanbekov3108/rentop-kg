@@ -204,6 +204,13 @@ function hasOpenCabinetForm() {
   return Boolean(rentalsEl?.querySelector('.cabinet-request-panel:not([hidden]) form'));
 }
 
+function setWorkspaceMode(panel = null) {
+  const open = Boolean(panel && !panel.hidden);
+  document.documentElement.classList.toggle('cabinet-workspace-open', open);
+  document.body.classList.toggle('cabinet-workspace-open', open);
+  if (panel) panel.classList.toggle('cabinet-workspace', open);
+}
+
 function hasUnsavedDocumentDraft() {
   const form = rentalsEl?.querySelector('.cabinet-request-panel:not([hidden]) [data-document-upload]');
   if (!form) return false;
@@ -216,13 +223,15 @@ function watchPayment(orderId) {
   if (paymentPollingTimer) window.clearInterval(paymentPollingTimer);
   activePaymentOrderId = String(orderId);
   const epoch = sessionViewEpoch;
-  paymentPollingTimer = window.setInterval(async () => {
+  const checkPayment = async () => {
     try {
       if (hasOpenCabinetForm()) return;
       const fresh = await request('GET');
       if (epoch === sessionViewEpoch && fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos);
     } catch { /* The customer can continue scanning; the next poll will retry. */ }
-  }, 8000);
+  };
+  checkPayment();
+  paymentPollingTimer = window.setInterval(checkPayment, 3000);
 }
 async function refreshAccountIfSafe() {
   // Never redraw a panel while the customer is choosing files or typing.
@@ -446,13 +455,20 @@ function videoControl(kind) {
 }
 
 function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequired = false, promos = []) {
+  setWorkspaceMode();
   customerProfile = profile;
   offerSmsConsentRequired = Boolean(smsRequired);
   customerPromos = Array.isArray(promos) ? promos : [];
   cabinetOrders = Array.isArray(orders) ? orders : [];
   supportWhatsappUrl = whatsappUrl || '';
   paymentByOrder = new Map(cabinetOrders.filter(order => order.payment || order.extensionPayment).map(order => [String(order.id), order.extensionPayment || order.payment]));
-  if (activePaymentOrderId && paymentByOrder.get(activePaymentOrderId)?.status !== 'awaiting_payment') closePaymentDialog();
+  if (activePaymentOrderId) {
+    const activePayment = paymentByOrder.get(activePaymentOrderId);
+    if (!activePayment || activePayment.status !== 'awaiting_payment') {
+      closePaymentDialog();
+      message('Оплата подтверждена. Счёт закрыт, следующий шаг уже показан в заявке.', 'success');
+    }
+  }
   loading.hidden = true; login.hidden = true; dashboard.hidden = false;
   const fullName = String(profile?.full_name || '').trim();
   const hasValidProfileName = isValidFullName(fullName);
@@ -695,13 +711,14 @@ rentalsEl?.addEventListener('click', event => {
       message('Черновик документов открыт. Сначала загрузите его или нажмите «Отмена», если действительно хотите удалить выбранные файлы.', 'error');
       return;
     }
-    panel.hidden = !panel.hidden;
+    const opening = panel.hidden;
+    panel.hidden = !opening;
     panel.classList.toggle('is-document-result', button.dataset.panel === 'documents' && ['submitted', 'approved'].includes(button.dataset.documentMode || ''));
     const sourceOrder = cabinetOrders.find(order => String(order.id) === String(button.dataset.order));
-    panel.innerHTML = panel.hidden ? '' : panelMarkup(button.dataset.panel, button.dataset.order, { mode:button.dataset.documentMode, kinds:button.dataset.documentKinds, requestId:button.dataset.requestId, offerSmsVerified:Boolean(sourceOrder?.offer_otp_verified_at) });
+    panel.innerHTML = panel.hidden ? '' : `<button class="cabinet-workspace-close" type="button" data-close-workspace aria-label="Закрыть форму">× <span>К заявке</span></button>${panelMarkup(button.dataset.panel, button.dataset.order, { mode:button.dataset.documentMode, kinds:button.dataset.documentKinds, requestId:button.dataset.requestId, offerSmsVerified:Boolean(sourceOrder?.offer_otp_verified_at) })}`;
+    setWorkspaceMode(panel.hidden ? null : panel);
     if (!panel.hidden) {
       window.requestAnimationFrame(() => {
-        panel.scrollIntoView({ behavior:'smooth', block:'start' });
         panel.querySelector('input, select, textarea, button')?.focus({ preventScroll:true });
       });
     }
@@ -718,7 +735,13 @@ rentalsEl?.addEventListener('click', event => {
   if (event.target.closest('.cabinet-cancel-panel')) {
     const panel = event.target.closest('.cabinet-request-panel');
     if (hasUnsavedDocumentDraft() && !window.confirm('Выбранные фото, видео и заполненные данные будут удалены. Закрыть форму?')) return;
-    panel.hidden = true; panel.innerHTML = '';
+    panel.hidden = true; panel.innerHTML = ''; setWorkspaceMode();
+    return;
+  }
+  if (event.target.closest('[data-close-workspace]')) {
+    const panel = event.target.closest('.cabinet-request-panel');
+    if (hasUnsavedDocumentDraft() && !window.confirm('Выбранные фото, видео и заполненные данные будут удалены. Закрыть форму?')) return;
+    panel.hidden = true; panel.innerHTML = ''; setWorkspaceMode();
   }
 });
 document.getElementById('cabinet-document-viewer-close')?.addEventListener('click', closeDocumentViewer);

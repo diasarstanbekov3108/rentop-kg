@@ -271,7 +271,7 @@ export default async function handler(request, response) {
         return json(response, 200, { ok:true, order:updated, message:'Код отмечен. Заберите ноутбук, снимите видео комплекта и подтвердите получение.' });
       }
       if (payload.action === 'confirm_return_access_received') {
-        if (order.status !== 'awaiting_return_reservation' || order.return_method !== 'arca_locker' || order.locker_status !== 'return_pending') return json(response, 409, { error:'Этот этап возврата уже обновлён. Нажмите «Обновить заявки».' });
+        if (order.status !== 'awaiting_return_reservation' || order.return_method !== 'arca_locker' || !['return_pending','return_access_sent'].includes(String(order.locker_status || ''))) return json(response, 409, { error:'Этот этап возврата уже обновлён. Нажмите «Обновить заявки».' });
         const receivedAt = new Date().toISOString();
         const updated = await database.updateOrder(order.id, { status:'awaiting_return_dropoff', locker_status:'return_access_received', return_access_sent_at:receivedAt });
         await database.createEvent({ order_id:order.id, event_type:'customer_confirmed_archa_return_code_received_from_cabinet', actor_type:'customer', metadata:{} });

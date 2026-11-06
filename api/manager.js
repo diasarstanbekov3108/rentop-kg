@@ -338,6 +338,18 @@ export default async function handler(request, response) {
     if (payload.action === 'mark_return_access_sent') {
       return reply(response, 409, { error:'Код возврата ARCHA POINT отправляет напрямую клиенту. Этап видео откроет сам клиент после получения SMS.' });
     }
+    if (payload.action === 'send_manual_return_code') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      const code = String(payload.code || '').trim().slice(0, 120);
+      if (!order || order.status !== 'awaiting_return_reservation' || order.return_method !== 'arca_locker') return reply(response, 409, { error:'Резервный код доступен только для возврата через ARCHA POINT, ожидающего ячейку.' });
+      if (code.length < 3) return reply(response, 400, { error:'Введите код возврата, подтверждённый у ARCHA POINT.' });
+      if (!config.nikitaSms.enabled) return reply(response, 503, { error:'Nikita SMS не настроен: нельзя безопасно отправить резервный код клиенту.' });
+      await createNikitaSmsClient(config.nikitaSms).send({ phone:order.customer_phone, text:`RENTOP.KG: резервный код возврата в постамат ARCHA POINT: ${code}. Используйте его только для возврата по заявке ${String(order.id).slice(0, 8).toUpperCase()}. Не передавайте код третьим лицам.` });
+      const now = new Date().toISOString();
+      const updated = await database.updateOrder(order.id, { locker_status:'return_access_sent', return_access_code:code, return_access_sent_at:now });
+      await database.createEvent({ order_id:order.id, event_type:'manager_sent_manual_archa_return_code_from_web', actor_type:'manager', metadata:{} });
+      return reply(response, 200, { ok:true, order:updated });
+    }
     if (payload.action === 'create_bakai_payment') {
       const order = await database.getOrder(String(payload.orderId || ''));
       if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
