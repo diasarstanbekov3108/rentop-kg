@@ -32,12 +32,15 @@ const CABINET_BOOKING_KEY = 'rentop-pending-booking-v1';
 
 // Каталог показывает небольшой набор за раз: это избавляет мобильный экран
 // от бесконечной ленты, но сохраняет доступ ко всем моделям.
-const DESKTOP_ITEMS_PER_PAGE = 3;
 const MOBILE_ITEMS_PER_PAGE = 1;
 let currentPage = 1;
 
 // DOM Элементы
 const catalogGrid = document.getElementById('catalog-grid');
+const catalogPreviewGrid = document.getElementById('catalog-preview-grid');
+const catalogBrowser = document.getElementById('catalog-browser');
+const openFullCatalog = document.getElementById('open-full-catalog');
+const closeFullCatalog = document.getElementById('close-full-catalog');
 const categoryFilterButtons = document.querySelectorAll('.filter-btn[data-filter]');
 const useFilterButtons = document.querySelectorAll('.use-filter-btn');
 const catalogPagePrev = document.getElementById('catalog-page-prev');
@@ -208,11 +211,14 @@ function renderComparison() {
     ['Цена', selected.map(item => item.priceText || '—')]
   ];
   comparisonContent.innerHTML = `<div class="catalog-compare-table"><div class="catalog-compare-row is-head" style="--compare-count:${selected.length}"><span>Характеристика</span>${selected.map(item => `<strong>${formatLaptopTitle(item.title)}</strong>`).join('')}</div>${rows.map(([label, values]) => `<div class="catalog-compare-row" style="--compare-count:${selected.length}"><span>${label}</span>${values.map(value => `<b>${value}</b>`).join('')}</div>`).join('')}</div><div class="catalog-compare-actions">${selected.map(item => `<button type="button" class="btn-card" data-id="${item.id}">Забронировать ${item.title}</button>`).join('')}</div>`;
-  comparisonContent.querySelectorAll('.btn-card').forEach(button => button.addEventListener('click', () => openOrderModal(Number(button.dataset.id), { deliveryType: archaSelectionMode ? 'arca_locker' : 'delivery' })));
+  comparisonContent.querySelectorAll('.btn-card').forEach(button => button.addEventListener('click', () => {
+    if (catalogBrowser && !catalogBrowser.hidden) setCatalogBrowser(false);
+    openOrderModal(Number(button.dataset.id), { deliveryType: archaSelectionMode ? 'arca_locker' : 'delivery' });
+  }));
 }
 
 function catalogItemsPerPage() {
-  return window.matchMedia('(max-width: 768px)').matches ? MOBILE_ITEMS_PER_PAGE : DESKTOP_ITEMS_PER_PAGE;
+  return MOBILE_ITEMS_PER_PAGE;
 }
 
 function catalogPageCount() {
@@ -223,22 +229,22 @@ function updateCatalogPager() {
   const count = catalogPageCount();
   if (currentPage > count) currentPage = count;
   if (catalogPageStatus) catalogPageStatus.textContent = filteredLaptops.length
-    ? `Модели ${currentPage} из ${count}`
+    ? `Модель ${currentPage} из ${count}`
     : 'Нет подходящих моделей';
   if (catalogPagePrev) catalogPagePrev.disabled = currentPage <= 1;
   if (catalogPageNext) catalogPageNext.disabled = currentPage >= count;
 }
 
 // ========== RENDER CATALOG ==========
-function renderLaptops(items, append = false) {
-  if (!catalogGrid) return;
+function renderLaptops(items, append = false, target = catalogGrid) {
+  if (!target) return;
 
   if (!append) {
-    catalogGrid.innerHTML = '';
+    target.innerHTML = '';
   }
 
   if (items.length === 0 && !append) {
-    catalogGrid.innerHTML = `
+    target.innerHTML = `
       <p style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 50px 0;">
         Ничего не найдено
       </p>`;
@@ -305,18 +311,19 @@ function renderLaptops(items, append = false) {
       </div>
     `;
 
-    catalogGrid.appendChild(card);
+    target.appendChild(card);
   });
 
   // Навешивание событий на новые кнопки бронирования
-  document.querySelectorAll('.btn-card').forEach(btn => {
+  target.querySelectorAll('.btn-card').forEach(btn => {
     btn.onclick = (e) => {
       const id = Number(e.currentTarget.dataset.id);
+      if (catalogBrowser && !catalogBrowser.hidden) setCatalogBrowser(false);
       openOrderModal(id, { deliveryType: archaSelectionMode ? 'arca_locker' : 'delivery' });
     };
   });
 
-  document.querySelectorAll('.save-laptop').forEach(btn => {
+  target.querySelectorAll('.save-laptop').forEach(btn => {
     btn.onclick = (e) => {
       const id = String(e.currentTarget.dataset.id);
       if (savedLaptopIds.has(id)) {
@@ -329,7 +336,7 @@ function renderLaptops(items, append = false) {
     };
   });
 
-  document.querySelectorAll('[data-compare-laptop]').forEach(button => {
+  target.querySelectorAll('[data-compare-laptop]').forEach(button => {
     button.onclick = () => {
       const id = String(button.dataset.compareLaptop);
       if (comparisonLaptopIds.has(id)) comparisonLaptopIds.delete(id);
@@ -343,7 +350,7 @@ function renderLaptops(items, append = false) {
   });
 
   // Клик по картинке → лайтбокс
-  document.querySelectorAll('.card-img').forEach(img => {
+  target.querySelectorAll('.card-img').forEach(img => {
     img.onclick = () => {
       lightboxImg.src = img.src;
       lightboxCaption.textContent = img.dataset.title || '';
@@ -351,6 +358,31 @@ function renderLaptops(items, append = false) {
       document.body.style.overflow = 'hidden';
     };
   });
+}
+
+function renderCatalogPreview(items) {
+  if (!catalogPreviewGrid) return;
+  const laptop = items[0];
+  if (!laptop) {
+    catalogPreviewGrid.innerHTML = '<p class="catalog-preview-empty">По этому фильтру моделей пока нет. Откройте весь каталог или смените задачу.</p>';
+    return;
+  }
+  const isRent = laptop.category === 'rent';
+  const availability = cardAvailability(blockingRentals, laptop.id, todayIso());
+  const profile = getCatalogProfile(laptop);
+  catalogPreviewGrid.innerHTML = `<article class="catalog-preview-card"><img src="${laptop.image}" alt="${laptop.title}" loading="lazy"><div class="catalog-preview-copy"><span>${availability.label}</span><h3>${formatLaptopTitle(laptop.title)}</h3><p><b>${taskLabel(laptop)}</b><small>${profile.description}</small></p><strong>${laptop.priceText || 'Цена уточняется'}</strong><div><button type="button" class="catalog-preview-reserve" data-id="${laptop.id}">${isRent ? 'Забронировать' : 'Купить / Предзаказ'}</button><button type="button" class="catalog-preview-more" data-open-full>Подробнее</button></div></div></article>`;
+  catalogPreviewGrid.querySelector('[data-id]')?.addEventListener('click', (event) => openOrderModal(Number(event.currentTarget.dataset.id), { deliveryType: archaSelectionMode ? 'arca_locker' : 'delivery' }));
+  catalogPreviewGrid.querySelector('[data-open-full]')?.addEventListener('click', () => setCatalogBrowser(true));
+}
+
+function setCatalogBrowser(open) {
+  if (!catalogBrowser) return;
+  catalogBrowser.hidden = !open;
+  document.body.style.overflow = open ? 'hidden' : '';
+  if (open) {
+    renderLaptops(filteredLaptops, false, catalogGrid);
+    catalogBrowser.querySelector('.catalog-browser-dialog')?.focus();
+  }
 }
 
 // ========== PAGINATION & RENDER CONTROLLER ==========
@@ -364,7 +396,8 @@ function updateCatalogView(resetPagination = true) {
   const endIndex = startIndex + perPage;
   const visibleItems = filteredLaptops.slice(startIndex, endIndex);
 
-  renderLaptops(visibleItems, false);
+  renderCatalogPreview(visibleItems);
+  renderLaptops(filteredLaptops, false, catalogGrid);
   updateCatalogPager();
 }
 
@@ -373,7 +406,7 @@ function changeCatalogPage(direction) {
   if (nextPage === currentPage) return;
   currentPage = nextPage;
   updateCatalogView(false);
-  document.getElementById('catalog-grid')?.scrollIntoView({ behavior:'smooth', block:'nearest' });
+  catalogPreviewGrid?.scrollIntoView({ behavior:'smooth', block:'nearest' });
 }
 
 // ========== FILTER ==========
@@ -982,6 +1015,25 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   catalogPagePrev?.addEventListener('click', () => changeCatalogPage(-1));
   catalogPageNext?.addEventListener('click', () => changeCatalogPage(1));
+  openFullCatalog?.addEventListener('click', () => setCatalogBrowser(true));
+  closeFullCatalog?.addEventListener('click', () => setCatalogBrowser(false));
+  catalogBrowser?.addEventListener('click', (event) => {
+    if (event.target === catalogBrowser) setCatalogBrowser(false);
+  });
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !catalogBrowser?.hidden) setCatalogBrowser(false);
+  });
+  let previewSwipeStart;
+  catalogPreviewGrid?.addEventListener('touchstart', (event) => {
+    previewSwipeStart = event.touches[0]?.clientX;
+  }, { passive:true });
+  catalogPreviewGrid?.addEventListener('touchend', (event) => {
+    const end = event.changedTouches[0]?.clientX;
+    if (!Number.isFinite(previewSwipeStart) || !Number.isFinite(end)) return;
+    const distance = end - previewSwipeStart;
+    if (Math.abs(distance) >= 44) changeCatalogPage(distance < 0 ? 1 : -1);
+    previewSwipeStart = undefined;
+  }, { passive:true });
   window.addEventListener('resize', () => {
     const pageCount = catalogPageCount();
     if (currentPage > pageCount) currentPage = pageCount;

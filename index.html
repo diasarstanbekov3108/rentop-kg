@@ -36,7 +36,7 @@
   
   <!-- Fonts & Styles -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261107-catalog-pager">
+  <link rel="stylesheet" href="css/style.css?v=20261107-catalog-browser">
   <link rel="stylesheet" href="css/premium.css">
 
   <!-- Микроразметка Schema.org для Google -->
@@ -149,30 +149,15 @@
         <div><strong>Получение через ARCHA POINT 24/7</strong><span>Шаг 1 из 2: выберите ноутбук — в заявке уже будет выбран постамат.</span></div>
         <button type="button" id="close-archa-selection" aria-label="Закрыть режим выбора через постамат">×</button>
       </div>
-      
-      <div class="catalog-taskbar" aria-label="Подбор по задаче">
-        <span class="catalog-taskbar-label">Мне нужен ноутбук для:</span>
-        <button class="filter-btn use-filter-btn active" data-use="all">Любой задачи</button>
-        <button class="filter-btn use-filter-btn" data-use="study">Учёбы</button>
-        <button class="filter-btn use-filter-btn" data-use="office">Офиса</button>
-        <button class="filter-btn use-filter-btn" data-use="code">Программирования</button>
-        <button class="filter-btn use-filter-btn" data-use="creative">Монтажа / 3D</button>
-        <button class="filter-btn use-filter-btn" data-use="gaming">Игр</button>
-      </div>
-
-      <div class="filters catalog-typebar" aria-label="Тип устройства">
-        <button class="filter-btn active" data-filter="all">Все устройства</button>
-        <button class="filter-btn" data-filter="rent">Аренда</button>
-        <button class="filter-btn" data-filter="sale">Продажа</button>
-      </div>
-
-      <div class="catalog-pager" aria-label="Навигация по моделям">
+      <section class="catalog-showcase" aria-label="Быстрый просмотр каталога">
+        <p class="catalog-showcase-label">МОДЕЛЬ ДНЯ</p>
+        <div class="catalog-pager" aria-label="Навигация по моделям">
         <button type="button" id="catalog-page-prev" aria-label="Предыдущие модели">←</button>
-        <span id="catalog-page-status" aria-live="polite">Модели загружаются</span>
+          <span id="catalog-page-status" aria-live="polite">Модель загружается</span>
         <button type="button" id="catalog-page-next" aria-label="Следующие модели">→</button>
-      </div>
+        </div>
 
-      <div id="catalog-grid" class="cards-grid">
+        <div id="catalog-preview-grid" class="catalog-preview-grid">
         <!-- Скелетоны загрузки -->
         <div class="card skeleton">
           <div class="skeleton-img"></div>
@@ -192,8 +177,33 @@
           <div class="skeleton-line short"></div>
           <div class="skeleton-line"></div>
         </div>
-      </div>
+        </div>
+        <button type="button" class="catalog-open-all" id="open-full-catalog">Смотреть весь каталог</button>
+      </section>
+    </div>
+  </section>
 
+  <section class="catalog-browser" id="catalog-browser" hidden aria-label="Полный каталог Rentop">
+    <div class="catalog-browser-dialog" role="dialog" aria-modal="true" aria-labelledby="catalog-browser-title" tabindex="-1">
+      <div class="catalog-browser-head">
+        <div><p>RENTOP.KG</p><h2 id="catalog-browser-title">Все модели</h2></div>
+        <button type="button" id="close-full-catalog" aria-label="Закрыть каталог">×</button>
+      </div>
+      <div class="catalog-taskbar" aria-label="Подбор по задаче">
+        <span class="catalog-taskbar-label">Задача:</span>
+        <button class="filter-btn use-filter-btn active" data-use="all">Все</button>
+        <button class="filter-btn use-filter-btn" data-use="study">Учёба</button>
+        <button class="filter-btn use-filter-btn" data-use="office">Офис</button>
+        <button class="filter-btn use-filter-btn" data-use="code">Код</button>
+        <button class="filter-btn use-filter-btn" data-use="creative">Монтаж / 3D</button>
+        <button class="filter-btn use-filter-btn" data-use="gaming">Игры</button>
+      </div>
+      <div class="filters catalog-typebar" aria-label="Тип устройства">
+        <button class="filter-btn active" data-filter="all">Все</button>
+        <button class="filter-btn" data-filter="rent">Аренда</button>
+        <button class="filter-btn" data-filter="sale">Продажа</button>
+      </div>
+      <div id="catalog-grid" class="cards-grid"></div>
       <section class="catalog-compare" id="catalog-compare" hidden aria-live="polite">
         <div class="catalog-compare-head"><div><span>СРАВНЕНИЕ</span><h3>Выберите до трёх ноутбуков</h3></div><button type="button" id="catalog-compare-clear">Очистить</button></div>
         <div id="catalog-compare-content"></div>
@@ -778,6 +788,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script type="module" src="js/app.js?v=20261107-catalog-pager-2"></script>
+  <script type="module" src="js/app.js?v=20261107-catalog-browser"></script>
 </body>
 </html>
