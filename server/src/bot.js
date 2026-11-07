@@ -530,7 +530,7 @@ export function createRentopBot({ config, telegram, database }) {
     const conflict = await database.findOverlappingBlockingOrder(order.id, order.laptop_id, order.rental_end_date, newEndDate);
     if (conflict) return telegram.sendMessage(chatId, `Продление недоступно: с ${conflict.rental_start_date} этот ноутбук уже забронирован в другой заявке.`);
     const totalDays = Math.round((new Date(`${newEndDate}T00:00:00Z`) - new Date(`${order.rental_start_date}T00:00:00Z`)) / 86_400_000);
-    const discount = totalDays >= 15 ? 30 : totalDays >= 4 ? 15 : 0;
+    const discount = totalDays >= 15 ? 30 : totalDays >= 7 ? 15 : 0;
     const newTotal = Math.round(totalDays * Number(order.daily_rate) * (100 - discount) / 100);
     const extraAmount = Math.max(0, newTotal - Number(order.total_amount));
     await database.updateOrder(order.id, {
@@ -560,7 +560,7 @@ export function createRentopBot({ config, telegram, database }) {
     const conflict = await database.findOverlappingBlockingOrder(order.id, order.laptop_id, order.rental_end_date, newEndDate);
     if (conflict) return telegram.sendMessage(session.telegram_chat_id, `Продление недоступно: ноутбук уже забронирован с ${conflict.rental_start_date}.`);
     const totalDays = Math.round((new Date(`${newEndDate}T00:00:00Z`) - new Date(`${order.rental_start_date}T00:00:00Z`)) / 86_400_000);
-    const discount = totalDays >= 15 ? 30 : totalDays >= 4 ? 15 : 0;
+    const discount = totalDays >= 15 ? 30 : totalDays >= 7 ? 15 : 0;
     const extraAmount = Math.max(0, Math.round(totalDays * Number(order.daily_rate) * (100 - discount) / 100) - Number(order.total_amount));
     await saveStep(session, { step: 'in_use', extension_days: extraDays, extension_amount: extraAmount });
     await recordEvent({ order_id: order.id, event_type: 'customer_requested_extension', actor_type: 'customer', actor_telegram_id: actorTelegramId, metadata: { extra_days: extraDays, estimated_extra_amount: extraAmount, proposed_end_date: newEndDate } });

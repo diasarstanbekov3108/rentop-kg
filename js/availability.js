@@ -26,7 +26,7 @@ export function daysBetween(startDate, endDate) {
 
 export function discountPercentForDays(days) {
   if (days >= 15) return 30;
-  if (days >= 4) return 15;
+  if (days >= 7) return 15;
   return 0;
 }
 

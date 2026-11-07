@@ -44,7 +44,7 @@ function rentalQuote(laptop, startDate, endDate) {
   const rate = Number(laptop.daily_rate ?? laptop.dailyRate ?? laptop.dailyrate);
   if (!Number.isFinite(rate) || rate <= 0) throw new Error('Для выбранного ноутбука не указана дневная ставка.');
   if (!Number.isInteger(days) || days < 2) throw new Error('Минимальный срок аренды — 2 дня.');
-  const discount = days >= 15 ? 30 : days >= 4 ? 15 : 0;
+  const discount = days >= 15 ? 30 : days >= 7 ? 15 : 0;
   return { days, rate, discount, total: Math.round(days * rate * (100 - discount) / 100) };
 }
 
