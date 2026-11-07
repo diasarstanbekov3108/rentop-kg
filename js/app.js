@@ -21,6 +21,7 @@ let currentLaptop = null;
 let activeCategoryFilter = 'all';
 let activeUseFilter = 'all';
 let savedLaptopIds = new Set();
+let comparisonLaptopIds = new Set();
 let submitInFlight = false;
 let catalogReady = false;
 let catalogRenderVersion = 0;
@@ -38,6 +39,10 @@ const catalogGrid = document.getElementById('catalog-grid');
 const categoryFilterButtons = document.querySelectorAll('.filter-btn[data-filter]');
 const useFilterButtons = document.querySelectorAll('.use-filter-btn');
 const btnLoadMore = document.getElementById('btn-load-more');
+const featuredList = document.getElementById('catalog-featured-list');
+const comparisonPanel = document.getElementById('catalog-compare');
+const comparisonContent = document.getElementById('catalog-compare-content');
+const comparisonClear = document.getElementById('catalog-compare-clear');
 
 const modal = document.getElementById('order-modal');
 const closeModalBtn = document.getElementById('close-modal');
@@ -118,11 +123,23 @@ const modalReady = document.getElementById('modal-ready');
 const modalDelivery = document.getElementById('modal-delivery');
 const modalLoyalty = document.getElementById('modal-loyalty');
 
-function getLaptopUse(laptop) {
-  if (laptop.use_case === 'gaming' || laptop.use_case === 'work') return laptop.use_case;
+function getLaptopTasks(laptop) {
+  const details = `${laptop.title || ''} ${laptop.badge || ''} ${laptop.cpu || ''} ${laptop.ram || ''} ${laptop.storage || ''}`.toLowerCase();
+  const gaming = /rog|razer|legion|tuf|gaming|игр|cyberpunk|gta|blender|3d|vfx|katana|gf\d|g15|rtx|gtx/.test(details);
+  const lightweight = /i3|8\s*gb|8gb|celeron|pentium/.test(details);
+  const apple = /macbook|apple m/.test(details);
+  if (gaming) return ['gaming', 'creative', 'code'];
+  if (lightweight) return ['study', 'office'];
+  if (apple) return ['study', 'office', 'creative', 'code'];
+  return ['study', 'office', 'code'];
+}
 
-  const gamingKeywords = /rog|razer|legion|tuf|gaming|игр|cyberpunk|gta|blender|3d|vfx|katana|gf\d|g15/i;
-  return gamingKeywords.test(`${laptop.title || ''} ${laptop.badge || ''}`) ? 'gaming' : 'work';
+function getLaptopUse(laptop) {
+  return getLaptopTasks(laptop).includes('gaming') ? 'gaming' : 'work';
+}
+
+function matchesTask(laptop, task) {
+  return task === 'all' || getLaptopTasks(laptop).includes(task);
 }
 
 function getCatalogProfile(laptop) {
@@ -143,6 +160,15 @@ function getCatalogProfile(laptop) {
   return { label: 'Работа и разработка', description: 'Офисные задачи, браузер, созвоны и рабочие программы.' };
 }
 
+function taskLabel(laptop) {
+  const tasks = getLaptopTasks(laptop);
+  if (tasks.includes('gaming')) return 'Игры / монтаж / 3D';
+  if (tasks.includes('creative')) return 'Монтаж / дизайн';
+  if (tasks.includes('code')) return 'Работа / разработка';
+  if (tasks.includes('study')) return 'Учёба / офис';
+  return 'Для повседневных задач';
+}
+
 function formatLaptopTitle(title = '') {
   const [brand, ...model] = title.trim().split(/\s+/);
   if (!brand) return 'Ноутбук';
@@ -160,6 +186,47 @@ function loadSavedLaptops() {
 
 function saveSavedLaptops() {
   localStorage.setItem('rentop-saved-laptops', JSON.stringify([...savedLaptopIds]));
+}
+
+function renderFeaturedLaptops() {
+  if (!featuredList) return;
+  const source = laptops.filter(laptop => laptop.category === 'rent');
+  const picks = [
+    source.find(laptop => getLaptopTasks(laptop).includes('study')),
+    source.find(laptop => getLaptopTasks(laptop).includes('code')),
+    source.find(laptop => getLaptopTasks(laptop).includes('gaming'))
+  ].filter((laptop, index, list) => laptop && list.findIndex(item => String(item.id) === String(laptop.id)) === index).slice(0, 3);
+  featuredList.innerHTML = picks.length ? picks.map(laptop => `<button type="button" class="catalog-featured-card" data-featured-laptop="${laptop.id}"><span>${taskLabel(laptop)}</span><strong>${laptop.title}</strong><small>${laptop.priceText || `${Number(laptop.dailyRate || laptop.daily_rate || 0).toLocaleString('ru-RU')} сом/день`}</small></button>`).join('') : '<span class="catalog-featured-empty">Подбираем актуальные модели…</span>';
+  featuredList.querySelectorAll('[data-featured-laptop]').forEach(button => button.addEventListener('click', () => {
+    const laptop = laptops.find(item => String(item.id) === String(button.dataset.featuredLaptop));
+    if (!laptop) return;
+    activeCategoryFilter = laptop.category || 'rent';
+    activeUseFilter = getLaptopTasks(laptop)[0] || 'all';
+    categoryFilterButtons.forEach(item => item.classList.toggle('active', item.dataset.filter === activeCategoryFilter));
+    useFilterButtons.forEach(item => item.classList.toggle('active', item.dataset.use === activeUseFilter));
+    filterAndSearch();
+    document.getElementById('catalog-grid')?.scrollIntoView({ behavior:'smooth', block:'start' });
+  }));
+}
+
+function renderComparison() {
+  if (!comparisonPanel || !comparisonContent) return;
+  const selected = [...comparisonLaptopIds].map(id => laptops.find(laptop => String(laptop.id) === String(id))).filter(Boolean);
+  comparisonPanel.hidden = selected.length === 0;
+  if (!selected.length) { comparisonContent.innerHTML = ''; return; }
+  if (selected.length === 1) {
+    comparisonContent.innerHTML = `<p class="catalog-compare-hint"><strong>${selected[0].title}</strong> выбран. Добавьте ещё один ноутбук кнопкой «Сравнить».</p>`;
+    return;
+  }
+  const rows = [
+    ['Подходит для', selected.map(taskLabel)],
+    ['Процессор', selected.map(item => item.cpu || '—')],
+    ['Оперативная память', selected.map(item => item.ram || '—')],
+    ['Накопитель', selected.map(item => item.storage || '—')],
+    ['Цена', selected.map(item => item.priceText || '—')]
+  ];
+  comparisonContent.innerHTML = `<div class="catalog-compare-table"><div class="catalog-compare-row is-head" style="--compare-count:${selected.length}"><span>Характеристика</span>${selected.map(item => `<strong>${formatLaptopTitle(item.title)}</strong>`).join('')}</div>${rows.map(([label, values]) => `<div class="catalog-compare-row" style="--compare-count:${selected.length}"><span>${label}</span>${values.map(value => `<b>${value}</b>`).join('')}</div>`).join('')}</div><div class="catalog-compare-actions">${selected.map(item => `<button type="button" class="btn-card" data-id="${item.id}">Забронировать ${item.title}</button>`).join('')}</div>`;
+  comparisonContent.querySelectorAll('.btn-card').forEach(button => button.addEventListener('click', () => openOrderModal(Number(button.dataset.id), { deliveryType: archaSelectionMode ? 'arca_locker' : 'delivery' })));
 }
 
 // ========== RENDER CATALOG ==========
@@ -185,6 +252,7 @@ function renderLaptops(items, append = false) {
     const profile = getCatalogProfile(laptop);
     const availability = cardAvailability(blockingRentals, laptop.id, todayIso());
     const isSaved = savedLaptopIds.has(String(laptop.id));
+    const isCompared = comparisonLaptopIds.has(String(laptop.id));
     const statusClass = availability.state === 'busy'
       ? 'is-busy'
       : availability.state === 'soon'
@@ -213,7 +281,7 @@ function renderLaptops(items, append = false) {
         <span class="card-tag">${badge}</span>
         <h3>${formatLaptopTitle(laptop.title)}</h3>
         <div class="laptop-fit">
-          <span class="laptop-fit-label">${profile.label}</span>
+          <span class="laptop-fit-label">${taskLabel(laptop)}</span>
           <p>${profile.description}</p>
         </div>
         <ul class="specs-list">
@@ -230,6 +298,9 @@ function renderLaptops(items, append = false) {
         </div>
         <button class="btn-card" data-id="${laptop.id}">
           ${isRent ? (archaSelectionMode ? 'Выбрать для ARCHA POINT' : 'Забронировать') : 'Купить / Предзаказ'}
+        </button>
+        <button class="catalog-compare-button ${isCompared ? 'is-selected' : ''}" data-compare-laptop="${laptop.id}" type="button" aria-pressed="${isCompared}">
+          ${isCompared ? '✓ В сравнении' : 'Сравнить'}
         </button>
       </div>
     `;
@@ -254,6 +325,19 @@ function renderLaptops(items, append = false) {
         savedLaptopIds.add(id);
       }
       saveSavedLaptops();
+      updateCatalogView(false);
+    };
+  });
+
+  document.querySelectorAll('[data-compare-laptop]').forEach(button => {
+    button.onclick = () => {
+      const id = String(button.dataset.compareLaptop);
+      if (comparisonLaptopIds.has(id)) comparisonLaptopIds.delete(id);
+      else if (comparisonLaptopIds.size >= 3) {
+        window.alert('Для сравнения можно выбрать не более трёх ноутбуков.');
+        return;
+      } else comparisonLaptopIds.add(id);
+      renderComparison();
       updateCatalogView(false);
     };
   });
@@ -313,7 +397,7 @@ function filterAndSearch() {
 
     const nextItems = laptops.filter(laptop => {
       const categoryMatches = activeCategoryFilter === 'all' || laptop.category === activeCategoryFilter;
-      const useMatches = activeUseFilter === 'all' || getLaptopUse(laptop) === activeUseFilter;
+      const useMatches = matchesTask(laptop, activeUseFilter);
       return categoryMatches && useMatches;
     });
 
@@ -625,9 +709,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const scrollToMascotCatalog = () => document.getElementById('catalog')?.scrollIntoView({ behavior:'smooth', block:'start' });
   const mascotModels = (kind) => {
     const source = laptops.filter((laptop) => laptop.category === 'rent');
-    const matched = kind === 'games' || kind === 'creative'
-      ? source.filter((laptop) => getLaptopUse(laptop) === 'gaming')
-      : source.filter((laptop) => getLaptopUse(laptop) !== 'gaming');
+    const task = ({ games:'gaming', creative:'creative', study:'study', work:'office', code:'code' })[kind] || 'office';
+    const matched = source.filter((laptop) => matchesTask(laptop, task));
     return (matched.length ? matched : source).slice(0, 3).map((laptop) => laptop.title).filter(Boolean);
   };
   const showMascotAdvice = (intent = '', question = '') => {
@@ -642,15 +725,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else if (needsGames) {
       const models = mascotModels('games');
       answer = `Для игр, Blender, 3D и монтажа подойдут более мощные модели: ${models.join(', ') || 'игровые модели из каталога'}. Перед бронированием откройте карточку и проверьте процессор, видеокарту и объём памяти.`;
-      activeUseFilter = 'gaming';
+      activeUseFilter = directIntent === 'creative' ? 'creative' : 'gaming';
     } else if (needsStudy) {
       const models = mascotModels('work');
       answer = `Для учёбы, Word, Excel, браузера и созвонов достаточно рабочих моделей: ${models.join(', ') || 'рабочие модели из каталога'}. Это обычно самый разумный вариант по цене и автономности.`;
-      activeUseFilter = 'work';
+      activeUseFilter = directIntent === 'study' ? 'study' : 'office';
     } else {
       const models = mascotModels('work');
       answer = `Для офиса, программирования и обычной работы начните с: ${models.join(', ') || 'рабочих моделей каталога'}. Если нужны игры, монтаж или 3D — выберите «Игры» или «Монтаж / 3D».`;
-      activeUseFilter = 'work';
+      activeUseFilter = /программир|code|разработ/.test(text) ? 'code' : 'office';
     }
     if (mascotAnswer) mascotAnswer.textContent = answer;
     if (!needsService) {
@@ -873,6 +956,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   availabilityLoaded = availability.ok;
   filteredLaptops = [...laptops];
   catalogReady = true;
+  renderFeaturedLaptops();
+  renderComparison();
   filterAndSearch();
   await getCabinetSession();
   updateOrderAuthUi();
@@ -919,6 +1004,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       activeUseFilter = btn.dataset.use || 'all';
       filterAndSearch();
     });
+  });
+
+  comparisonClear?.addEventListener('click', () => {
+    comparisonLaptopIds.clear();
+    renderComparison();
+    updateCatalogView(false);
   });
 
   // Калькулятор и даты аренды
