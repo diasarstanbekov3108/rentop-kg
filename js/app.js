@@ -1051,18 +1051,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Фильтры
   categoryFilterButtons.forEach(btn => {
     btn.addEventListener('click', () => {
-      categoryFilterButtons.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeCategoryFilter = btn.dataset.filter || 'all';
+      const filter = btn.dataset.filter || 'all';
+      categoryFilterButtons.forEach(b => b.classList.toggle('active', b.dataset.filter === filter));
+      activeCategoryFilter = filter;
       filterAndSearch();
     });
   });
 
   useFilterButtons.forEach(btn => {
     btn.addEventListener('click', () => {
-      useFilterButtons.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeUseFilter = btn.dataset.use || 'all';
+      const use = btn.dataset.use || 'all';
+      useFilterButtons.forEach(b => b.classList.toggle('active', b.dataset.use === use));
+      activeUseFilter = use;
       filterAndSearch();
     });
   });
