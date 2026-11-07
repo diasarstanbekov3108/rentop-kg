@@ -51,7 +51,7 @@ function rentalQuote(laptop, startDate, endDate) {
 async function createBooking(request, response) {
   const payload = await readJson(request);
   const laptopId = Number(payload.laptopId);
-  const allowedDelivery = ['delivery', 'pickup', 'arca_locker'];
+  const allowedDelivery = ['delivery', 'arca_locker'];
   if (!Number.isFinite(laptopId) || !allowedDelivery.includes(payload.deliveryType)) {
     return sendJson(response, 400, { error: 'Некорректные данные заявки.' });
   }

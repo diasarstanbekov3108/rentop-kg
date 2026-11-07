@@ -68,7 +68,7 @@ function orderDetails(order, laptop) {
   const delivery = order.delivery_type === 'arca_locker'
     ? 'ARCHA POINT 24/7'
     : order.delivery_type === 'pickup'
-      ? 'Самовывоз'
+      ? 'Архивный способ получения'
       : 'Доставка';
   return [
     `Заявка ${orderRef(order)}`,

@@ -157,7 +157,7 @@ export const ARCHA_LOCATIONS = [
 ];
 
 export function deliveryLabel(deliveryType) {
-  if (deliveryType === 'pickup') return 'Самовывоз';
+  if (deliveryType === 'pickup') return 'Архивный способ получения';
   if (deliveryType === 'delivery') return 'Доставка';
   if (deliveryType === 'arca_locker') return 'ARCHA POINT — получение 24/7';
   return 'Не указан';

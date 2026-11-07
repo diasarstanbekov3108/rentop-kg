@@ -1019,7 +1019,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
       const selectedDelivery = deliveryTypeInput?.value;
-      const deliveryType = ['pickup', 'arca_locker'].includes(selectedDelivery) ? selectedDelivery : 'delivery';
+      const deliveryType = selectedDelivery === 'arca_locker' ? 'arca_locker' : 'delivery';
       const archaLocation = deliveryType === 'arca_locker' ? selectedArchaLocation() : '';
       if (deliveryType === 'arca_locker' && !archaLocation) {
         showRentalMessage('Выберите локацию ARCHA POINT.', 'error');

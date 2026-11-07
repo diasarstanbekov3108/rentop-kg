@@ -57,7 +57,7 @@ export default async function handler(request, response) {
     // name from the modal here was the source of "lost" first applications.
     const fullName = normalizeFullName(profile?.full_name, true);
     const laptopId = Number(payload.laptopId);
-    if (!Number.isFinite(laptopId) || !['delivery', 'pickup', 'arca_locker'].includes(payload.deliveryType)) throw new Error('Некорректные данные заявки.');
+    if (!Number.isFinite(laptopId) || !['delivery', 'arca_locker'].includes(payload.deliveryType)) throw new Error('Некорректные данные заявки.');
     if (payload.deliveryType === 'arca_locker' && !payload.lockerAddress) throw new Error('Выберите локацию ARCHA POINT.');
     const laptop = await database.getLaptop(laptopId);
     if (!laptop || laptop.category !== 'rent') throw new Error('Ноутбук для аренды не найден.');

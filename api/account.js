@@ -27,7 +27,7 @@ function hash(secret, value) { return createHmac('sha256', secret).update(value)
 function code() { return String(randomInt(100000, 1_000_000)); }
 function clientIp(request) { return String(request.headers['x-forwarded-for'] || '').split(',')[0].trim(); }
 function allowOrigin(request, response) { const origin = request.headers.origin; if (origin && /^https:\/\/(?:[a-z0-9-]+\.)?rentop(?:\.com\.kg|-[-a-z0-9]+\.vercel\.app)$/i.test(origin)) response.setHeader('Access-Control-Allow-Origin', origin); response.setHeader('Vary', 'Origin'); }
-function label(delivery) { return ({ arca_locker:'ARCHA POINT 24/7', delivery:'Доставка', pickup:'Самовывоз' }[delivery] || 'Уточняется'); }
+function label(delivery) { return ({ arca_locker:'ARCHA POINT 24/7', delivery:'Доставка курьером', pickup:'Архивный способ получения' }[delivery] || 'Уточняется'); }
 function addDays(isoDate, days) { const date = new Date(`${isoDate}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); }
 function orderRef(order) { return String(order.id || '').slice(0, 8).toUpperCase(); }
 function documentLabel(kind) { return ({ identity:'Паспорт или ID-карта', identity_front:'Паспорт или ID-карта — лицевая сторона', identity_back:'Паспорт или ID-карта — обратная сторона', selfie:'Селфи с документом', supporting:'Официальный подтверждающий документ', issue_video:'Видео до получения', return_video:'Видео возврата' }[kind] || 'Документ'); }
