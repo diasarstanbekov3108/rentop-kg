@@ -949,15 +949,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   loadSavedLaptops();
-  // Загрузка ноутбуков из Supabase
+  // Сначала сразу показываем каталог. Проверка занятости не должна оставлять
+  // посетителя на пустом экране, если таблица заявок отвечает медленнее.
   laptops = await fetchLaptops();
-  const availability = await fetchBlockingRentals();
-  blockingRentals = availability.rows;
-  availabilityLoaded = availability.ok;
   filteredLaptops = [...laptops];
   catalogReady = true;
   renderFeaturedLaptops();
   renderComparison();
+  filterAndSearch();
+
+  // После первого рендера уточняем занятость и обновляем карточки. Так
+  // кнопки бронирования остаются доступны даже при медленном запросе.
+  const availability = await fetchBlockingRentals();
+  blockingRentals = availability.rows;
+  availabilityLoaded = availability.ok;
   filterAndSearch();
   await getCabinetSession();
   updateOrderAuthUi();
