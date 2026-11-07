@@ -41,6 +41,7 @@ const catalogPreviewGrid = document.getElementById('catalog-preview-grid');
 const catalogBrowser = document.getElementById('catalog-browser');
 const openFullCatalog = document.getElementById('open-full-catalog');
 const closeFullCatalog = document.getElementById('close-full-catalog');
+const closeFullCatalogBottom = document.getElementById('close-full-catalog-bottom');
 const categoryFilterButtons = document.querySelectorAll('.filter-btn[data-filter]');
 const useFilterButtons = document.querySelectorAll('.use-filter-btn');
 const catalogPagePrev = document.getElementById('catalog-page-prev');
@@ -218,6 +219,8 @@ function renderComparison() {
 }
 
 function catalogItemsPerPage() {
+  if (window.matchMedia('(min-width: 1200px)').matches) return 6;
+  if (window.matchMedia('(min-width: 769px)').matches) return 3;
   return MOBILE_ITEMS_PER_PAGE;
 }
 
@@ -362,17 +365,20 @@ function renderLaptops(items, append = false, target = catalogGrid) {
 
 function renderCatalogPreview(items) {
   if (!catalogPreviewGrid) return;
-  const laptop = items[0];
-  if (!laptop) {
+  if (!items.length) {
     catalogPreviewGrid.innerHTML = '<p class="catalog-preview-empty">По этому фильтру моделей пока нет. Откройте весь каталог или смените задачу.</p>';
     return;
   }
-  const isRent = laptop.category === 'rent';
-  const availability = cardAvailability(blockingRentals, laptop.id, todayIso());
-  const profile = getCatalogProfile(laptop);
-  catalogPreviewGrid.innerHTML = `<article class="catalog-preview-card"><img src="${laptop.image}" alt="${laptop.title}" loading="lazy"><div class="catalog-preview-copy"><span>${availability.label}</span><h3>${formatLaptopTitle(laptop.title)}</h3><p><b>${taskLabel(laptop)}</b><small>${profile.description}</small></p><strong>${laptop.priceText || 'Цена уточняется'}</strong><div><button type="button" class="catalog-preview-reserve" data-id="${laptop.id}">${isRent ? 'Забронировать' : 'Купить / Предзаказ'}</button><button type="button" class="catalog-preview-more" data-open-full>Подробнее</button></div></div></article>`;
-  catalogPreviewGrid.querySelector('[data-id]')?.addEventListener('click', (event) => openOrderModal(Number(event.currentTarget.dataset.id), { deliveryType: archaSelectionMode ? 'arca_locker' : 'delivery' }));
-  catalogPreviewGrid.querySelector('[data-open-full]')?.addEventListener('click', () => setCatalogBrowser(true));
+  catalogPreviewGrid.innerHTML = items.map(laptop => {
+    const isRent = laptop.category === 'rent';
+    const availability = cardAvailability(blockingRentals, laptop.id, todayIso());
+    const profile = getCatalogProfile(laptop);
+    return `<article class="catalog-preview-card"><img src="${laptop.image}" alt="${laptop.title}" loading="lazy"><div class="catalog-preview-copy"><span>${availability.label}</span><h3>${formatLaptopTitle(laptop.title)}</h3><p><b>${taskLabel(laptop)}</b><small>${profile.description}</small></p><strong>${laptop.priceText || 'Цена уточняется'}</strong><div><button type="button" class="catalog-preview-reserve" data-id="${laptop.id}">${isRent ? 'Забронировать' : 'Купить / Предзаказ'}</button><button type="button" class="catalog-preview-more" data-open-full>Подробнее</button></div></div></article>`;
+  }).join('');
+  catalogPreviewGrid.querySelectorAll('[data-id]').forEach(button => {
+    button.addEventListener('click', (event) => openOrderModal(Number(event.currentTarget.dataset.id), { deliveryType: archaSelectionMode ? 'arca_locker' : 'delivery' }));
+  });
+  catalogPreviewGrid.querySelectorAll('[data-open-full]').forEach(button => button.addEventListener('click', () => setCatalogBrowser(true)));
 }
 
 function setCatalogBrowser(open) {
@@ -392,6 +398,7 @@ function updateCatalogView(resetPagination = true) {
   }
 
   const perPage = catalogItemsPerPage();
+  currentPage = Math.min(currentPage, catalogPageCount());
   const startIndex = (currentPage - 1) * perPage;
   const endIndex = startIndex + perPage;
   const visibleItems = filteredLaptops.slice(startIndex, endIndex);
@@ -1017,6 +1024,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   catalogPageNext?.addEventListener('click', () => changeCatalogPage(1));
   openFullCatalog?.addEventListener('click', () => setCatalogBrowser(true));
   closeFullCatalog?.addEventListener('click', () => setCatalogBrowser(false));
+  closeFullCatalogBottom?.addEventListener('click', () => setCatalogBrowser(false));
   catalogBrowser?.addEventListener('click', (event) => {
     if (event.target === catalogBrowser) setCatalogBrowser(false);
   });
