@@ -734,6 +734,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const mascotAnswer = document.getElementById('rentop-mascot-answer');
   const mascotForm = document.getElementById('rentop-mascot-form');
   const mascotQuestion = document.getElementById('rentop-mascot-question');
+  const mascotCatalogLink = document.getElementById('rentop-mascot-catalog-link');
 
   const scrollToMascotCatalog = () => document.getElementById('catalog')?.scrollIntoView({ behavior:'smooth', block:'start' });
   const mascotModels = (kind) => {
@@ -779,6 +780,45 @@ document.addEventListener('DOMContentLoaded', async () => {
     rentopMascot.classList.toggle('is-open', open);
     rentopMascotPanel.hidden = !open;
     rentopMascotButton.setAttribute('aria-expanded', String(open));
+  };
+
+  const showMascotSelectionRecommendation = (use) => {
+    if (use === 'all' || !mascotAnswer) return;
+
+    const taskNames = {
+      study: 'учёбы',
+      office: 'офисной работы',
+      code: 'программирования',
+      creative: 'монтажа и 3D',
+      gaming: 'игр',
+    };
+    const matching = laptops.filter((laptop) => matchesTask(laptop, use)
+      && (activeCategoryFilter === 'all' || laptop.category === activeCategoryFilter));
+    const candidates = matching.length
+      ? matching
+      : laptops.filter((laptop) => activeCategoryFilter === 'all' || laptop.category === activeCategoryFilter);
+    const recommended = [...candidates].sort((left, right) => {
+      const leftAvailable = cardAvailability(blockingRentals, left.id, todayIso()).label === 'Доступен сейчас';
+      const rightAvailable = cardAvailability(blockingRentals, right.id, todayIso()).label === 'Доступен сейчас';
+      if (leftAvailable !== rightAvailable) return leftAvailable ? -1 : 1;
+      return Number(right.category === 'rent') - Number(left.category === 'rent');
+    })[0];
+
+    if (!recommended) {
+      mascotAnswer.textContent = `Для ${taskNames[use] || 'вашей задачи'} пока нет модели в выбранной категории. Попробуйте «Все устройства» — я покажу больше вариантов.`;
+      if (mascotCatalogLink) mascotCatalogLink.textContent = 'Открыть каталог';
+      setMascotOpen(true);
+      setMascotMood('thinking', 1800);
+      return;
+    }
+
+    const profile = getCatalogProfile(recommended);
+    const availability = cardAvailability(blockingRentals, recommended.id, todayIso()).label;
+    const action = recommended.category === 'rent' ? 'Его можно забронировать' : 'Он доступен к покупке';
+    mascotAnswer.textContent = `Для ${taskNames[use] || 'вашей задачи'} рекомендую ${recommended.title || 'эту модель'}: ${profile.description} ${action}; ${availability.toLowerCase()}.`;
+    if (mascotCatalogLink) mascotCatalogLink.textContent = 'Показать рекомендованный вариант';
+    setMascotOpen(true);
+    setMascotMood('happy', 2400);
   };
 
   rentopMascotButton?.addEventListener('click', (event) => {
@@ -1064,6 +1104,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       useFilterButtons.forEach(b => b.classList.toggle('active', b.dataset.use === use));
       activeUseFilter = use;
       filterAndSearch();
+      showMascotSelectionRecommendation(use);
     });
   });
 
