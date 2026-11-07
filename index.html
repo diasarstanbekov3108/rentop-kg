@@ -36,7 +36,7 @@
   
   <!-- Fonts & Styles -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261107-task-catalog">
+  <link rel="stylesheet" href="css/style.css?v=20261107-catalog-pager">
   <link rel="stylesheet" href="css/premium.css">
 
   <!-- Микроразметка Schema.org для Google -->
@@ -166,6 +166,12 @@
         <button class="filter-btn" data-filter="sale">Продажа</button>
       </div>
 
+      <div class="catalog-pager" aria-label="Навигация по моделям">
+        <button type="button" id="catalog-page-prev" aria-label="Предыдущие модели">←</button>
+        <span id="catalog-page-status" aria-live="polite">Модели загружаются</span>
+        <button type="button" id="catalog-page-next" aria-label="Следующие модели">→</button>
+      </div>
+
       <div id="catalog-grid" class="cards-grid">
         <!-- Скелетоны загрузки -->
         <div class="card skeleton">
@@ -186,11 +192,6 @@
           <div class="skeleton-line short"></div>
           <div class="skeleton-line"></div>
         </div>
-      </div>
-
-      <!-- Кнопка "Показать ещё" для ограничения длины страницы на мобильных -->
-      <div class="catalog-more-wrapper" style="text-align: center; margin-top: 24px;">
-        <button id="btn-load-more" class="btn-secondary" style="display: none;">Показать ещё ноутбуки</button>
       </div>
 
       <section class="catalog-compare" id="catalog-compare" hidden aria-live="polite">
@@ -777,6 +778,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script type="module" src="js/app.js?v=20261107-catalog-reliable"></script>
+  <script type="module" src="js/app.js?v=20261107-catalog-pager"></script>
 </body>
 </html>

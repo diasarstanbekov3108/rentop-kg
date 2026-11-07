@@ -30,15 +30,19 @@ let archaSelectionMode = false;
 let cabinetSession = null;
 const CABINET_BOOKING_KEY = 'rentop-pending-booking-v1';
 
-// Настройки пагинации
-const ITEMS_PER_PAGE = 6;
+// Каталог показывает небольшой набор за раз: это избавляет мобильный экран
+// от бесконечной ленты, но сохраняет доступ ко всем моделям.
+const DESKTOP_ITEMS_PER_PAGE = 3;
+const MOBILE_ITEMS_PER_PAGE = 1;
 let currentPage = 1;
 
 // DOM Элементы
 const catalogGrid = document.getElementById('catalog-grid');
 const categoryFilterButtons = document.querySelectorAll('.filter-btn[data-filter]');
 const useFilterButtons = document.querySelectorAll('.use-filter-btn');
-const btnLoadMore = document.getElementById('btn-load-more');
+const catalogPagePrev = document.getElementById('catalog-page-prev');
+const catalogPageNext = document.getElementById('catalog-page-next');
+const catalogPageStatus = document.getElementById('catalog-page-status');
 const comparisonPanel = document.getElementById('catalog-compare');
 const comparisonContent = document.getElementById('catalog-compare-content');
 const comparisonClear = document.getElementById('catalog-compare-clear');
@@ -207,6 +211,24 @@ function renderComparison() {
   comparisonContent.querySelectorAll('.btn-card').forEach(button => button.addEventListener('click', () => openOrderModal(Number(button.dataset.id), { deliveryType: archaSelectionMode ? 'arca_locker' : 'delivery' })));
 }
 
+function catalogItemsPerPage() {
+  return window.matchMedia('(max-width: 768px)').matches ? MOBILE_ITEMS_PER_PAGE : DESKTOP_ITEMS_PER_PAGE;
+}
+
+function catalogPageCount() {
+  return Math.max(1, Math.ceil(filteredLaptops.length / catalogItemsPerPage()));
+}
+
+function updateCatalogPager() {
+  const count = catalogPageCount();
+  if (currentPage > count) currentPage = count;
+  if (catalogPageStatus) catalogPageStatus.textContent = filteredLaptops.length
+    ? `Модели ${currentPage} из ${count}`
+    : 'Нет подходящих моделей';
+  if (catalogPagePrev) catalogPagePrev.disabled = currentPage <= 1;
+  if (catalogPageNext) catalogPageNext.disabled = currentPage >= count;
+}
+
 // ========== RENDER CATALOG ==========
 function renderLaptops(items, append = false) {
   if (!catalogGrid) return;
@@ -220,7 +242,7 @@ function renderLaptops(items, append = false) {
       <p style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 50px 0;">
         Ничего не найдено
       </p>`;
-    if (btnLoadMore) btnLoadMore.style.display = 'none';
+    updateCatalogPager();
     return;
   }
 
@@ -337,32 +359,21 @@ function updateCatalogView(resetPagination = true) {
     currentPage = 1;
   }
 
-  const startIndex = 0;
-  const endIndex = currentPage * ITEMS_PER_PAGE;
+  const perPage = catalogItemsPerPage();
+  const startIndex = (currentPage - 1) * perPage;
+  const endIndex = startIndex + perPage;
   const visibleItems = filteredLaptops.slice(startIndex, endIndex);
 
   renderLaptops(visibleItems, false);
-
-  if (btnLoadMore) {
-    if (endIndex < filteredLaptops.length) {
-      btnLoadMore.style.display = 'inline-block';
-    } else {
-      btnLoadMore.style.display = 'none';
-    }
-  }
+  updateCatalogPager();
 }
 
-function loadMoreLaptops() {
-  const startIndex = currentPage * ITEMS_PER_PAGE;
-  currentPage++;
-  const endIndex = currentPage * ITEMS_PER_PAGE;
-  const nextChunk = filteredLaptops.slice(startIndex, endIndex);
-
-  renderLaptops(nextChunk, true);
-
-  if (endIndex >= filteredLaptops.length && btnLoadMore) {
-    btnLoadMore.style.display = 'none';
-  }
+function changeCatalogPage(direction) {
+  const nextPage = Math.min(catalogPageCount(), Math.max(1, currentPage + direction));
+  if (nextPage === currentPage) return;
+  currentPage = nextPage;
+  updateCatalogView(false);
+  document.getElementById('catalog-grid')?.scrollIntoView({ behavior:'smooth', block:'nearest' });
 }
 
 // ========== FILTER ==========
@@ -969,8 +980,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.history.replaceState({}, '', window.location.pathname);
   }
 
-  // Кнопка "Показать ещё"
-  btnLoadMore?.addEventListener('click', loadMoreLaptops);
+  catalogPagePrev?.addEventListener('click', () => changeCatalogPage(-1));
+  catalogPageNext?.addEventListener('click', () => changeCatalogPage(1));
+  window.addEventListener('resize', () => {
+    const pageCount = catalogPageCount();
+    if (currentPage > pageCount) currentPage = pageCount;
+    updateCatalogView(false);
+  }, { passive:true });
 
   // Фильтры
   categoryFilterButtons.forEach(btn => {
