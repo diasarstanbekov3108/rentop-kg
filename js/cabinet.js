@@ -288,7 +288,7 @@ function documentSummary(order) {
         ? `<span class="cabinet-doc-saved"><button type="button" class="cabinet-doc-chip" data-document-open="${escape(document.id)}" data-document-order="${escape(order.id)}" data-document-name="${escape(document.file_name || label)}" data-document-type="${escape(document.content_type || '')}">${text}</button>${remove}</span>`
       : `<span>${text}</span>`;
   };
-  const reasons = [...latest.values()].filter(document => document.status === 'rejected' && document.reviewer_note).map(document => `<li><strong>${escape(({ identity:'Документ', identity_front:'Лицевая сторона', identity_back:'Обратная сторона', selfie:'Селфи', supporting:'Подтверждение' }[document.kind] || 'Документ'))}:</strong> ${escape(document.reviewer_note)}</li>`).join('');
+  const reasons = [...latest.values()].filter(document => document.status === 'rejected' && document.reviewer_note).map(document => `<li><strong>${escape(({ identity:'Документ', identity_front:'Лицевая сторона', identity_back:'Обратная сторона', selfie:'Селфи', supporting:'Подтверждение', issue_video:'Видео до получения', return_video:'Видео возврата' }[document.kind] || 'Документ'))}:</strong> ${escape(document.reviewer_note)}</li>`).join('');
   const labels = { identity:'Документ', identity_front:'Лицевая сторона', identity_back:'Обратная сторона', selfie:'Селфи', supporting:'Подтверждение', issue_video:'Видео до получения', return_video:'Видео возврата' };
   const summary = visibleKinds.length ? visibleKinds.map(kind => state(kind, labels[kind])).join('') : '<span>○ Документы ещё не загружены</span>';
   return `<div class="cabinet-doc-summary">${summary}</div>${reasons ? `<div class="cabinet-document-reasons"><strong>Нужно исправить</strong><ul>${reasons}</ul></div>` : ''}`;
@@ -349,6 +349,7 @@ function actionPanel(order) {
   const deadline = rentalDeadline(order);
   const paidExtension = order.extensionPayment?.status === 'paid';
   const openExtension = paidExtension ? null : order.requests?.find(request => request.kind === 'extension' && ['open','in_progress'].includes(request.status));
+  const rejectedExtension = order.requests?.find(request => request.kind === 'extension' && request.status === 'cancelled' && request.customer_message?.startsWith('Продление не согласовано:'));
   const openReturn = order.requests?.find(request => request.kind === 'early_return' && ['open','in_progress'].includes(request.status));
   const docState = documentMode(order);
   const documentText = docState.mode === 'approved' ? 'Документы проверены' : docState.mode === 'submitted' ? 'Документы на проверке' : docState.mode === 'replacement' ? 'Заменить документ' : 'Загрузить документы →';
@@ -374,16 +375,26 @@ function actionPanel(order) {
         : `<button class="cabinet-action" data-panel="issue-video" data-order="${order.id}">Прикрепить видео получения</button>`;
     return `<section class="cabinet-pickup-flow ${accessSent ? 'is-ready' : ''}"><div><strong>${accessSent ? '✓ ' : ''}${title}</strong><span>${escape(location)}${point ? ` · ${escape(point.hours)}` : ''}</span></div>${point ? `<a class="cabinet-map-link" href="${escape(point.map)}" target="_blank" rel="noopener">Маршрут в 2ГИС ↗</a>` : ''}<p>${lead}${issueVideo ? ' Видео получено — подтвердите получение.' : ''}</p>${steps}<div class="cabinet-actions">${primary}<button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Помощь</button></div></section>`;
   }
-  const returnVideo = (order.documents || []).find(document => document.kind === 'return_video' && document.status !== 'rejected');
+  const latestReturnVideo = latestDocuments(order).get('return_video');
+  const returnVideo = latestReturnVideo?.status === 'rejected' ? null : latestReturnVideo;
   const returnMethod = openReturn?.return_method || order.return_method;
   if (order.status === 'awaiting_return_reservation') return `${documents}<section class="cabinet-pickup-flow"><strong>Резервируем ячейку для возврата</strong><p>ARCHA POINT готовит ячейку в точке ${escape(order.return_locker_address || order.locker_address || 'из вашей заявки')}. Код придёт отдельным SMS напрямую на номер из заявки — не в личный кабинет. Как только SMS с кодом действительно пришла, нажмите кнопку ниже: откроется загрузка видео возврата.</p><div class="cabinet-actions"><button class="cabinet-action" data-return-access-received="${order.id}">Код из SMS получен</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Код не приходит / помощь</button>${whatsapp}</div></section>`;
-  if (order.status === 'awaiting_return_dropoff') return `${documents}<section class="cabinet-pickup-flow is-ready"><strong>✓ Код возврата отправлен</strong><p>До помещения в ячейку снимите короткое видео ноутбука, корпуса, экрана, зарядки и комплекта. Затем используйте только код из сообщения ARCHA POINT и положите технику в назначенную ячейку.</p><ol><li>Снимите видео состояния и комплекта.</li><li>Прикрепите видео ниже.</li><li>Поместите устройство в ячейку по коду ARCHA POINT.</li><li>Только после закрытия ячейки нажмите «Ноутбук помещён».</li></ol><div class="cabinet-actions">${returnVideo ? `<span class="cabinet-request-state is-success">✓ Видео отправлено. После помещения ноутбука подтвердите это ниже.</span><button class="cabinet-action" data-confirm-return-dropoff="${order.id}">Ноутбук помещён в ячейку</button>` : `<button class="cabinet-action secondary" data-panel="return-video" data-order="${order.id}">Прикрепить видео возврата</button>`}<button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Проблема с возвратом</button></div></section>`;
+  if (order.status === 'awaiting_return_dropoff') {
+    const returnVideoAccepted = returnVideo?.status === 'accepted';
+    const returnVideoPending = returnVideo && !returnVideoAccepted;
+    const returnAction = returnVideoAccepted
+      ? `<span class="cabinet-request-state is-info">Видео проверено. Теперь поместите ноутбук в ячейку и подтвердите это ниже.</span><button class="cabinet-action" data-confirm-return-dropoff="${order.id}">Ноутбук помещён в ячейку</button>`
+      : returnVideoPending
+        ? `<span class="cabinet-request-state is-warning">Видео отправлено. Ожидаем визуальной проверки менеджера. Не помещайте ноутбук в ячейку до подтверждения.</span>`
+        : `<button class="cabinet-action secondary" data-panel="return-video" data-order="${order.id}">Прикрепить видео возврата</button>`;
+    return `${documents}<section class="cabinet-pickup-flow is-ready"><strong>Код возврата отправлен</strong><p>До помещения в ячейку снимите короткое видео ноутбука, корпуса, экрана, зарядки и комплекта. Затем дождитесь, пока менеджер проверит видео.</p><ol><li>Снимите видео состояния и комплекта.</li><li>Прикрепите видео ниже.</li><li>Дождитесь статуса «Видео проверено».</li><li>Только затем поместите устройство в ячейку по коду ARCHA POINT.</li></ol><div class="cabinet-actions">${returnAction}<button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Проблема с возвратом</button></div></section>`;
+  }
   if (order.status === 'returned') return `${documents}<section class="cabinet-pickup-flow"><strong>Возврат подтверждён</strong><p>Мы получили вашу отметку о помещении ноутбука. Менеджер проверит видео, заберёт устройство из ячейки и проведёт итоговый осмотр. Аренда будет завершена только после этой проверки.</p><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Проблема с возвратом</button>${whatsapp}</div></section>`;
   if (order.status === 'completed') {
     const feedbackActions = order.feedback
       ? '<div class="cabinet-request-state is-success">Спасибо — ваш отзыв уже получен.</div>'
       : `<div class="cabinet-actions"><button class="cabinet-action" data-panel="feedback" data-order="${order.id}">Оставить отзыв</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Предложить улучшение</button></div>`;
-    return `${documents}<section class="cabinet-completion"><strong>Спасибо, что выбрали Rentop!</strong><p>Мы благодарим вас за аренду и будем рады помочь снова. Менеджер может выдать персональный промокод на следующую аренду — он появится в разделе «Скидки и промокоды».</p>${feedbackActions}</section>`;
+    return `${documents}<section class="cabinet-completion"><strong>Спасибо, что выбрали Rentop!</strong><p>Мы благодарим вас за аренду и будем рады помочь снова. Менеджер может выдать персональный промокод на следующую аренду — он появится в разделе «Скидки и промокоды».</p>${feedbackActions}<div class="cabinet-actions"><button class="cabinet-action ghost" data-close-completion="${order.id}">Закрыть</button></div></section>`;
   }
   if (order.status === 'return_requested') {
     const methodText = returnMethod === 'courier'
@@ -392,6 +403,9 @@ function actionPanel(order) {
         ? 'Склад Rentop: менеджер пришлёт адрес и время приёма. До передачи снимите видео состояния и комплекта.'
         : 'Менеджер согласует выбранный способ возврата. До передачи снимите видео состояния и комплекта.';
     return `${documents}<section class="cabinet-pickup-flow"><strong>Возврат оформляется</strong><p>${methodText}</p><div class="cabinet-actions">${returnVideo ? '<span class="cabinet-request-state is-success">✓ Видео возврата отправлено. Ожидайте приёмку Rentop.</span>' : `<button class="cabinet-action secondary" data-panel="return-video" data-order="${order.id}">Прикрепить видео возврата</button>`}<button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Проблема с возвратом</button>${whatsapp}</div></section>`;
+  }
+  if (rejectedExtension) {
+    return `${documents}<div class="cabinet-request-state is-error"><strong>Продление не согласовано</strong><p>${escape(rejectedExtension.customer_message || 'Ноутбук недоступен на запрошенные даты. Выберите возврат в текущий срок или свяжитесь с менеджером.')}</p></div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="return" data-order="${order.id}">Оформить возврат</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Уточнить у менеджера</button>${whatsapp}</div>`;
   }
   if (openExtension || openReturn) {
     const pending = openExtension || openReturn;
@@ -451,7 +465,7 @@ function fileControl(kind) {
   return `<div class="cabinet-file-control"><label for="document-${kind}">${title} <span>${hint}</span></label>${typeChoice}<input id="document-${kind}" name="${kind}" type="file" accept="${selfie ? 'image/jpeg,image/png' : 'image/jpeg,image/png,application/pdf'}" ${selfie ? 'capture="user"' : ''} hidden><div><button class="cabinet-file-choose" type="button" data-file-trigger="${kind}">${selfie ? 'Снять селфи камерой' : 'Выбрать из галереи / файлов'}</button><button class="cabinet-file-preview" type="button" data-file-preview="${kind}" disabled>Файл не выбран</button><button class="cabinet-file-remove" type="button" data-file-remove="${kind}" hidden>Удалить</button></div></div>`;
 }
 function videoControl(kind) {
-  return `<div class="cabinet-file-control"><input id="document-${kind}" name="${kind}" type="file" accept="video/mp4,video/quicktime" capture="environment" hidden><div><button class="cabinet-file-choose" type="button" data-file-trigger="${kind}">Снять или выбрать видео</button><button class="cabinet-file-preview" type="button" data-file-preview="${kind}" disabled>Видео не выбрано</button><button class="cabinet-file-remove" type="button" data-file-remove="${kind}" hidden>Удалить</button></div><p class="cabinet-video-hint" data-video-hint="${kind}"></p></div>`;
+  return `<div class="cabinet-file-control"><input id="document-${kind}" name="${kind}" type="file" accept="video/*" hidden><div><button class="cabinet-file-choose" type="button" data-file-trigger="${kind}">Снять или выбрать видео</button><button class="cabinet-file-preview" type="button" data-file-preview="${kind}" disabled>Видео не выбрано</button><button class="cabinet-file-remove" type="button" data-file-remove="${kind}" hidden>Удалить</button></div><p class="cabinet-video-hint" data-video-hint="${kind}">Откроется камера или медиатека телефона: выберите качественную съёмку 720p или 1080p/30 fps.</p></div>`;
 }
 
 function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequired = false, promos = []) {
@@ -554,12 +568,26 @@ document.getElementById('cabinet-refresh')?.addEventListener('click', async even
     button.textContent = initialText;
   }
 });
+document.getElementById('cabinet-session-retry')?.addEventListener('click', async event => {
+  const button = event.currentTarget;
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Проверяем сессию…';
+  await loadSession();
+  button.disabled = false;
+  button.textContent = original;
+});
 
 phoneForm?.addEventListener('submit', async event => { event.preventDefault(); const phone = formatPhone(phoneInput.value); if (!phone) return message('Введите номер Кыргызстана: +996XXXXXXXXX.', 'error'); const button = phoneForm.querySelector('button'); button.disabled = true; message('Отправляем код…'); try { await request('POST', { action:'request_code', phone }); pendingPhone = phone; phoneForm.hidden = true; codeForm.hidden = false; codeInput.focus(); message('Код отправлен. Введите 6 цифр из сообщения.', 'success'); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
 codeForm?.addEventListener('submit', async event => { event.preventDefault(); const code = codeInput.value.replace(/\D/g, ''); if (code.length !== 6) return message('Введите все 6 цифр кода.', 'error'); const button = codeForm.querySelector('button'); button.disabled = true; message('Проверяем код…'); try { const remember = document.getElementById('cabinet-remember')?.checked !== false; const data = await request('POST', { action:'verify_code', phone:pendingPhone, code, remember }); sessionViewEpoch += 1; showRentals(data.orders || [], data.phone, data.profile, data.whatsappUrl, data.offerSmsConsentRequired, data.promos); message(''); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
 document.getElementById('change-phone')?.addEventListener('click', () => { codeForm.hidden = true; phoneForm.hidden = false; codeInput.value = ''; message(''); phoneInput.focus(); });
 document.getElementById('cabinet-logout')?.addEventListener('click', async () => { await request('POST', { action:'logout' }).catch(() => {}); showLogin(); phoneForm.hidden = false; codeForm.hidden = true; phoneInput.value = ''; codeInput.value = ''; pendingPhone = ''; message('Вы вышли из кабинета.'); });
 rentalsEl?.addEventListener('click', event => {
+  const closeCompletion = event.target.closest('[data-close-completion]');
+  if (closeCompletion) {
+    closeCompletion.closest('.cabinet-completion')?.setAttribute('hidden', '');
+    return;
+  }
   const paymentButton = event.target.closest('[data-open-payment]');
   if (paymentButton) {
     openPaymentDialog(paymentByOrder.get(String(paymentButton.dataset.openPayment)));

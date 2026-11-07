@@ -400,6 +400,18 @@ export default async function handler(request, response) {
       await database.createEvent({ order_id:order.id, event_type:'bakai_extension_qr_created_from_web', actor_type:'manager', metadata:{ operation_id:operationId, amount, request_id:extension.id, proposed_return_date:extension.proposed_return_date } });
       return reply(response, 201, { ok:true, payment });
     }
+    if (payload.action === 'reject_extension_request') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      const requestId = String(payload.requestId || '');
+      const reason = String(payload.reason || '').trim().slice(0, 1200);
+      if (!order || !['issued', 'in_use'].includes(order.status)) return reply(response, 409, { error:'Продление можно отклонить только для активной аренды.' });
+      const extension = (await database.listCustomerRequests(order.id)).find(item => item.id === requestId && item.kind === 'extension' && ['open', 'in_progress'].includes(item.status));
+      if (!extension) return reply(response, 404, { error:'Активный запрос продления не найден.' });
+      const message = reason || 'Продление не согласовано: ноутбук уже забронирован на последующие даты. Пожалуйста, верните устройство в согласованный срок.';
+      const updatedRequest = await database.updateCustomerRequest(extension.id, { status:'cancelled', customer_message:message });
+      await database.createEvent({ order_id:order.id, event_type:'manager_rejected_extension_from_web', actor_type:'manager', metadata:{ request_id:extension.id, reason:message } });
+      return reply(response, 200, { ok:true, request:updatedRequest });
+    }
     if (payload.action === 'revoke_bakai_payment') {
       const order = await database.getOrder(String(payload.orderId || ''));
       if (!order) return reply(response, 404, { error:'Заявка не найдена.' });

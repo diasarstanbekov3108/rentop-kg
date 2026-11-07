@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
-  <link rel="stylesheet" href="css/cabinet.css?v=20261107-documents-cta">
+  <link rel="stylesheet" href="css/cabinet.css?v=20261108-cabinet-feedback">
 </head>
 <body class="cabinet-page">
   <header class="cabinet-header">
@@ -31,6 +31,8 @@
     <section class="cabinet-card cabinet-login" id="cabinet-login" hidden>
       <h2>Войти по номеру</h2>
       <p class="cabinet-muted">Мы отправим одноразовый код. Пароль не нужен.</p>
+      <button class="cabinet-session-retry" id="cabinet-session-retry" type="button">Уже входили? Обновить кабинет без нового SMS</button>
+      <p class="cabinet-session-hint">Если кабинет неожиданно просит номер, сначала нажмите эту кнопку: иногда мобильный браузер возвращает сессию после повторной проверки.</p>
       <form id="phone-form" novalidate>
         <label for="cabinet-phone">Номер телефона</label>
         <input id="cabinet-phone" type="tel" inputmode="numeric" autocomplete="tel" maxlength="19" value="+996 " placeholder="+996 (___) __-__-__" required>
@@ -84,6 +86,6 @@
       <p class="cabinet-payment-dialog-expiry" id="cabinet-payment-dialog-expiry"></p>
     </div>
   </div>
-  <script type="module" src="js/cabinet.js?v=20261107-documents-cta"></script>
+  <script type="module" src="js/cabinet.js?v=20261108-cabinet-feedback"></script>
 </body>
 </html>
