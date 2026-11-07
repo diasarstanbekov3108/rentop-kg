@@ -994,10 +994,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       categoryFilterButtons.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       activeCategoryFilter = btn.dataset.filter || 'all';
-      if (activeCategoryFilter === 'all') {
-        activeUseFilter = 'all';
-        useFilterButtons.forEach((button) => button.classList.toggle('active', button.dataset.use === 'all'));
-      }
       filterAndSearch();
     });
   });
