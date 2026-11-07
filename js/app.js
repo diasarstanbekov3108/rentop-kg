@@ -22,6 +22,7 @@ let activeCategoryFilter = 'all';
 let activeUseFilter = 'all';
 let savedLaptopIds = new Set();
 let comparisonLaptopIds = new Set();
+let savedOnly = false;
 let submitInFlight = false;
 let catalogReady = false;
 let catalogRenderVersion = 0;
@@ -50,6 +51,10 @@ const catalogPageStatus = document.getElementById('catalog-page-status');
 const comparisonPanel = document.getElementById('catalog-compare');
 const comparisonContent = document.getElementById('catalog-compare-content');
 const comparisonClear = document.getElementById('catalog-compare-clear');
+const savedOnlyButton = document.getElementById('catalog-saved-only');
+const savedCount = document.getElementById('catalog-saved-count');
+const comparisonStatus = document.getElementById('catalog-compare-status');
+const comparisonCount = document.getElementById('catalog-compare-count');
 
 const modal = document.getElementById('order-modal');
 const closeModalBtn = document.getElementById('close-modal');
@@ -195,7 +200,18 @@ function saveSavedLaptops() {
   localStorage.setItem('rentop-saved-laptops', JSON.stringify([...savedLaptopIds]));
 }
 
+function updateCatalogUtilityButtons() {
+  if (savedCount) savedCount.textContent = String(savedLaptopIds.size);
+  if (savedOnlyButton) {
+    savedOnlyButton.classList.toggle('is-active', savedOnly);
+    savedOnlyButton.setAttribute('aria-pressed', String(savedOnly));
+    savedOnlyButton.innerHTML = `${savedOnly ? '♥' : '♡'} Избранное <span id="catalog-saved-count">${savedLaptopIds.size}</span>`;
+  }
+  if (comparisonCount) comparisonCount.textContent = String(comparisonLaptopIds.size);
+}
+
 function renderComparison() {
+  updateCatalogUtilityButtons();
   if (!comparisonPanel || !comparisonContent) return;
   const selected = [...comparisonLaptopIds].map(id => laptops.find(laptop => String(laptop.id) === String(id))).filter(Boolean);
   comparisonPanel.hidden = selected.length === 0;
@@ -335,7 +351,7 @@ function renderLaptops(items, append = false, target = catalogGrid) {
         savedLaptopIds.add(id);
       }
       saveSavedLaptops();
-      updateCatalogView(false);
+      filterAndSearch();
     };
   });
 
@@ -406,6 +422,7 @@ function updateCatalogView(resetPagination = true) {
   renderCatalogPreview(visibleItems);
   renderLaptops(filteredLaptops, false, catalogGrid);
   updateCatalogPager();
+  updateCatalogUtilityButtons();
 }
 
 function changeCatalogPage(direction) {
@@ -427,7 +444,8 @@ function filterAndSearch() {
     const nextItems = laptops.filter(laptop => {
       const categoryMatches = activeCategoryFilter === 'all' || laptop.category === activeCategoryFilter;
       const useMatches = matchesTask(laptop, activeUseFilter);
-      return categoryMatches && useMatches;
+      const savedMatches = !savedOnly || savedLaptopIds.has(String(laptop.id));
+      return categoryMatches && useMatches && savedMatches;
     });
 
     if (version !== catalogRenderVersion) return;
@@ -1065,6 +1083,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   openFullCatalog?.addEventListener('click', () => setCatalogBrowser(true));
   closeFullCatalog?.addEventListener('click', () => setCatalogBrowser(false));
   closeFullCatalogBottom?.addEventListener('click', () => setCatalogBrowser(false));
+  savedOnlyButton?.addEventListener('click', () => {
+    savedOnly = !savedOnly;
+    filterAndSearch();
+  });
+  comparisonStatus?.addEventListener('click', () => {
+    if (comparisonLaptopIds.size) comparisonPanel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
   catalogBrowser?.addEventListener('click', (event) => {
     if (event.target === catalogBrowser) setCatalogBrowser(false);
   });

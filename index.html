@@ -36,7 +36,7 @@
   
   <!-- Fonts & Styles -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261107-filter-labels">
+  <link rel="stylesheet" href="css/style.css?v=20261108-catalog-tools">
   <link rel="stylesheet" href="css/premium.css">
 
   <!-- Микроразметка Schema.org для Google -->
@@ -144,7 +144,7 @@
   <section id="catalog">
     <div class="container">
       <h2 class="section-title">Каталог устройств</h2>
-      <p class="catalog-intro">Выберите задачу — Rentop покажет модели, которые действительно подходят по мощности и цене.</p>
+        <p class="catalog-intro">Выберите ноутбук для аренды или покупки. Используйте фильтры, чтобы быстрее найти подходящую модель.</p>
       <div class="archa-selection-notice" id="archa-selection-notice" hidden role="status">
         <div><strong>Получение через ARCHA POINT 24/7</strong><span>Шаг 1 из 2: выберите ноутбук — в заявке уже будет выбран постамат.</span></div>
         <button type="button" id="close-archa-selection" aria-label="Закрыть режим выбора через постамат">×</button>
@@ -203,7 +203,11 @@
     <div class="catalog-browser-dialog" role="dialog" aria-modal="true" aria-labelledby="catalog-browser-title" tabindex="-1">
       <div class="catalog-browser-head">
         <div><p>RENTOP.KG</p><h2 id="catalog-browser-title">Все модели</h2></div>
-        <button type="button" id="close-full-catalog" aria-label="Закрыть каталог">×</button>
+        <div class="catalog-browser-head-actions">
+          <button type="button" class="catalog-utility-button" id="catalog-saved-only" aria-pressed="false">♡ Избранное <span id="catalog-saved-count">0</span></button>
+          <button type="button" class="catalog-utility-button" id="catalog-compare-status">Сравнение <span id="catalog-compare-count">0</span>/3</button>
+          <button type="button" id="close-full-catalog" aria-label="Закрыть каталог">×</button>
+        </div>
       </div>
       <div class="catalog-taskbar" aria-label="Подбор по задаче">
         <span class="catalog-taskbar-label">Для чего нужен:</span>
@@ -806,6 +810,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script type="module" src="js/app.js?v=20261107-mascot-recommendations"></script>
+  <script type="module" src="js/app.js?v=20261108-catalog-tools"></script>
 </body>
 </html>
