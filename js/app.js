@@ -1,5 +1,5 @@
 import { RENTOP_BACKEND_URL } from './config.js';
-import { fetchLaptops, fetchBlockingRentals } from './supabase.js';
+import { fetchLaptops, fetchBlockingRentals, getFallbackLaptops } from './supabase.js';
 import {
   todayIso,
   addDays,
@@ -39,7 +39,6 @@ const catalogGrid = document.getElementById('catalog-grid');
 const categoryFilterButtons = document.querySelectorAll('.filter-btn[data-filter]');
 const useFilterButtons = document.querySelectorAll('.use-filter-btn');
 const btnLoadMore = document.getElementById('btn-load-more');
-const featuredList = document.getElementById('catalog-featured-list');
 const comparisonPanel = document.getElementById('catalog-compare');
 const comparisonContent = document.getElementById('catalog-compare-content');
 const comparisonClear = document.getElementById('catalog-compare-clear');
@@ -186,27 +185,6 @@ function loadSavedLaptops() {
 
 function saveSavedLaptops() {
   localStorage.setItem('rentop-saved-laptops', JSON.stringify([...savedLaptopIds]));
-}
-
-function renderFeaturedLaptops() {
-  if (!featuredList) return;
-  const source = laptops.filter(laptop => laptop.category === 'rent');
-  const picks = [
-    source.find(laptop => getLaptopTasks(laptop).includes('study')),
-    source.find(laptop => getLaptopTasks(laptop).includes('code')),
-    source.find(laptop => getLaptopTasks(laptop).includes('gaming'))
-  ].filter((laptop, index, list) => laptop && list.findIndex(item => String(item.id) === String(laptop.id)) === index).slice(0, 3);
-  featuredList.innerHTML = picks.length ? picks.map(laptop => `<button type="button" class="catalog-featured-card" data-featured-laptop="${laptop.id}"><span>${taskLabel(laptop)}</span><strong>${laptop.title}</strong><small>${laptop.priceText || `${Number(laptop.dailyRate || laptop.daily_rate || 0).toLocaleString('ru-RU')} сом/день`}</small></button>`).join('') : '<span class="catalog-featured-empty">Подбираем актуальные модели…</span>';
-  featuredList.querySelectorAll('[data-featured-laptop]').forEach(button => button.addEventListener('click', () => {
-    const laptop = laptops.find(item => String(item.id) === String(button.dataset.featuredLaptop));
-    if (!laptop) return;
-    activeCategoryFilter = laptop.category || 'rent';
-    activeUseFilter = getLaptopTasks(laptop)[0] || 'all';
-    categoryFilterButtons.forEach(item => item.classList.toggle('active', item.dataset.filter === activeCategoryFilter));
-    useFilterButtons.forEach(item => item.classList.toggle('active', item.dataset.use === activeUseFilter));
-    filterAndSearch();
-    document.getElementById('catalog-grid')?.scrollIntoView({ behavior:'smooth', block:'start' });
-  }));
 }
 
 function renderComparison() {
@@ -949,12 +927,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   loadSavedLaptops();
-  // Сначала сразу показываем каталог. Проверка занятости не должна оставлять
-  // посетителя на пустом экране, если таблица заявок отвечает медленнее.
-  laptops = await fetchLaptops();
+  // Сразу выводим карточки из безопасного локального резерва. Пользователь
+  // никогда не остаётся на «скелетонах», даже если внешний запрос завис.
+  laptops = getFallbackLaptops();
   filteredLaptops = [...laptops];
   catalogReady = true;
-  renderFeaturedLaptops();
+  renderComparison();
+  filterAndSearch();
+
+  // Затем тихо подменяем их актуальными данными из базы. fetchLaptops
+  // сам вернёт резерв через короткий тайм-аут, если база недоступна.
+  laptops = await fetchLaptops();
+  filteredLaptops = [...laptops];
   renderComparison();
   filterAndSearch();
 

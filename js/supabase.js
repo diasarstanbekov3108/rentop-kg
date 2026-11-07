@@ -4,7 +4,7 @@ import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
 // Резервные данные
-const fallbackLaptops = [
+export const fallbackLaptops = [
   {
     id: 1,
     title: 'Lenovo ThinkPad X1 Carbon',
@@ -67,18 +67,36 @@ const fallbackLaptops = [
   }
 ];
 
+export function getFallbackLaptops() {
+  // Возвращаем новые объекты, чтобы состояние каталога не меняло резервные
+  // данные между повторными рендерами.
+  return fallbackLaptops.map((laptop) => ({ ...laptop }));
+}
+
+function withTimeout(promise, timeoutMs = 4500) {
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = window.setTimeout(() => resolve({
+      data: null,
+      error: { message: 'REQUEST_TIMEOUT' }
+    }), timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer));
+}
+
 export async function fetchLaptops() {
-  if (!supabaseClient) return fallbackLaptops;
+  if (!supabaseClient) return getFallbackLaptops();
 
   try {
-    const { data, error } = await supabaseClient.from('laptops').select('*');
+    const { data, error } = await withTimeout(supabaseClient.from('laptops').select('*'));
     if (error || !data || data.length === 0) {
-      return fallbackLaptops;
+      return getFallbackLaptops();
     }
     return data;
   } catch (e) {
     console.warn('Ошибка подключения к Supabase, используем локальные данные:', e);
-    return fallbackLaptops;
+    return getFallbackLaptops();
   }
 }
 
@@ -86,9 +104,9 @@ export async function fetchBlockingRentals() {
   if (!supabaseClient) return { ok: true, rows: [] };
 
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await withTimeout(supabaseClient
       .from('laptop_availability')
-      .select('laptop_id, rental_start_date, rental_end_date, status, hold_expires_at');
+      .select('laptop_id, rental_start_date, rental_end_date, status, hold_expires_at'));
 
     if (error) {
       console.warn('Не удалось загрузить занятость ноутбуков:', error.message);
