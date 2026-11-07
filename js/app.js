@@ -815,7 +815,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const profile = getCatalogProfile(recommended);
     const availability = cardAvailability(blockingRentals, recommended.id, todayIso()).label;
     const action = recommended.category === 'rent' ? 'Его можно забронировать' : 'Он доступен к покупке';
-    mascotAnswer.textContent = `Для ${taskNames[use] || 'вашей задачи'} рекомендую ${recommended.title || 'эту модель'}: ${profile.description} ${action}; ${availability.toLowerCase()}.`;
+    mascotAnswer.textContent = `Для ${taskNames[use] || 'вашей задачи'} рекомендую ${(recommended.title || 'эту модель').trim()}: ${profile.description} ${action}; ${availability.toLowerCase()}.`;
     if (mascotCatalogLink) mascotCatalogLink.textContent = 'Показать рекомендованный вариант';
     setMascotOpen(true);
     setMascotMood('happy', 2400);
