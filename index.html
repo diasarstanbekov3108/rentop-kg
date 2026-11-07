@@ -36,7 +36,7 @@
   
   <!-- Fonts & Styles -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261107-desktop-filters">
+  <link rel="stylesheet" href="css/style.css?v=20261107-filter-labels">
   <link rel="stylesheet" href="css/premium.css">
 
   <!-- Микроразметка Schema.org для Google -->
@@ -206,8 +206,8 @@
         <button type="button" id="close-full-catalog" aria-label="Закрыть каталог">×</button>
       </div>
       <div class="catalog-taskbar" aria-label="Подбор по задаче">
-        <span class="catalog-taskbar-label">Задача:</span>
-        <button class="filter-btn use-filter-btn active" data-use="all">Все</button>
+        <span class="catalog-taskbar-label">Для чего нужен:</span>
+        <button class="filter-btn use-filter-btn active" data-use="all">Любая задача</button>
         <button class="filter-btn use-filter-btn" data-use="study">Учёба</button>
         <button class="filter-btn use-filter-btn" data-use="office">Офис</button>
         <button class="filter-btn use-filter-btn" data-use="code">Код</button>
@@ -215,10 +215,11 @@
         <button class="filter-btn use-filter-btn" data-use="gaming">Игры</button>
       </div>
       <div class="filters catalog-typebar" aria-label="Тип устройства">
-        <button class="filter-btn active" data-filter="all">Все</button>
+        <button class="filter-btn active" data-filter="all">Все устройства</button>
         <button class="filter-btn" data-filter="rent">Аренда</button>
         <button class="filter-btn" data-filter="sale">Продажа</button>
       </div>
+      <p class="catalog-filter-hint">Задача и тип устройства выбираются независимо.</p>
       <div id="catalog-grid" class="cards-grid"></div>
       <section class="catalog-compare" id="catalog-compare" hidden aria-live="polite">
         <div class="catalog-compare-head"><div><span>СРАВНЕНИЕ</span><h3>Выберите до трёх ноутбуков</h3></div><button type="button" id="catalog-compare-clear">Очистить</button></div>
@@ -805,6 +806,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script type="module" src="js/app.js?v=20261107-desktop-filters"></script>
+  <script type="module" src="js/app.js?v=20261107-filter-labels"></script>
 </body>
 </html>
