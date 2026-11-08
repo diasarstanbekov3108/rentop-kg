@@ -22,6 +22,17 @@ ALTER TABLE public.rental_orders
   ADD COLUMN IF NOT EXISTS return_preferred_time text,
   ADD COLUMN IF NOT EXISTS return_delivery_payer text;
 
+-- Preserve existing test/legacy returns before restricting the allowed values.
+-- A previous UI used `courier` and `warehouse`; map them to the new explicit
+-- customer-facing methods rather than rejecting the migration.
+UPDATE public.rental_orders
+SET return_method = CASE return_method
+  WHEN 'courier' THEN 'rentop_courier'
+  WHEN 'warehouse' THEN 'self_delivery'
+  ELSE return_method
+END
+WHERE return_method IN ('courier', 'warehouse');
+
 ALTER TABLE public.rental_orders
   DROP CONSTRAINT IF EXISTS rental_orders_return_method_allowed;
 ALTER TABLE public.rental_orders
@@ -41,6 +52,14 @@ ALTER TABLE public.rental_order_customer_requests
   ADD COLUMN IF NOT EXISTS return_contact_phone text,
   ADD COLUMN IF NOT EXISTS return_preferred_time text,
   ADD COLUMN IF NOT EXISTS return_delivery_payer text;
+
+UPDATE public.rental_order_customer_requests
+SET return_method = CASE return_method
+  WHEN 'courier' THEN 'rentop_courier'
+  WHEN 'warehouse' THEN 'self_delivery'
+  ELSE return_method
+END
+WHERE return_method IN ('courier', 'warehouse');
 ALTER TABLE public.rental_order_customer_requests
   DROP CONSTRAINT IF EXISTS rental_customer_requests_return_method_allowed;
 ALTER TABLE public.rental_order_customer_requests
