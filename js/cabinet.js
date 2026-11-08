@@ -290,10 +290,12 @@ function documentSummary(order) {
         ? `<span class="cabinet-doc-saved"><button type="button" class="cabinet-doc-chip" data-document-open="${escape(document.id)}" data-document-order="${escape(order.id)}" data-document-name="${escape(document.file_name || label)}" data-document-type="${escape(document.content_type || '')}">${text}</button>${remove}</span>`
       : `<span>${text}</span>`;
   };
+  const rejectedKinds = [...latest.values()].filter(document => document.status === 'rejected').map(document => document.kind).filter(kind => ['identity_front', 'identity_back', 'selfie', 'supporting'].includes(kind));
   const reasons = [...latest.values()].filter(document => document.status === 'rejected' && document.reviewer_note).map(document => `<li><strong>${escape(({ identity:'Документ', identity_front:'Лицевая сторона', identity_back:'Обратная сторона', selfie:'Селфи', supporting:'Подтверждение', issue_video:'Видео до получения', return_video:'Видео возврата' }[document.kind] || 'Документ'))}:</strong> ${escape(document.reviewer_note)}</li>`).join('');
   const labels = { identity:'Документ', identity_front:'Лицевая сторона', identity_back:'Обратная сторона', selfie:'Селфи', supporting:'Подтверждение', issue_video:'Видео до получения', return_video:'Видео возврата' };
   const summary = visibleKinds.length ? visibleKinds.map(kind => state(kind, labels[kind])).join('') : '<span>○ Документы ещё не загружены</span>';
-  return `<div class="cabinet-doc-summary">${summary}</div>${reasons ? `<div class="cabinet-document-reasons"><strong>Нужно исправить</strong><ul>${reasons}</ul></div>` : ''}`;
+  const replaceButton = rejectedKinds.length ? `<button class="cabinet-action danger cabinet-document-replace" type="button" data-panel="documents" data-document-mode="replacement" data-document-kinds="${escape(rejectedKinds.join(','))}" data-order="${escape(order.id)}">Заменить документ</button>` : '';
+  return `<div class="cabinet-doc-summary">${summary}</div>${reasons ? `<div class="cabinet-document-reasons"><strong>Нужно исправить</strong><ul>${reasons}</ul>${replaceButton}</div>` : ''}`;
 }
 function documentMode(order) {
   const latest = latestDocuments(order);
@@ -412,7 +414,8 @@ function actionPanel(order) {
   if (openExtension || openReturn) {
     const pending = openExtension || openReturn;
     const cancelExtension = openExtension?.status === 'open' ? `<button class="cabinet-action secondary" data-panel="cancel-extension" data-order="${order.id}" data-request-id="${openExtension.id}">Отменить запрос продления</button>` : '';
-    return `${documents}<div class="cabinet-request-state">⌛ ${escape(requestLabel(pending))}: ожидает решения менеджера</div><div class="cabinet-actions">${cancelExtension}<button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
+    const isExtension = ['extension', 'replacement'].includes(pending.kind);
+    return `${documents}<div class="cabinet-request-state ${isExtension ? 'is-info cabinet-extension-pending' : ''}"><strong>${isExtension ? '⌛ Продление на рассмотрении' : '⌛ Запрос на возврат на рассмотрении'}</strong><p>${escape(requestLabel(pending))}. Менеджер проверяет доступность и подготовит следующий шаг.</p></div><div class="cabinet-actions">${cancelExtension}<button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
   }
   if (!canAct) return `${documents}<div class="cabinet-action-disabled">Продление и досрочный возврат станут доступны после выдачи ноутбука.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="support" data-order="${order.id}">Помощь</button>${whatsapp}</div>`;
   const deadlineNotice = deadline ? `<div class="cabinet-request-state ${deadline.due ? 'is-warning' : ''}"><strong>${deadline.title}</strong><p>${deadline.text}</p></div>` : '';
@@ -911,8 +914,14 @@ rentalsEl?.addEventListener('submit', async event => {
   try {
     const result = await request('POST', { action:form.dataset.request, orderId:form.dataset.order, requestId:data.get('requestId'), days:data.get('days'), replacementLaptopId:data.get('replacementLaptopId'), kind:data.get('kind'), message:data.get('message'), returnMethod:data.get('returnMethod'), returnLockerAddress:data.get('returnLockerAddress'), rating:data.get('rating'), review:data.get('review'), suggestion:data.get('suggestion') });
     message(result.message || 'Запрос отправлен.', 'success');
-    const fresh = await request('GET');
-    if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos, fresh.benefits);
+    if (result.request) {
+      const order = cabinetOrders.find(item => String(item.id) === String(form.dataset.order));
+      if (order) order.requests = [result.request, ...(order.requests || []).filter(item => item.id !== result.request.id)];
+      showRentals(cabinetOrders, '', customerProfile, supportWhatsappUrl, offerSmsConsentRequired, customerPromos, customerBenefits);
+    }
+    request('GET').then(fresh => {
+      if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos, fresh.benefits);
+    }).catch(() => {});
   } catch (error) {
     if (form.dataset.request === 'extension_request' && error.data?.code === 'LAPTOP_UNAVAILABLE') {
       form.outerHTML = replacementChoicesMarkup(form.dataset.order, error.data.days || data.get('days'), error.data.alternatives || []);

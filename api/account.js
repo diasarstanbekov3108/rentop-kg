@@ -37,6 +37,7 @@ function discountForTerm(days, benefits = []) {
 }
 function orderRef(order) { return String(order.id || '').slice(0, 8).toUpperCase(); }
 function documentLabel(kind) { return ({ identity:'Паспорт или ID-карта', identity_front:'Паспорт или ID-карта — лицевая сторона', identity_back:'Паспорт или ID-карта — обратная сторона', selfie:'Селфи с документом', supporting:'Официальный подтверждающий документ', issue_video:'Видео до получения', return_video:'Видео возврата', benefit_proof:'Документ для социальной скидки' }[kind] || 'Документ'); }
+function printableMoment(value) { return new Intl.DateTimeFormat('ru-RU', { timeZone:'Asia/Bishkek', day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' }).format(new Date(value)); }
 
 export default async function handler(request, response) {
   allowOrigin(request, response);
@@ -272,9 +273,17 @@ export default async function handler(request, response) {
         const evidence = await database.listOrderDocuments(order.id);
         const issueVideo = evidence.find(document => document.kind === 'issue_video' && document.status !== 'rejected');
         if (!issueVideo) return json(response, 409, { error:'Сначала прикрепите короткое видео получения: ноутбук, экран, корпус, зарядку и комплект.' });
-        const updated = await database.updateOrder(order.id, { status:'in_use', locker_status:'client_picked_up' });
-        await database.createEvent({ order_id:order.id, event_type:'customer_confirmed_pickup_from_cabinet', actor_type:'customer', metadata:{} });
-        return json(response, 200, { ok:true, order:updated, message:'Получение подтверждено. Аренда стала активной.' });
+        const startedAt = new Date().toISOString();
+        const endsAt = new Date(Date.parse(startedAt) + Math.max(1, Number(order.rental_days) || 1) * 86_400_000).toISOString();
+        const updated = await database.updateOrder(order.id, { status:'in_use', locker_status:'client_picked_up', rental_started_at:startedAt, rental_ends_at:endsAt });
+        await database.createEvent({ order_id:order.id, event_type:'customer_confirmed_pickup_from_cabinet', actor_type:'customer', metadata:{ rental_started_at:startedAt, rental_ends_at:endsAt } });
+        if (config.nikitaSms?.enabled) {
+          try {
+            await createNikitaSmsClient(config.nikitaSms).send({ phone:session.phone, text:`RENTOP.KG: получение по заявке ${orderRef(order)} подтверждено. Аренда началась ${printableMoment(startedAt)} и действует до ${printableMoment(endsAt)} (Бишкек).` });
+            await database.createEvent({ order_id:order.id, event_type:'rental_exact_deadline_sms_sent_after_pickup', actor_type:'system', metadata:{ rental_started_at:startedAt, rental_ends_at:endsAt, channel:'sms' } });
+          } catch (error) { console.error('Rental-start SMS failed:', error.message); }
+        }
+        return json(response, 200, { ok:true, order:updated, message:'Получение подтверждено. Аренда началась сейчас; срок и уведомление рассчитаны от фактической выдачи.' });
       }
       if (payload.action === 'confirm_pickup_access_received') {
         if (order.status !== 'awaiting_pickup' || !['loaded','access_sent'].includes(String(order.locker_status || ''))) return json(response, 409, { error:'Этот этап выдачи уже обновлён. Нажмите «Обновить заявки».' });

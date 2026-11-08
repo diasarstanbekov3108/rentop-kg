@@ -6,6 +6,7 @@ html, body {
   margin: 0;
   padding: 0;
 }
+.booking-benefit-note{margin:14px 0;padding:12px 13px;border:1px solid rgba(143,223,255,.38);border-radius:12px;background:rgba(28,91,122,.18);color:#d8f6ff}.booking-benefit-note strong{display:block;color:#8fdfff;font-size:13px}.booking-benefit-note p{margin:5px 0 0;color:#b9cedc;font-size:12px;line-height:1.48}
 
 /* 2. Правильный расчет размеров элементов */
 *, *::before, *::after {

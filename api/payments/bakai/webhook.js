@@ -127,12 +127,9 @@ export default async function handler(request, response) {
       await database.createEvent({ order_id:payment.order_id, event_type:'bakai_extension_payment_confirmed_webhook', actor_type:'bank', metadata:{ operation_id:operationId, elqr_id:bankElqrId, amount, proposed_return_date:payment.proposed_return_date, request_kind:customerRequest?.kind || 'extension', replacement_laptop_id:customerRequest?.replacement_laptop_id || null } }).catch(error => console.error('Bakai extension payment audit failed:', error.message));
     } else {
       if (order?.status === 'awaiting_payment') {
-        const endsAt = exactDeadline(now, order.rental_days);
         await database.updateOrder(order.id, {
-          status:'confirmed', payment_channel:'bakai', payment_receipt_received_at:now, payment_confirmed_at:now,
-          rental_started_at:now, rental_ends_at:endsAt
+          status:'confirmed', payment_channel:'bakai', payment_receipt_received_at:now, payment_confirmed_at:now
         });
-        await sendExactDeadlineSms(config, database, order, now, endsAt);
         await notifyManagerAboutPaidOrder(config, order);
       }
       await database.createEvent({ order_id:payment.order_id, event_type:'bakai_payment_confirmed_webhook', actor_type:'bank', metadata:{ operation_id:operationId, elqr_id:bankElqrId, amount } }).catch(error => console.error('Bakai webhook audit event failed:', error.message));

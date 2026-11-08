@@ -309,7 +309,9 @@ export default async function handler(request, response) {
       const order = await database.getOrder(String(payload.orderId || ''));
       const loadingCode = String(payload.loadingCode || '').trim().slice(0, 200);
       const reference = String(payload.reference || '').trim().slice(0, 200);
-      if (!order || order.status !== 'awaiting_archa_reservation') return reply(response, 409, { error:'Для этой заявки сейчас не ожидается резервирование ячейки.' });
+      if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
+      if (order.status === 'awaiting_locker_loading' || order.status === 'awaiting_pickup') return reply(response, 200, { ok:true, order, message:'Код закладки уже сохранён. Продолжайте со следующим этапом — фактической закладкой ноутбука.' });
+      if (order.status !== 'awaiting_archa_reservation') return reply(response, 409, { error:'Для этой заявки сейчас не ожидается резервирование ячейки. Обновите панель: возможно, предыдущий клик уже сохранил этап.' });
       if (loadingCode.length < 3) return reply(response, 400, { error:'Введите код закладки от ARCHA POINT.' });
       const updated = await database.updateOrder(order.id, { status:'awaiting_locker_loading', locker_status:'reserved', locker_loading_code:loadingCode, locker_loading_reference:reference || null });
       await database.createEvent({ order_id:order.id, event_type:'manager_recorded_archa_reservation_from_web', actor_type:'manager', metadata:{ has_reference:Boolean(reference) } });
@@ -317,7 +319,9 @@ export default async function handler(request, response) {
     }
     if (payload.action === 'mark_locker_loaded') {
       const order = await database.getOrder(String(payload.orderId || ''));
-      if (!order || order.status !== 'awaiting_locker_loading') return reply(response, 409, { error:'Сначала получите и сохраните код закладки ARCHA POINT.' });
+      if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
+      if (order.status === 'awaiting_pickup') return reply(response, 200, { ok:true, order, message:'Закладка уже отмечена. Ожидайте отправку кода доступа клиенту.' });
+      if (order.status !== 'awaiting_locker_loading') return reply(response, 409, { error:'Сначала получите и сохраните код закладки ARCHA POINT. Если уже сохранили, обновите панель — этап не нужно повторять.' });
       const now = new Date().toISOString();
       const updated = await database.updateOrder(order.id, { status:'awaiting_pickup', locker_status:'loaded', locker_loaded_at:now });
       await database.createEvent({ order_id:order.id, event_type:'manager_marked_locker_loaded_from_web', actor_type:'manager', metadata:{} });
@@ -466,9 +470,7 @@ export default async function handler(request, response) {
         await database.createEvent({ order_id:order.id, event_type:'bakai_extension_payment_manually_confirmed_from_web', actor_type:'manager', metadata:{ operation_id:payment.operation_id, reference, amount:payment.amount, proposed_return_date:payment.proposed_return_date, request_kind:customerRequest?.kind || 'extension', replacement_laptop_id:customerRequest?.replacement_laptop_id || null } }).catch(error => console.error('Manual Bakai extension payment audit failed:', error.message));
       } else {
         if (order.status === 'awaiting_payment') {
-          const endsAt = exactDeadline(now, order.rental_days);
-          updatedOrder = await database.updateOrder(order.id, { status:'confirmed', payment_channel:'bakai_manual_review', payment_receipt_received_at:now, payment_confirmed_at:now, rental_started_at:now, rental_ends_at:endsAt });
-          await sendExactDeadlineSms(config, database, order, now, endsAt);
+          updatedOrder = await database.updateOrder(order.id, { status:'confirmed', payment_channel:'bakai_manual_review', payment_receipt_received_at:now, payment_confirmed_at:now });
         } else updatedOrder = order;
         await database.createEvent({ order_id:order.id, event_type:'bakai_payment_manually_confirmed_from_web', actor_type:'manager', metadata:{ operation_id:payment.operation_id, reference, amount:payment.amount } }).catch(error => console.error('Manual Bakai payment audit event failed:', error.message));
       }
