@@ -53,13 +53,14 @@ export default async function handler(request, response) {
       if (String(request.query?.access || '') === '1') return reply(response, 200, { manager:true });
       const orders = await database.listRecentOrders(50);
       const hydrated = await Promise.all(orders.map(async order => {
-        const [laptop, documents, requests, payments, supportCases, returnHandoffEvent] = await Promise.all([
+        const [laptop, documents, requests, payments, supportCases, returnHandoffEvent, benefits] = await Promise.all([
           database.getLaptop(order.laptop_id),
           database.listOrderDocuments(order.id).catch(() => []),
           database.listCustomerRequests(order.id).catch(() => []),
           database.listOrderPayments(order.id).catch(() => []),
           database.listOrderSupportCases(order.id).catch(() => []),
-          database.hasOrderEvent(order.id, 'manager_prepared_archa_return_handoff_from_web').catch(() => null)
+          database.hasOrderEvent(order.id, 'manager_prepared_archa_return_handoff_from_web').catch(() => null),
+          database.listBenefitVerifications(order.customer_phone).catch(() => [])
         ]);
         const documentsWithLinks = await Promise.all(documents.map(async document => {
           const signed = await database.createSignedDocumentDownload(document.storage_path).catch(() => null);
@@ -75,6 +76,7 @@ export default async function handler(request, response) {
           requests,
           payment:(payments || []).find(payment => payment.purpose !== 'extension') || null,
           payments,
+          benefits,
           supportCases,
           returnHandoffPrepared:Boolean(returnHandoffEvent)
         };
@@ -188,6 +190,15 @@ export default async function handler(request, response) {
       const note = String(payload.note || '').trim().slice(0, 500);
       const reviewed = await database.reviewOrderDocument(document.id, { status:state, reviewed_at:new Date().toISOString(), reviewer_note:note || null });
       await database.createEvent({ order_id:document.order_id, event_type:`manager_${state}_document_from_web`, actor_type:'manager', metadata:{ document_kind:document.kind, reviewer_note:note || null } }).catch(error => console.error('Manager document audit event failed:', error.message));
+      if (document.kind === 'benefit_proof') {
+        const verification = await database.getBenefitVerificationByDocument(document.id);
+        if (verification) {
+          const patch = state === 'accepted'
+            ? { status:'approved', reviewer_note:note || null, approved_at:new Date().toISOString(), expires_at:null }
+            : { status:'rejected', reviewer_note:note || 'Документ не подтверждает право на социальную скидку.' };
+          await database.updateBenefitVerification(verification.id, patch);
+        }
+      }
       let updatedOrder = null;
       if (state === 'accepted') {
         const documents = await database.listOrderDocuments(document.order_id);

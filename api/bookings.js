@@ -12,6 +12,14 @@ function quote(laptop, startDate, endDate) {
   return { days, rate, discount, total: Math.round(days * rate * (100 - discount) / 100) };
 }
 
+function applyBenefitDiscount(rental, benefits = []) {
+  const now = Date.now();
+  const approved = benefits.some((item) => item.status === 'approved' && (!item.expires_at || new Date(item.expires_at).getTime() > now));
+  if (!approved) return rental;
+  const discount = Math.max(Number(rental.discount) || 0, 10);
+  return { ...rental, discount, total:Math.round(rental.days * rental.rate * (100 - discount) / 100) };
+}
+
 function readCookie(request, name) {
   return String(request.headers.cookie || '')
     .split(';')
@@ -61,7 +69,8 @@ export default async function handler(request, response) {
     if (payload.deliveryType === 'arca_locker' && !payload.lockerAddress) throw new Error('Выберите локацию ARCHA POINT.');
     const laptop = await database.getLaptop(laptopId);
     if (!laptop || laptop.category !== 'rent') throw new Error('Ноутбук для аренды не найден.');
-    const rental = quote(laptop, payload.startDate, payload.endDate);
+    const benefits = await database.listBenefitVerifications(session.phone).catch(() => []);
+    const rental = applyBenefitDiscount(quote(laptop, payload.startDate, payload.endDate), benefits);
     const token = randomBytes(18).toString('base64url');
     const order = await database.createOrder({
       laptop_id: laptopId,

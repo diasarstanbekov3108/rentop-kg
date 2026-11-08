@@ -108,12 +108,26 @@ export function createSupabaseApi(config) {
     }).then((rows) => rows?.[0] || null),
     listCustomerRequests: (orderId) => request(
       `rental_order_customer_requests?order_id=eq.${encodeURIComponent(orderId)}` +
-      '&select=id,kind,status,customer_message,requested_days,estimated_amount,proposed_return_date,return_method,return_locker_address,created_at,updated_at&order=created_at.desc&limit=12'
+      '&select=id,kind,status,customer_message,requested_days,estimated_amount,proposed_return_date,return_method,return_locker_address,replacement_laptop_id,replacement_difference,replacement_note,created_at,updated_at&order=created_at.desc&limit=12'
     ),
     createCustomerRequest: (customerRequest) => request('rental_order_customer_requests', {
       method: 'POST', body: JSON.stringify(customerRequest)
     }).then((rows) => rows?.[0] || null),
     updateCustomerRequest: (id, patch) => request(`rental_order_customer_requests?id=eq.${encodeURIComponent(id)}`, {
+      method:'PATCH', body:JSON.stringify(patch)
+    }).then((rows) => rows?.[0] || null),
+    listBenefitVerifications: (phone) => request(
+      `customer_benefit_verifications?phone=eq.${encodeURIComponent(phone)}` +
+      '&select=id,benefit_type,status,document_id,reviewer_note,approved_at,expires_at,created_at,updated_at&order=created_at.desc&limit=20'
+    ),
+    getBenefitVerificationByDocument: (documentId) => getOne(
+      `customer_benefit_verifications?document_id=eq.${encodeURIComponent(documentId)}` +
+      '&select=*&limit=1'
+    ),
+    createBenefitVerification: (verification) => request('customer_benefit_verifications', {
+      method:'POST', body:JSON.stringify(verification)
+    }).then((rows) => rows?.[0] || null),
+    updateBenefitVerification: (id, patch) => request(`customer_benefit_verifications?id=eq.${encodeURIComponent(id)}`, {
       method:'PATCH', body:JSON.stringify(patch)
     }).then((rows) => rows?.[0] || null),
     getOrderFeedback: (orderId) => getOne(`rental_order_feedback?order_id=eq.${encodeURIComponent(orderId)}&select=id,rating,review,suggestion,created_at&limit=1`),

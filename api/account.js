@@ -16,7 +16,8 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const SHORT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const EXTENDABLE_STATUSES = new Set(['issued', 'in_use']);
 const RETURNABLE_STATUSES = new Set(['issued', 'in_use']);
-const DOCUMENT_TYPES = new Set(['identity', 'identity_front', 'identity_back', 'selfie', 'supporting', 'issue_video', 'return_video']);
+const DOCUMENT_TYPES = new Set(['identity', 'identity_front', 'identity_back', 'selfie', 'supporting', 'issue_video', 'return_video', 'benefit_proof']);
+const BENEFIT_TYPES = new Set(['student', 'pensioner', 'disability']);
 const DOCUMENT_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'application/pdf', 'video/mp4', 'video/quicktime']);
 const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024;
 
@@ -29,8 +30,13 @@ function clientIp(request) { return String(request.headers['x-forwarded-for'] ||
 function allowOrigin(request, response) { const origin = request.headers.origin; if (origin && /^https:\/\/(?:[a-z0-9-]+\.)?rentop(?:\.com\.kg|-[-a-z0-9]+\.vercel\.app)$/i.test(origin)) response.setHeader('Access-Control-Allow-Origin', origin); response.setHeader('Vary', 'Origin'); }
 function label(delivery) { return ({ arca_locker:'ARCHA POINT 24/7', delivery:'Доставка курьером', pickup:'Архивный способ получения' }[delivery] || 'Уточняется'); }
 function addDays(isoDate, days) { const date = new Date(`${isoDate}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); }
+function discountForTerm(days, benefits = []) {
+  const tariff = days >= 15 ? 30 : days >= 7 ? 15 : 0;
+  const benefit = benefits.some(item => item.status === 'approved' && (!item.expires_at || new Date(item.expires_at) > new Date())) ? 10 : 0;
+  return Math.max(tariff, benefit);
+}
 function orderRef(order) { return String(order.id || '').slice(0, 8).toUpperCase(); }
-function documentLabel(kind) { return ({ identity:'Паспорт или ID-карта', identity_front:'Паспорт или ID-карта — лицевая сторона', identity_back:'Паспорт или ID-карта — обратная сторона', selfie:'Селфи с документом', supporting:'Официальный подтверждающий документ', issue_video:'Видео до получения', return_video:'Видео возврата' }[kind] || 'Документ'); }
+function documentLabel(kind) { return ({ identity:'Паспорт или ID-карта', identity_front:'Паспорт или ID-карта — лицевая сторона', identity_back:'Паспорт или ID-карта — обратная сторона', selfie:'Селфи с документом', supporting:'Официальный подтверждающий документ', issue_video:'Видео до получения', return_video:'Видео возврата', benefit_proof:'Документ для социальной скидки' }[kind] || 'Документ'); }
 
 export default async function handler(request, response) {
   allowOrigin(request, response);
@@ -72,12 +78,13 @@ export default async function handler(request, response) {
     }));
   };
   const accountData = async (phone) => {
-    const [profile, promos, orders] = await Promise.all([
+    const [profile, promos, benefits, orders] = await Promise.all([
       database.getCustomerProfile(phone).catch(() => null),
       database.listPromosByPhone(phone).catch(() => []),
+      database.listBenefitVerifications(phone).catch(() => []),
       hydrate(phone)
     ]);
-    return { phone, whatsappUrl: config.rentopWhatsappPhone ? `https://wa.me/${config.rentopWhatsappPhone}` : '', offerSmsConsentRequired:config.offerSmsConsentRequired, profile, promos, orders };
+    return { phone, whatsappUrl: config.rentopWhatsappPhone ? `https://wa.me/${config.rentopWhatsappPhone}` : '', offerSmsConsentRequired:config.offerSmsConsentRequired, profile, promos, benefits, orders };
   };
   const verifySession = async () => {
     const raw = readCookie(request, COOKIE) || readCookie(request, COMPAT_COOKIE); if (!raw) return null;
@@ -224,14 +231,21 @@ export default async function handler(request, response) {
         const contentType = String(payload.contentType || '').toLowerCase();
         const byteSize = Number(payload.byteSize);
         const fileName = String(payload.fileName || 'document').replace(/[\\/\0]/g, '_').slice(0, 180);
-        if (!order.offer_accepted_at) return json(response, 409, { error:'Перед отправкой документов ознакомьтесь и согласитесь с публичной офертой.' });
-        if (config.offerSmsConsentRequired && !order.offer_otp_verified_at) return json(response, 409, { error:'Подтвердите согласие с офертой одноразовым кодом.' });
+        if (kind !== 'benefit_proof' && !order.offer_accepted_at) return json(response, 409, { error:'Перед отправкой документов ознакомьтесь и согласитесь с публичной офертой.' });
+        if (kind !== 'benefit_proof' && config.offerSmsConsentRequired && !order.offer_otp_verified_at) return json(response, 409, { error:'Подтвердите согласие с офертой одноразовым кодом.' });
         if (!DOCUMENT_TYPES.has(kind) || !path.startsWith(`${order.id}/${kind}/`) || !DOCUMENT_MIME_TYPES.has(contentType) || !Number.isInteger(byteSize) || byteSize < 1 || byteSize > MAX_DOCUMENT_BYTES) {
           return json(response, 400, { error:'Не удалось зарегистрировать документ.' });
         }
+        const benefitType = String(payload.benefitType || '');
+        if (kind === 'benefit_proof' && !BENEFIT_TYPES.has(benefitType)) return json(response, 400, { error:'Выберите категорию социальной скидки.' });
         const latestOfKind = (await database.listOrderDocuments(order.id)).find(document => document.kind === kind);
         if (latestOfKind && latestOfKind.status !== 'rejected') return json(response, 409, { error:'Этот документ уже отправлен. Дождитесь проверки или запросите исправление.' });
         const document = await database.registerOrderDocument({ order_id:order.id, kind, storage_path:path, file_name:fileName, content_type:contentType, byte_size:byteSize });
+        let benefit = null;
+        if (kind === 'benefit_proof') {
+          benefit = await database.createBenefitVerification({ phone:session.phone, benefit_type:benefitType, document_id:document.id });
+          await database.createEvent({ order_id:order.id, event_type:'customer_submitted_benefit_verification_from_cabinet', actor_type:'customer', metadata:{ benefit_type:benefitType, verification_id:benefit.id } });
+        }
         await database.createEvent({ order_id:order.id, event_type:'customer_uploaded_document_from_cabinet', actor_type:'customer', metadata:{ kind } });
         const uploaded = await database.listOrderDocuments(order.id);
         const latestKinds = new Set(uploaded.filter(item => item.status !== 'rejected').map(item => item.kind));
@@ -240,7 +254,7 @@ export default async function handler(request, response) {
           await database.updateOrder(order.id, { status:'pending_review' });
         }
         await notifyDocumentManager(order, document);
-        return json(response, 201, { ok:true, document });
+        return json(response, 201, { ok:true, document, benefit, message:kind === 'benefit_proof' ? 'Документ отправлен. После проверки льготная скидка появится в кабинете и будет применяться вместо меньшей тарифной скидки.' : undefined });
       }
       const laptop = await database.getLaptop(order.laptop_id);
       const notifyManager = async (text) => {
@@ -308,11 +322,15 @@ export default async function handler(request, response) {
         const newEndDate = addDays(order.rental_end_date, days);
         const conflict = await database.findOverlappingBlockingOrder(order.id, order.laptop_id, order.rental_end_date, newEndDate);
         if (conflict) return json(response, 409, { error:`Продление недоступно: ноутбук уже забронирован с ${conflict.rental_start_date}.` });
-        const amount = Math.round(Number(order.daily_rate || 0) * days);
+        const benefits = await database.listBenefitVerifications(session.phone).catch(() => []);
+        const totalDays = Number(order.rental_days || 0) + days;
+        const discount = discountForTerm(totalDays, benefits);
+        const recalculatedTotal = Math.round(Number(order.daily_rate || 0) * totalDays * (100 - discount) / 100);
+        const amount = Math.max(0, recalculatedTotal - Number(order.total_amount || 0));
         const customerRequest = await database.createCustomerRequest({ order_id:order.id, kind:'extension', requested_days:days, estimated_amount:amount, proposed_return_date:newEndDate });
-        await database.createEvent({ order_id:order.id, event_type:'customer_requested_extension_from_cabinet', actor_type:'customer', metadata:{ extra_days:days, estimated_extra_amount:amount, proposed_end_date:newEndDate } });
-        await notifyManager(`📅 Запрос на продление с сайта\n\nЗаявка ${orderRef(order)} · ${laptop?.title || 'Ноутбук'}\nКлиент: ${order.customer_name || '—'}\n+${days} дн. · до ${newEndDate}\nПредварительная доплата: ${amount} сом`);
-        return json(response, 201, { ok:true, request:customerRequest, message:`Запрос передан менеджеру. Предварительная доплата: ${amount.toLocaleString('ru-RU')} сом.` });
+        await database.createEvent({ order_id:order.id, event_type:'customer_requested_extension_from_cabinet', actor_type:'customer', metadata:{ extra_days:days, estimated_extra_amount:amount, proposed_end_date:newEndDate, discount_percent:discount } });
+        await notifyManager(`📅 Запрос на продление с сайта\n\nЗаявка ${orderRef(order)} · ${laptop?.title || 'Ноутбук'}\nКлиент: ${order.customer_name || '—'}\n+${days} дн. · до ${newEndDate}\nПредварительная доплата: ${amount} сом · скидка ${discount}%`);
+        return json(response, 201, { ok:true, request:customerRequest, message:`Запрос передан менеджеру. Предварительная доплата: ${amount.toLocaleString('ru-RU')} сом, скидка ${discount}%.` });
       }
       if (payload.action === 'cancel_extension_request') {
         if (!EXTENDABLE_STATUSES.has(order.status)) return json(response, 400, { error:'Отменить продление можно только для активной аренды.' });
