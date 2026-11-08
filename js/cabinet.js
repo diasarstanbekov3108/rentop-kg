@@ -353,7 +353,9 @@ function actionPanel(order) {
   const deadline = rentalDeadline(order);
   const paidExtension = order.extensionPayment?.status === 'paid';
   const openExtension = paidExtension ? null : order.requests?.find(request => ['extension','replacement'].includes(request.kind) && ['open','in_progress'].includes(request.status));
-  const rejectedExtension = openExtension ? null : order.requests?.find(request => ['extension','replacement'].includes(request.kind) && request.status === 'cancelled' && request.customer_message);
+  // A resolved paid extension/replacement must supersede any older rejected
+  // request. Otherwise the customer keeps seeing a red refusal after payment.
+  const rejectedExtension = (paidExtension || openExtension) ? null : order.requests?.find(request => ['extension','replacement'].includes(request.kind) && request.status === 'cancelled' && request.customer_message);
   const openReturn = order.requests?.find(request => request.kind === 'early_return' && ['open','in_progress'].includes(request.status));
   const docState = documentMode(order);
   const documentText = docState.mode === 'approved' ? 'Документы проверены' : docState.mode === 'submitted' ? 'Документы на проверке' : docState.mode === 'replacement' ? 'Заменить документ' : 'Загрузить документы →';
