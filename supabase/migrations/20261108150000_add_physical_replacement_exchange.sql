@@ -23,7 +23,11 @@ CREATE OR REPLACE VIEW public.laptop_availability
 WITH (security_barrier = true, security_invoker = false) AS
 SELECT laptop_id, rental_start_date, rental_end_date, status, hold_expires_at
 FROM public.rental_orders
-WHERE status IN ('confirmed', 'awaiting_archa_reservation', 'awaiting_locker_loading', 'awaiting_pickup', 'issued', 'in_use', 'incident')
+WHERE status IN (
+  'confirmed', 'awaiting_archa_reservation', 'awaiting_locker_loading', 'awaiting_pickup',
+  'issued', 'in_use', 'return_requested', 'awaiting_return_reservation',
+  'awaiting_return_dropoff', 'awaiting_return_collection', 'returned', 'incident'
+)
    OR (status = 'awaiting_payment' AND hold_expires_at IS NOT NULL AND hold_expires_at > now())
 UNION ALL
 SELECT replacement_pending_laptop_id, rental_start_date, rental_end_date, 'replacement_pending'::text, NULL::timestamptz
