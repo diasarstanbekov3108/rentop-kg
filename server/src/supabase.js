@@ -194,7 +194,7 @@ export function createSupabaseApi(config) {
       `rental_orders?select=id,status,rental_start_date,rental_end_date&or=(laptop_id.eq.${encodeURIComponent(laptopId)},replacement_pending_laptop_id.eq.${encodeURIComponent(laptopId)})` +
       `&id=neq.${encodeURIComponent(orderId)}&rental_start_date=lt.${encodeURIComponent(endDate)}` +
       `&rental_end_date=gt.${encodeURIComponent(startDate)}` +
-      '&status=in.(confirmed,awaiting_payment,awaiting_pickup,issued,in_use,incident)&limit=1'
+      '&status=in.(confirmed,awaiting_archa_reservation,awaiting_locker_loading,awaiting_pickup,issued,in_use,return_requested,awaiting_return_reservation,awaiting_return_dropoff,awaiting_return_collection,returned,incident)&limit=1'
     ).then((rows) => rows?.[0] || null),
     claimWebhookUpdate: (updateId) => request('telegram_webhook_updates?on_conflict=update_id', {
       method: 'POST',
