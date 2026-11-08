@@ -390,17 +390,24 @@ export default async function handler(request, response) {
       }
       if (payload.action === 'early_return_request') {
         const note = String(payload.message || '').trim().slice(0, 500);
-        const returnMethod = ['arca_locker','courier','warehouse'].includes(payload.returnMethod) ? payload.returnMethod : '';
+        const returnMethod = ['arca_locker','rentop_courier','customer_courier','self_delivery'].includes(payload.returnMethod) ? payload.returnMethod : '';
         const returnLockerAddress = String(payload.returnLockerAddress || '').trim().slice(0, 300);
+        const returnCollectionAddress = String(payload.returnCollectionAddress || '').trim().slice(0, 500);
+        const returnContactName = String(payload.returnContactName || '').trim().slice(0, 160);
+        const returnContactPhone = String(payload.returnContactPhone || '').trim().slice(0, 40);
+        const returnPreferredTime = String(payload.returnPreferredTime || '').trim().slice(0, 300);
         if (!RETURNABLE_STATUSES.has(order.status)) return json(response, 400, { error:'Досрочный возврат доступен только для активной аренды.' });
         if (!returnMethod) return json(response, 400, { error:'Выберите удобный способ возврата.' });
         if (returnMethod === 'arca_locker' && !returnLockerAddress) return json(response, 400, { error:'Выберите постамат для возврата.' });
-        const customerRequest = await database.createCustomerRequest({ order_id:order.id, kind:'early_return', customer_message:note || null, return_method:returnMethod, return_locker_address:returnMethod === 'arca_locker' ? returnLockerAddress : null });
-        const nextStatus = returnMethod === 'arca_locker' ? 'awaiting_return_reservation' : 'return_requested';
-        await database.updateOrder(order.id, { status:nextStatus, return_method:returnMethod, return_locker_address:returnMethod === 'arca_locker' ? returnLockerAddress : null, locker_status:returnMethod === 'arca_locker' ? 'return_pending' : order.locker_status });
-        await database.createEvent({ order_id:order.id, event_type:'customer_requested_early_return_from_cabinet', actor_type:'customer', metadata:{ reason_provided:Boolean(note), return_method:returnMethod, has_return_locker:Boolean(returnLockerAddress) } });
-        const methodLabel = ({ arca_locker:'через постамат ARCHA POINT', courier:'курьером Rentop', warehouse:'на склад Rentop' })[returnMethod];
-        await notifyManager(`↩️ Досрочный возврат с сайта\n\nЗаявка ${orderRef(order)} · ${laptop?.title || 'Ноутбук'}\nКлиент: ${order.customer_name || '—'}\nСпособ: ${methodLabel}\n${returnLockerAddress ? `Постамат: ${returnLockerAddress}\n` : ''}Причина: ${note || 'не указана'}\n\nПодготовьте следующий шаг возврата.`);
+        if (returnMethod !== 'arca_locker' && (!returnContactName || !returnContactPhone || !returnPreferredTime || (returnMethod !== 'self_delivery' && !returnCollectionAddress))) return json(response, 400, { error:'Укажите контакт, желаемое время и адрес передачи. Для самопривоза адрес Rentop согласует менеджер.' });
+        const payer = returnMethod === 'arca_locker' ? 'customer' : 'customer';
+        const requestData = { order_id:order.id, kind:'early_return', customer_message:note || null, return_method:returnMethod, return_locker_address:returnMethod === 'arca_locker' ? returnLockerAddress : null, return_collection_address:returnMethod === 'arca_locker' || returnMethod === 'self_delivery' ? null : returnCollectionAddress, return_contact_name:returnMethod === 'arca_locker' ? null : returnContactName, return_contact_phone:returnMethod === 'arca_locker' ? null : returnContactPhone, return_preferred_time:returnMethod === 'arca_locker' ? null : returnPreferredTime, return_delivery_payer:payer };
+        const customerRequest = await database.createCustomerRequest(requestData);
+        const nextStatus = returnMethod === 'arca_locker' ? 'awaiting_return_reservation' : 'awaiting_return_collection';
+        await database.updateOrder(order.id, { status:nextStatus, return_method:returnMethod, return_locker_address:returnMethod === 'arca_locker' ? returnLockerAddress : null, return_collection_address:requestData.return_collection_address, return_contact_name:requestData.return_contact_name, return_contact_phone:requestData.return_contact_phone, return_preferred_time:requestData.return_preferred_time, return_delivery_payer:payer, locker_status:returnMethod === 'arca_locker' ? 'return_pending' : order.locker_status });
+        await database.createEvent({ order_id:order.id, event_type:'customer_requested_early_return_from_cabinet', actor_type:'customer', metadata:{ reason_provided:Boolean(note), return_method:returnMethod, delivery_payer:payer, has_return_locker:Boolean(returnLockerAddress), has_collection_address:Boolean(returnCollectionAddress) } });
+        const methodLabel = ({ arca_locker:'через постамат ARCHA POINT', rentop_courier:'курьером Rentop (услугу оплачивает клиент)', customer_courier:'своим курьером (оплачивает клиент)', self_delivery:'самопривозом по согласованию' })[returnMethod];
+        await notifyManager(`↩️ Досрочный возврат с сайта\n\nЗаявка ${orderRef(order)} · ${laptop?.title || 'Ноутбук'}\nКлиент: ${order.customer_name || '—'}\nСпособ: ${methodLabel}\n${returnLockerAddress ? `Постамат: ${returnLockerAddress}\n` : ''}${returnCollectionAddress ? `Адрес передачи: ${returnCollectionAddress}\n` : ''}${returnContactName ? `Контакт: ${returnContactName} · ${returnContactPhone}\n` : ''}${returnPreferredTime ? `Время: ${returnPreferredTime}\n` : ''}Причина: ${note || 'не указана'}\n\nВидео — только предварительная проверка. Аренду завершайте после физического получения устройства.`);
         return json(response, 201, { ok:true, request:customerRequest, message:'Запрос принят. Менеджер подготовит дальнейшие инструкции по возврату.' });
       }
       const supportKinds = new Set(['rentop','archa','archa_code_missing','archa_locker_issue','rental_issue']);

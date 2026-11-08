@@ -25,7 +25,7 @@ let openOrderDetails = new Set();
 
 const escape = value => String(value || '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' }[char]));
 const date = value => value ? new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }).format(new Date(value)) : '—';
-const statusLabel = status => ({ draft:'Новая заявка', pending_review:'Проверка документов', awaiting_payment:'Ожидает оплаты', payment_review:'Проверка оплаты', confirmed:'Оплата подтверждена', awaiting_archa_reservation:'Резервируем ячейку', awaiting_locker_loading:'Ожидает закладки', awaiting_pickup:'Готово к получению', issued:'Ожидаем подтверждение', in_use:'Активна', return_requested:'Возврат', awaiting_return_reservation:'Резервируем возврат', awaiting_return_dropoff:'Ожидаем возврат в ячейку', returned:'Проверка возврата', completed:'Завершена', cancelled:'Отменена', rejected:'Отклонена', incident:'Инцидент — требуется решение' }[status] || status || 'Новая');
+const statusLabel = status => ({ draft:'Новая заявка', pending_review:'Проверка документов', awaiting_payment:'Ожидает оплаты', payment_review:'Проверка оплаты', confirmed:'Оплата подтверждена', awaiting_archa_reservation:'Резервируем ячейку', awaiting_locker_loading:'Ожидает закладки', awaiting_pickup:'Готово к получению', issued:'Ожидаем подтверждение', in_use:'Активна', return_requested:'Возврат', awaiting_return_reservation:'Резервируем возврат', awaiting_return_dropoff:'Ожидаем возврат в ячейку', awaiting_return_collection:'Ожидаем физический возврат', returned:'Проверка возврата', completed:'Завершена', cancelled:'Отменена', rejected:'Отклонена', incident:'Инцидент — требуется решение' }[status] || status || 'Новая');
 const docLabel = kind => ({ identity:'Документ', identity_front:'Документ — лицевая сторона', identity_back:'Документ — обратная сторона', selfie:'Селфи', supporting:'Подтверждение', issue_video:'Видео до получения', return_video:'Видео возврата', benefit_proof:'Льготный документ' }[kind] || 'Документ');
 const benefitLabel = kind => ({ student:'Студент', pensioner:'Пенсионер', disability:'Инвалидность / ОВЗ' }[kind] || kind);
 const canDelete = order => ['draft', 'pending_review', 'awaiting_payment', 'payment_review', 'confirmed', 'awaiting_archa_reservation', 'awaiting_locker_loading', 'awaiting_pickup', 'cancelled', 'rejected'].includes(order.status);
@@ -52,7 +52,7 @@ function visibleOrders() {
     if (filter === 'new') return ['draft','pending_review','awaiting_payment','payment_review','confirmed','awaiting_archa_reservation','awaiting_locker_loading','awaiting_pickup'].includes(order.status);
     if (filter === 'documents') return order.documents.some(document => document.status === 'pending_review');
     if (filter === 'active') return ['in_use','incident'].includes(order.status);
-    if (filter === 'returns') return ['return_requested','awaiting_return_reservation','awaiting_return_dropoff','returned'].includes(order.status);
+    if (filter === 'returns') return ['return_requested','awaiting_return_reservation','awaiting_return_dropoff','awaiting_return_collection','returned'].includes(order.status);
     if (filter === 'completed') return order.status === 'completed';
     if (filter === 'closed') return ['cancelled','rejected'].includes(order.status);
     return true;
@@ -80,6 +80,7 @@ function archaControls(order) {
     ? `<div class="manager-request">Текст для ARCHA POINT подготовлен. Отправьте его в рабочую группу и дождитесь кода возврата. Если их SMS не пришло, получите подтверждённый код у ARCHA POINT и отправьте его клиенту через защищённый резервный путь Rentop.</div><div class="manager-actions"><button class="secondary" data-prepare-archa-return="${order.id}">Показать и скопировать сообщение</button><button class="secondary" data-manual-return-code="${order.id}">Отправить резервный код возврата</button></div>`
     : `<div class="manager-actions"><button class="secondary" data-prepare-archa-return="${order.id}">Подготовить сообщение о возврате</button></div>`;
   if (order.status === 'awaiting_return_dropoff') return `<div class="manager-request">${order.locker_status === 'return_access_received' ? 'Клиент подтвердил получение SMS-кода.' : 'Код возврата отмечен как отправленный.'} Ожидаем, пока клиент прикрепит видео, поместит ноутбук в ячейку и сам подтвердит закрытие. После этого заявка перейдёт в «Проверка возврата».</div>`;
+  if (order.status === 'awaiting_return_collection') return `<div class="manager-request"><strong>Возврат вне постамата</strong><br>Способ: ${escape(order.return_method || '—')} · оплату доставки несёт клиент.<br>Адрес: ${escape(order.return_collection_address || 'самопривоз — сообщите адрес после согласования')}<br>Контакт: ${escape(order.return_contact_name || '—')} · ${escape(order.return_contact_phone || '—')}<br>Время: ${escape(order.return_preferred_time || 'по согласованию')}<br><br>Не завершайте аренду по одному видео. После физического получения и принятого видео нажмите кнопку ниже.</div><div class="manager-actions"><button class="secondary" data-confirm-return-collected="${order.id}">Ноутбук получен физически</button></div>`;
   return '';
 }
 
@@ -237,6 +238,7 @@ ordersEl.addEventListener('click', async event => {
   const createPayment = event.target.closest('[data-create-payment]');
   const createExtensionPayment = event.target.closest('[data-create-extension-payment]');
   const approveFreeExtension = event.target.closest('[data-approve-free-extension]');
+  const confirmReturnCollected = event.target.closest('[data-confirm-return-collected]');
   const rejectExtension = event.target.closest('[data-reject-extension]');
   const revokePayment = event.target.closest('[data-revoke-payment]');
   const manualPayment = event.target.closest('[data-manual-payment]');
@@ -257,8 +259,8 @@ ordersEl.addEventListener('click', async event => {
   const resolveSupport = event.target.closest('[data-resolve-support]');
   const replySupport = event.target.closest('[data-reply-support]');
   const button = event.target.closest('[data-document], [data-order-action]');
-  if (!rejectAll && !deleteOrder && !createPayment && !createExtensionPayment && !approveFreeExtension && !rejectExtension && !revokePayment && !manualPayment && !prepareArcha && !recordArchaReservation && !markLockerLoaded && !archaSmsSent && !manualPickupCode && !manualReturnCode && !prepareArchaReturn && !completeReturn && !adminClose && !adminIncident && !adminResolveIncident && !saveAsset && !saveRegistry && !issuePromo && !resolveSupport && !replySupport && !button) return;
-  const target = rejectAll || deleteOrder || createPayment || createExtensionPayment || approveFreeExtension || rejectExtension || revokePayment || manualPayment || prepareArcha || recordArchaReservation || markLockerLoaded || archaSmsSent || manualPickupCode || manualReturnCode || prepareArchaReturn || completeReturn || adminClose || adminIncident || adminResolveIncident || saveAsset || saveRegistry || issuePromo || resolveSupport || replySupport || button;
+  if (!rejectAll && !deleteOrder && !createPayment && !createExtensionPayment && !approveFreeExtension && !confirmReturnCollected && !rejectExtension && !revokePayment && !manualPayment && !prepareArcha && !recordArchaReservation && !markLockerLoaded && !archaSmsSent && !manualPickupCode && !manualReturnCode && !prepareArchaReturn && !completeReturn && !adminClose && !adminIncident && !adminResolveIncident && !saveAsset && !saveRegistry && !issuePromo && !resolveSupport && !replySupport && !button) return;
+  const target = rejectAll || deleteOrder || createPayment || createExtensionPayment || approveFreeExtension || confirmReturnCollected || rejectExtension || revokePayment || manualPayment || prepareArcha || recordArchaReservation || markLockerLoaded || archaSmsSent || manualPickupCode || manualReturnCode || prepareArchaReturn || completeReturn || adminClose || adminIncident || adminResolveIncident || saveAsset || saveRegistry || issuePromo || resolveSupport || replySupport || button;
   if (target.disabled) return;
   const feedback = target.closest('.manager-order')?.querySelector('[data-order-feedback]');
   const showFeedback = (text, type = '') => { if (!feedback) return; feedback.textContent = text; feedback.className = `manager-order-feedback${type ? ` is-${type}` : ''}`; feedback.hidden = !text; };
@@ -289,6 +291,10 @@ ordersEl.addEventListener('click', async event => {
     if (!window.confirm('Подтвердить продление без доплаты? Срок аренды обновится, а действие будет записано в журнале.')) return;
     payload = { action:'approve_free_extension', orderId:approveFreeExtension.dataset.approveFreeExtension, requestId:approveFreeExtension.dataset.requestId };
     successMessage = 'Продление без доплаты подтверждено.';
+  } else if (confirmReturnCollected) {
+    if (!window.confirm('Подтвердить, что ноутбук физически получен? После этого останется итоговый осмотр и акт.')) return;
+    payload = { action:'confirm_return_collected', orderId:confirmReturnCollected.dataset.confirmReturnCollected };
+    successMessage = 'Физическое получение отмечено. Проведите итоговый осмотр.';
   } else if (rejectExtension) {
     const reason = window.prompt('Причина отказа. Клиент увидит её сразу и сможет повторить запрос или подобрать замену:', 'Продление не согласовано: ноутбук уже забронирован на последующие даты. Нажмите «Подобрать замену / повторить», чтобы сайт показал свободные модели.');
     if (!reason?.trim()) return;

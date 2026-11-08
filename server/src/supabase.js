@@ -1,5 +1,5 @@
 export function createSupabaseApi(config) {
-  const customerOrderSelect = 'id,laptop_id,customer_name,customer_phone,rental_start_date,rental_end_date,rental_started_at,rental_ends_at,rental_days,daily_rate,discount_percent,status,total_amount,deposit_amount,delivery_type,locker_address,locker_status,offer_version,offer_accepted_at,offer_otp_verified_at,customer_note,rental_purpose,archa_handoff_sent_at,locker_loading_reference,locker_loaded_at,customer_access_sent_at,return_method,return_locker_address,return_access_sent_at,created_at,updated_at';
+  const customerOrderSelect = 'id,laptop_id,customer_name,customer_phone,rental_start_date,rental_end_date,rental_started_at,rental_ends_at,rental_days,daily_rate,discount_percent,status,total_amount,deposit_amount,delivery_type,locker_address,locker_status,offer_version,offer_accepted_at,offer_otp_verified_at,customer_note,rental_purpose,archa_handoff_sent_at,locker_loading_reference,locker_loaded_at,customer_access_sent_at,return_method,return_locker_address,return_collection_address,return_contact_name,return_contact_phone,return_preferred_time,return_delivery_payer,return_access_sent_at,created_at,updated_at';
   const phoneDigits = (value) => String(value || '').replace(/\D/g, '').replace(/^0+/, '');
   async function request(path, options = {}) {
     const isLegacyJwtKey = config.supabaseServerKey.startsWith('eyJ');
@@ -109,7 +109,7 @@ export function createSupabaseApi(config) {
     }).then((rows) => rows?.[0] || null),
     listCustomerRequests: (orderId) => request(
       `rental_order_customer_requests?order_id=eq.${encodeURIComponent(orderId)}` +
-      '&select=id,kind,status,customer_message,requested_days,estimated_amount,proposed_return_date,return_method,return_locker_address,replacement_laptop_id,replacement_difference,replacement_note,created_at,updated_at&order=created_at.desc&limit=12'
+      '&select=id,kind,status,customer_message,requested_days,estimated_amount,proposed_return_date,return_method,return_locker_address,return_collection_address,return_contact_name,return_contact_phone,return_preferred_time,return_delivery_payer,replacement_laptop_id,replacement_difference,replacement_note,created_at,updated_at&order=created_at.desc&limit=12'
     ),
     createCustomerRequest: (customerRequest) => request('rental_order_customer_requests', {
       method: 'POST', body: JSON.stringify(customerRequest)
@@ -182,7 +182,7 @@ export function createSupabaseApi(config) {
       const statusFilter = allowedStatuses.length ? `&status=in.(${allowedStatuses.map(encodeURIComponent).join(',')})` : '';
       const readStamp = encodeURIComponent(new Date().toISOString());
       return request(
-        `rental_orders?updated_at=lte.${readStamp}&select=id,laptop_id,customer_name,customer_phone,rental_start_date,rental_end_date,rental_days,daily_rate,discount_percent,status,total_amount,deposit_amount,delivery_type,locker_address,locker_status,offer_version,offer_accepted_at,offer_otp_verified_at,residence_address,supporting_document_type,identity_document_number,identity_document_issuer,identity_verified_at,identity_verified_by,customer_note,rental_purpose,manager_note,return_condition_note,admin_note,archa_handoff_sent_at,locker_loading_reference,locker_loading_code,locker_loaded_at,customer_access_sent_at,return_method,return_locker_address,return_access_code,return_access_sent_at,created_at,updated_at&order=updated_at.desc&limit=${Math.min(Math.max(Number(limit) || 12, 1), 100)}${statusFilter}`
+        `rental_orders?updated_at=lte.${readStamp}&select=id,laptop_id,customer_name,customer_phone,rental_start_date,rental_end_date,rental_days,daily_rate,discount_percent,status,total_amount,deposit_amount,delivery_type,locker_address,locker_status,offer_version,offer_accepted_at,offer_otp_verified_at,residence_address,supporting_document_type,identity_document_number,identity_document_issuer,identity_verified_at,identity_verified_by,customer_note,rental_purpose,manager_note,return_condition_note,admin_note,archa_handoff_sent_at,locker_loading_reference,locker_loading_code,locker_loaded_at,customer_access_sent_at,return_method,return_locker_address,return_collection_address,return_contact_name,return_contact_phone,return_preferred_time,return_delivery_payer,return_access_code,return_access_sent_at,created_at,updated_at&order=updated_at.desc&limit=${Math.min(Math.max(Number(limit) || 12, 1), 100)}${statusFilter}`
       );
     },
     listRentalReminderCandidates: () => request(

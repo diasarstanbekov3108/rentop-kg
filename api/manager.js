@@ -309,7 +309,7 @@ export default async function handler(request, response) {
       const order = await database.getOrder(String(payload.orderId || ''));
       const returnConditionNote = String(payload.returnConditionNote || '').trim().replace(/\s+/g, ' ').slice(0, 2000);
       if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
-      if (!['return_requested','returned'].includes(order.status)) return reply(response, 409, { error:'Акт приёма доступен после запроса возврата или подтверждения помещения в ячейку.' });
+      if (order.status !== 'returned') return reply(response, 409, { error:'Акт приёма доступен только после фактического получения ноутбука.' });
       if (returnConditionNote.length < 3) return reply(response, 400, { error:'Опишите состояние ноутбука после физического осмотра: корпус, экран, зарядка и комплектность.' });
       const documents = await database.listOrderDocuments(order.id);
       const returnVideo = documents.find(document => document.kind === 'return_video');
@@ -375,6 +375,17 @@ export default async function handler(request, response) {
       const laptop = await database.getLaptop(order.laptop_id);
       await database.createEvent({ order_id:order.id, event_type:'manager_prepared_archa_return_handoff_from_web', actor_type:'manager', metadata:{ locker:order.return_locker_address } });
       return reply(response, 200, { ok:true, message:archaMessage(order, laptop, 'return') });
+    }
+    if (payload.action === 'confirm_return_collected') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      if (!order || order.status !== 'awaiting_return_collection') return reply(response, 409, { error:'Эта заявка сейчас не ожидает физического получения.' });
+      const documents = await database.listOrderDocuments(order.id);
+      const returnVideo = documents.find(document => document.kind === 'return_video');
+      if (returnVideo?.status !== 'accepted') return reply(response, 409, { error:'Сначала откройте и примите видео возврата.' });
+      const returnedAt = new Date().toISOString();
+      const updated = await database.updateOrder(order.id, { status:'returned', returned_at:returnedAt });
+      await database.createEvent({ order_id:order.id, event_type:'manager_confirmed_physical_return_collection_from_web', actor_type:'manager', metadata:{ return_method:order.return_method, manager_phone:session.phone } });
+      return reply(response, 200, { ok:true, order:updated, message:'Физическое получение отмечено. Теперь проведите итоговый осмотр и акт.' });
     }
     if (payload.action === 'mark_return_access_sent') {
       return reply(response, 409, { error:'Код возврата ARCHA POINT отправляет напрямую клиенту. Этап видео откроет сам клиент после получения SMS.' });
