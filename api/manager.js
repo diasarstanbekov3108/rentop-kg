@@ -416,14 +416,46 @@ export default async function handler(request, response) {
       await database.createEvent({ order_id:order.id, event_type:'bakai_extension_qr_created_from_web', actor_type:'manager', metadata:{ operation_id:operationId, amount, request_id:extension.id, request_kind:extension.kind, proposed_return_date:extension.proposed_return_date } });
       return reply(response, 201, { ok:true, payment });
     }
+    if (payload.action === 'approve_free_extension') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      const requestId = String(payload.requestId || '');
+      if (!order || !['issued', 'in_use'].includes(order.status)) return reply(response, 409, { error:'Продление можно подтвердить только для активной аренды.' });
+      const extension = (await database.listCustomerRequests(order.id)).find(item => item.id === requestId && ['extension', 'replacement'].includes(item.kind) && ['open', 'in_progress'].includes(item.status));
+      if (!extension) return reply(response, 404, { error:'Активный запрос продления не найден.' });
+      if (Number(extension.estimated_amount || 0) > 0) return reply(response, 409, { error:'Для этого продления требуется QR доплаты.' });
+      const targetLaptopId = extension.kind === 'replacement' ? extension.replacement_laptop_id : order.laptop_id;
+      const conflict = await database.findOverlappingBlockingOrder(order.id, targetLaptopId, order.rental_end_date, extension.proposed_return_date);
+      if (conflict) return reply(response, 409, { error:`Ноутбук уже занят с ${conflict.rental_start_date}; подтвердить продление нельзя.` });
+      const start = new Date(`${order.rental_start_date}T00:00:00Z`);
+      const end = new Date(`${extension.proposed_return_date}T00:00:00Z`);
+      const rentalDays = Math.round((end - start) / 86_400_000);
+      if (!Number.isFinite(rentalDays) || rentalDays <= Number(order.rental_days || 0)) return reply(response, 400, { error:'Дата продления должна быть позже текущей даты возврата.' });
+      const now = new Date().toISOString();
+      const rentalEndsAt = extendExactDeadline(order.rental_ends_at, order.rental_end_date, extension.proposed_return_date);
+      const patch = {
+        rental_end_date:extension.proposed_return_date,
+        rental_days:rentalDays,
+        ...(rentalEndsAt ? { rental_ends_at:rentalEndsAt } : {})
+      };
+      if (extension.kind === 'replacement') {
+        const replacementLaptop = await database.getLaptop(extension.replacement_laptop_id);
+        if (!replacementLaptop || replacementLaptop.category !== 'rent') return reply(response, 409, { error:'Выбранная модель для замены больше недоступна.' });
+        patch.laptop_id = replacementLaptop.id;
+        patch.daily_rate = Number(replacementLaptop.daily_rate || order.daily_rate);
+      }
+      const updatedOrder = await database.updateOrder(order.id, patch);
+      const updatedRequest = await database.updateCustomerRequest(extension.id, { status:'resolved', resolved_at:now });
+      await database.createEvent({ order_id:order.id, event_type:'manager_approved_free_extension_from_web', actor_type:'manager', metadata:{ request_id:extension.id, request_kind:extension.kind, proposed_return_date:extension.proposed_return_date, replacement_laptop_id:extension.replacement_laptop_id || null } });
+      return reply(response, 200, { ok:true, order:updatedOrder, request:updatedRequest, message:'Продление без доплаты подтверждено.' });
+    }
     if (payload.action === 'reject_extension_request') {
       const order = await database.getOrder(String(payload.orderId || ''));
       const requestId = String(payload.requestId || '');
       const reason = String(payload.reason || '').trim().slice(0, 1200);
       if (!order || !['issued', 'in_use'].includes(order.status)) return reply(response, 409, { error:'Продление можно отклонить только для активной аренды.' });
-      const extension = (await database.listCustomerRequests(order.id)).find(item => item.id === requestId && item.kind === 'extension' && ['open', 'in_progress'].includes(item.status));
+      const extension = (await database.listCustomerRequests(order.id)).find(item => item.id === requestId && ['extension', 'replacement'].includes(item.kind) && ['open', 'in_progress'].includes(item.status));
       if (!extension) return reply(response, 404, { error:'Активный запрос продления не найден.' });
-      const message = reason || 'Продление не согласовано: ноутбук уже забронирован на последующие даты. Пожалуйста, верните устройство в согласованный срок.';
+      const message = reason || 'Продление не согласовано: ноутбук уже забронирован на последующие даты. Нажмите «Подобрать замену / повторить», чтобы сайт показал свободные модели.';
       const updatedRequest = await database.updateCustomerRequest(extension.id, { status:'cancelled', customer_message:message });
       await database.createEvent({ order_id:order.id, event_type:'manager_rejected_extension_from_web', actor_type:'manager', metadata:{ request_id:extension.id, reason:message } });
       return reply(response, 200, { ok:true, request:updatedRequest });
