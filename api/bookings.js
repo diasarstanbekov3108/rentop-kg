@@ -67,11 +67,6 @@ export default async function handler(request, response) {
     const laptopId = Number(payload.laptopId);
     if (!Number.isFinite(laptopId) || !['delivery', 'arca_locker'].includes(payload.deliveryType)) throw new Error('Некорректные данные заявки.');
     if (payload.deliveryType === 'arca_locker' && !payload.lockerAddress) throw new Error('Выберите локацию ARCHA POINT.');
-    const deliveryAddress = String(payload.deliveryAddress || '').trim().replace(/\s+/g, ' ').slice(0, 500);
-    const deliveryPreferredTime = String(payload.deliveryPreferredTime || '').trim().replace(/\s+/g, ' ').slice(0, 300);
-    const benefitType = ['student', 'pensioner', 'disability'].includes(String(payload.benefitType || '')) ? String(payload.benefitType) : null;
-    if (payload.deliveryType === 'delivery' && deliveryAddress.length < 8) throw new Error('Укажите полный адрес доставки.');
-    if (payload.deliveryType === 'delivery' && deliveryPreferredTime.length < 3) throw new Error('Укажите удобное время доставки.');
     const laptop = await database.getLaptop(laptopId);
     if (!laptop || laptop.category !== 'rent') throw new Error('Ноутбук для аренды не найден.');
     const benefits = await database.listBenefitVerifications(session.phone).catch(() => []);
@@ -90,20 +85,13 @@ export default async function handler(request, response) {
       status: 'draft',
       delivery_type: payload.deliveryType,
       locker_address: payload.lockerAddress || null,
-      delivery_address: payload.deliveryType === 'delivery' ? deliveryAddress : null,
-      delivery_contact_name: payload.deliveryType === 'delivery' ? fullName : null,
-      delivery_contact_phone: payload.deliveryType === 'delivery' ? session.phone : null,
-      delivery_preferred_time: payload.deliveryType === 'delivery' ? deliveryPreferredTime : null,
-      benefit_requested_type: benefitType,
       client_token: token
     });
     const bot = createTelegramApi(config.telegramBotToken);
     await bot.sendMessage(config.adminChatId,
       `🆕 Новая заявка с сайта\n\nЗаявка ${order.id.slice(0, 8).toUpperCase()}\n` +
       `${laptop.title}\nКлиент: ${fullName || 'ФИО заполняется в кабинете'}\nТелефон: ${session.phone}\n` +
-      `Срок: ${payload.startDate} — ${payload.endDate}\nСумма: ${rental.total} сом\nПолучение: ${payload.deliveryType}` +
-      (payload.deliveryType === 'delivery' ? `\nАдрес: ${deliveryAddress}\nВремя: ${deliveryPreferredTime}` : '') +
-      (benefitType ? `\nЛьгота заявлена: ${benefitType}` : '')
+      `Срок: ${payload.startDate} — ${payload.endDate}\nСумма: ${rental.total} сом\nПолучение: ${payload.deliveryType}`
     ).catch((error) => console.error('Manager notification failed:', error.message));
     return response.status(201).json({ orderId: order.id, accountUrl: `/account?created=${encodeURIComponent(order.id)}` });
   } catch (error) {

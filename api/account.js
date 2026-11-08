@@ -120,7 +120,7 @@ export default async function handler(request, response) {
       response.setHeader('Set-Cookie', [sessionCookie(COOKIE, '', 0), sessionCookie(COMPAT_COOKIE, '', 0)]);
       return json(response, 200, { ok:true });
     }
-    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'delete_draft_document' || payload.action === 'create_document_download' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'request_offer_sms_consent' || payload.action === 'verify_offer_sms_consent' || payload.action === 'save_profile' || payload.action === 'save_residence_address' || payload.action === 'extension_request' || payload.action === 'replacement_request' || payload.action === 'cancel_extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup_access_received' || payload.action === 'confirm_pickup' || payload.action === 'confirm_return_access_received' || payload.action === 'confirm_return_dropoff' || payload.action === 'submit_feedback') {
+    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'delete_draft_document' || payload.action === 'create_document_download' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'request_offer_sms_consent' || payload.action === 'verify_offer_sms_consent' || payload.action === 'save_profile' || payload.action === 'save_residence_address' || payload.action === 'save_delivery_preferences' || payload.action === 'extension_request' || payload.action === 'replacement_request' || payload.action === 'cancel_extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup_access_received' || payload.action === 'confirm_pickup' || payload.action === 'confirm_return_access_received' || payload.action === 'confirm_return_dropoff' || payload.action === 'submit_feedback') {
       const session = await verifySession();
       if (!session) return json(response, 401, { error:'Сессия истекла. Войдите в кабинет снова.', code:'AUTH_REQUIRED' });
       if (payload.action === 'save_profile') {
@@ -149,6 +149,23 @@ export default async function handler(request, response) {
         const profile = await database.getCustomerProfile(session.phone).catch(() => null);
         const updated = await database.updateOrder(order.id, { residence_address:residenceAddress, supporting_document_type:supportingDocumentType, customer_name:profile?.full_name || order.customer_name || null });
         await database.createEvent({ order_id:order.id, event_type:'customer_saved_residence_address_from_cabinet', actor_type:'customer', metadata:{ supporting_document_type:supportingDocumentType, address_length:residenceAddress.length } });
+        return json(response, 200, { ok:true, order:updated });
+      }
+      if (payload.action === 'save_delivery_preferences') {
+        if (order.status !== 'draft') return json(response, 409, { error:'Данные доставки уже переданы менеджеру. Для изменения обратитесь в поддержку.' });
+        if (order.delivery_type !== 'delivery') return json(response, 200, { ok:true, order });
+        const deliveryAddress = String(payload.deliveryAddress || '').trim().replace(/\s+/g, ' ').slice(0, 500);
+        const deliveryPreferredTime = String(payload.deliveryPreferredTime || '').trim().replace(/\s+/g, ' ').slice(0, 300);
+        if (deliveryAddress.length < 8) return json(response, 400, { error:'Укажите полный адрес доставки.' });
+        if (deliveryPreferredTime.length < 3) return json(response, 400, { error:'Укажите удобное время доставки.' });
+        const profile = await database.getCustomerProfile(session.phone).catch(() => null);
+        const updated = await database.updateOrder(order.id, {
+          delivery_address:deliveryAddress,
+          delivery_contact_name:profile?.full_name || order.customer_name || null,
+          delivery_contact_phone:session.phone,
+          delivery_preferred_time:deliveryPreferredTime
+        });
+        await database.createEvent({ order_id:order.id, event_type:'customer_saved_delivery_preferences_from_cabinet', actor_type:'customer', metadata:{ address_length:deliveryAddress.length, preferred_time:deliveryPreferredTime } });
         return json(response, 200, { ok:true, order:updated });
       }
       if (payload.action === 'accept_offer') {
