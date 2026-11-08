@@ -463,7 +463,9 @@ function panelMarkup(kind, orderId, documentState = {}) {
     const residence = replacement ? '' : `<label>Адрес проживания <span>обязательно</span></label><textarea name="residenceAddress" required minlength="8" maxlength="500" placeholder="Город, район, улица, дом, квартира (если есть)"></textarea><p class="cabinet-form-hint">Адрес фиксируется в заявке и в защищённом досье. Менеджер сверит его с официальным подтверждающим документом.</p>`;
     const orderComment = replacement ? '' : `<label>Комментарий к заявке <span>необязательно</span></label><textarea name="orderComment" maxlength="1000" placeholder="Например: цель аренды, пожелания по комплектации или вопрос менеджеру"></textarea>`;
     const profileField = replacement || isValidFullName(customerProfile?.full_name) ? '' : `<label>ФИО для договора <span>заполняется один раз</span></label><input name="fullName" autocomplete="name" placeholder="Фамилия Имя Отчество">`;
-    return `<form class="cabinet-inline-form cabinet-documents-form" novalidate data-document-upload="true" data-document-replacement="${replacement ? '1' : ''}" data-offer-sms-verified="${documentState.offerSmsVerified ? '1' : '0'}" data-required-kinds="${requiredKinds.join(',')}" data-order="${orderId}"><label>${replacement ? 'Прикрепите исправленный документ' : 'Подтвердите данные для заявки'}</label><p>${replacement ? 'Менеджер открыл замену для отмеченного файла. После повторной загрузки заявка снова уйдёт на проверку.' : 'Документы увидит только команда Rentop для проверки заявки. Допустимы JPG, PNG или PDF до 8 МБ.'}</p>${profileField}${residence}${kinds.map(fileControl).join('')}${orderComment}${offer}${warnings}<label class="cabinet-document-consent"><input name="documentConsent" type="checkbox"><span>Согласен(на) на передачу документов команде Rentop исключительно для проверки заявки и оформления договора.</span></label><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">${replacement ? 'Отправить замену' : 'Загрузить документы'}</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>После отправки повторная загрузка будет заблокирована до решения менеджера.</p></form>`;
+    const requestedBenefit = ['student','pensioner','disability'].includes(documentState.benefitRequested) ? documentState.benefitRequested : '';
+    const benefit = replacement ? '' : `<section class="cabinet-benefit-inline"><strong>Социальная скидка 10% <span>необязательно</span></strong><p>Если вы выбрали льготу при оформлении, прикрепите подтверждение сейчас. Поддельные и чужие документы не принимаются: Rentop проверяет их до выдачи. Скидка применяется только после одобрения и не суммируется с тарифной.</p><select name="benefitType" data-benefit-type><option value="">Не использовать социальную скидку</option><option value="student" ${requestedBenefit === 'student' ? 'selected' : ''}>Студент — билет или справка с места учёбы</option><option value="pensioner" ${requestedBenefit === 'pensioner' ? 'selected' : ''}>Пенсионер — пенсионное удостоверение</option><option value="disability" ${requestedBenefit === 'disability' ? 'selected' : ''}>Инвалидность / ОВЗ — удостоверение или справка</option></select><div data-benefit-proof ${requestedBenefit ? '' : 'hidden'}>${fileControl('benefit_proof')}</div></section>`;
+    return `<form class="cabinet-inline-form cabinet-documents-form" novalidate data-document-upload="true" data-document-replacement="${replacement ? '1' : ''}" data-offer-sms-verified="${documentState.offerSmsVerified ? '1' : '0'}" data-required-kinds="${requiredKinds.join(',')}" data-order="${orderId}"><label>${replacement ? 'Прикрепите исправленный документ' : 'Подтвердите данные для заявки'}</label><p>${replacement ? 'Менеджер открыл замену для отмеченного файла. После повторной загрузки заявка снова уйдёт на проверку.' : 'Документы увидит только команда Rentop для проверки заявки. Допустимы JPG, PNG или PDF до 8 МБ.'}</p>${profileField}${residence}${kinds.map(fileControl).join('')}${benefit}${orderComment}${offer}${warnings}<label class="cabinet-document-consent"><input name="documentConsent" type="checkbox"><span>Согласен(на) на передачу документов команде Rentop исключительно для проверки заявки и оформления договора.</span></label><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">${replacement ? 'Отправить замену' : 'Загрузить документы'}</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div><p>После отправки повторная загрузка будет заблокирована до решения менеджера.</p></form>`;
   }
   if (kind === 'issue-video' || kind === 'return-video') {
     const documentKind = kind === 'issue-video' ? 'issue_video' : 'return_video';
@@ -765,7 +767,7 @@ rentalsEl?.addEventListener('click', event => {
     panel.hidden = !opening;
     panel.classList.toggle('is-document-result', button.dataset.panel === 'documents' && ['submitted', 'approved'].includes(button.dataset.documentMode || ''));
     const sourceOrder = cabinetOrders.find(order => String(order.id) === String(button.dataset.order));
-    panel.innerHTML = panel.hidden ? '' : `<button class="cabinet-workspace-close" type="button" data-close-workspace aria-label="Закрыть форму">× <span>К заявке</span></button>${panelMarkup(button.dataset.panel, button.dataset.order, { mode:button.dataset.documentMode, kinds:button.dataset.documentKinds, requestId:button.dataset.requestId, days:button.dataset.extensionDays, offerSmsVerified:Boolean(sourceOrder?.offer_otp_verified_at), address:sourceOrder?.return_collection_address || sourceOrder?.residence_address || '', name:sourceOrder?.return_contact_name || sourceOrder?.customer_name || '', phone:sourceOrder?.return_contact_phone || sourceOrder?.customer_phone || '' })}`;
+    panel.innerHTML = panel.hidden ? '' : `<button class="cabinet-workspace-close" type="button" data-close-workspace aria-label="Закрыть форму">× <span>К заявке</span></button>${panelMarkup(button.dataset.panel, button.dataset.order, { mode:button.dataset.documentMode, kinds:button.dataset.documentKinds, requestId:button.dataset.requestId, days:button.dataset.extensionDays, offerSmsVerified:Boolean(sourceOrder?.offer_otp_verified_at), benefitRequested:sourceOrder?.benefit_requested_type || '', address:sourceOrder?.return_collection_address || sourceOrder?.residence_address || '', name:sourceOrder?.return_contact_name || sourceOrder?.customer_name || '', phone:sourceOrder?.return_contact_phone || sourceOrder?.customer_phone || '' })}`;
     setWorkspaceMode(panel.hidden ? null : panel);
     if (!panel.hidden) {
       window.requestAnimationFrame(() => {
@@ -810,6 +812,12 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && !dashboard.hidden) refreshAccountIfSafe();
 });
 rentalsEl?.addEventListener('change', event => {
+  const benefitType = event.target.closest('select[data-benefit-type]');
+  if (benefitType) {
+    const proof = benefitType.closest('form')?.querySelector('[data-benefit-proof]');
+    if (proof) proof.hidden = !benefitType.value;
+    return;
+  }
   const returnMethod = event.target.closest('select[name="returnMethod"]');
   if (returnMethod) {
     const locker = returnMethod.closest('form')?.querySelector('.cabinet-return-locker');
@@ -857,7 +865,7 @@ rentalsEl?.addEventListener('submit', async event => {
     event.preventDefault();
     const button = documentForm.querySelector('[type="submit"]');
     const requiredKinds = String(documentForm.dataset.requiredKinds || '').split(',').filter(Boolean);
-    const files = ['identity_front', 'identity_back', 'selfie', 'supporting', 'issue_video', 'return_video'].map(kind => ({ kind, file:documentForm.elements[kind]?.files?.[0] })).filter(item => item.file);
+    const files = ['identity_front', 'identity_back', 'selfie', 'supporting', 'benefit_proof', 'issue_video', 'return_video'].map(kind => ({ kind, file:documentForm.elements[kind]?.files?.[0] })).filter(item => item.file);
     const isReplacement = documentForm.dataset.documentReplacement === '1';
     const isEvidence = documentForm.dataset.evidenceUpload === 'true';
     const formError = (text) => {
@@ -866,7 +874,7 @@ rentalsEl?.addEventListener('submit', async event => {
       if (!output.parentElement) documentForm.append(output);
       output.scrollIntoView({ behavior:'smooth', block:'nearest' });
     };
-    const titles = { identity_front:'лицевую сторону паспорта / ID', identity_back:'обратную сторону паспорта / ID', selfie:'селфи с документом', supporting:'официальное подтверждение', issue_video:'видео получения', return_video:'видео возврата' };
+    const titles = { identity_front:'лицевую сторону паспорта / ID', identity_back:'обратную сторону паспорта / ID', selfie:'селфи с документом', supporting:'официальное подтверждение', benefit_proof:'подтверждение льготы', issue_video:'видео получения', return_video:'видео возврата' };
     const missingKinds = requiredKinds.filter(kind => !files.some(item => item.kind === kind));
     if (missingKinds.length) return formError(`Выберите: ${missingKinds.map(kind => titles[kind] || kind).join(', ')}.`);
     if (!isEvidence && !documentForm.elements.documentConsent?.checked) return formError('Отметьте согласие на передачу документов Rentop.');
@@ -874,6 +882,8 @@ rentalsEl?.addEventListener('submit', async event => {
     if (!isEvidence && !isReplacement && offerSmsConsentRequired && documentForm.dataset.offerSmsVerified !== '1') return formError('Подтвердите оферту кодом из SMS — нажмите «Получить код согласия» и введите 6 цифр.');
     const supporting = files.find(item => item.kind === 'supporting');
     if (supporting && !documentForm.elements.supportingType?.value) return formError('Выберите тип официального подтверждающего документа.');
+    const benefitProof = files.find(item => item.kind === 'benefit_proof');
+    if (!isEvidence && !isReplacement && documentForm.elements.benefitType?.value && !benefitProof) return formError('Для социальной скидки приложите подтверждающий документ или выберите «Не использовать социальную скидку».');
     const residenceAddress = String(documentForm.elements.residenceAddress?.value || '').trim();
     if (!isEvidence && !isReplacement && residenceAddress.length < 8) return formError('Укажите полный адрес проживания: город, улица, дом и квартира (если есть).');
     const fullName = String(documentForm.elements.fullName?.value || '').trim();

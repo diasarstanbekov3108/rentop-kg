@@ -786,6 +786,13 @@
               <option value="ТРЦ Tommi Mall — ул. Аалы Токомбаева, 17/2">ТРЦ Tommi Mall — ул. Аалы Токомбаева, 17/2</option>
             </select>
           </div>
+          <div class="form-group" id="delivery-details-field">
+            <label for="delivery-address">Адрес доставки</label>
+            <textarea id="delivery-address" name="delivery-address" maxlength="500" placeholder="Город, район, улица, дом, квартира (если есть)"></textarea>
+            <label for="delivery-preferred-time">Желаемое время доставки</label>
+            <input id="delivery-preferred-time" name="delivery-preferred-time" maxlength="300" placeholder="Например: после 20:00, по согласованию">
+            <p class="delivery-note">Доставка платная, точную стоимость и интервал менеджер подтвердит до выдачи. Укажите удобные адрес и время — это не является автоматическим заказом курьера.</p>
+          </div>
           <p class="delivery-note" id="archa-locker-note" hidden>После проверки заявки и оплаты менеджер Rentop подтвердит выдачу, подготовит ноутбук и отправит PIN-код или QR-код для получения.</p>
         </div>
       </div>
@@ -806,7 +813,14 @@
         </div>
         <aside class="booking-benefit-note" aria-label="Социальная скидка">
           <strong>Социальная скидка 10%</strong>
-          <p>Студентам, пенсионерам и людям с инвалидностью / ОВЗ. После создания заявки прикрепите подтверждающий документ в личном кабинете — менеджер проверит его, а сайт автоматически применит наиболее выгодную скидку. Скидки не суммируются, максимум — 30%.</p>
+          <label for="booking-benefit-type">Льгота — необязательно</label>
+          <select id="booking-benefit-type" name="booking-benefit-type">
+            <option value="">Не использую социальную скидку</option>
+            <option value="student">Студент — билет или справка с места учёбы</option>
+            <option value="pensioner">Пенсионер — пенсионное удостоверение</option>
+            <option value="disability">Инвалидность / ОВЗ — удостоверение или справка</option>
+          </select>
+          <p>После создания заявки прикрепите подтверждение вместе с документами в личном кабинете. Поддельные и чужие документы не принимаются: Rentop проверяет их до выдачи. Скидки не суммируются, сайт применит наиболее выгодную, максимум — 30%.</p>
         </aside>
         <button type="submit" class="btn-submit" id="submitBtn">Войти и продолжить</button>
       </form>
@@ -814,6 +828,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script type="module" src="js/app.js?v=20261108-benefits-note"></script>
+  <script type="module" src="js/app.js?v=20261108-delivery-preferences"></script>
 </body>
 </html>

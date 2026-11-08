@@ -71,6 +71,10 @@ const deliveryTypeInput = document.getElementById('delivery-type');
 const archaLockerNote = document.getElementById('archa-locker-note');
 const archaLocationField = document.getElementById('archa-location-field');
 const archaLocationInput = document.getElementById('archa-location');
+const deliveryDetailsField = document.getElementById('delivery-details-field');
+const deliveryAddressInput = document.getElementById('delivery-address');
+const deliveryPreferredTimeInput = document.getElementById('delivery-preferred-time');
+const bookingBenefitTypeInput = document.getElementById('booking-benefit-type');
 const rentalAvailabilityMessage = document.getElementById('rental-availability-message');
 const submitBtn = document.getElementById('submitBtn');
 const cabinetOrderPhone = document.getElementById('cabinet-order-phone');
@@ -473,6 +477,9 @@ function resetOrderSubmit() {
   submitInFlight = false;
   if (deliveryTypeInput) deliveryTypeInput.value = 'delivery';
   if (archaLocationInput) archaLocationInput.value = '';
+  if (deliveryAddressInput) deliveryAddressInput.value = '';
+  if (deliveryPreferredTimeInput) deliveryPreferredTimeInput.value = '';
+  if (bookingBenefitTypeInput) bookingBenefitTypeInput.value = '';
   updateDeliveryNote();
   if (!submitBtn) return;
   submitBtn.disabled = false;
@@ -483,6 +490,9 @@ function updateDeliveryNote() {
   const isLocker = deliveryTypeInput?.value === 'arca_locker';
   if (archaLockerNote) archaLockerNote.hidden = !isLocker;
   if (archaLocationField) archaLocationField.hidden = !isLocker;
+  if (deliveryDetailsField) deliveryDetailsField.hidden = isLocker;
+  if (deliveryAddressInput) deliveryAddressInput.required = !isLocker;
+  if (deliveryPreferredTimeInput) deliveryPreferredTimeInput.required = !isLocker;
 }
 
 function selectedArchaLocation() {
@@ -615,6 +625,9 @@ function savePendingBooking() {
     laptopId: currentLaptop.id,
     deliveryType: deliveryTypeInput?.value || 'delivery',
     lockerAddress: selectedArchaLocation(),
+    deliveryAddress: deliveryAddressInput?.value || '',
+    deliveryPreferredTime: deliveryPreferredTimeInput?.value || '',
+    benefitType: bookingBenefitTypeInput?.value || '',
     startDate: draft.startDate || '',
     endDate: draft.endDate || ''
   }));
@@ -1069,6 +1082,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (rentalStartInput && saved.startDate) rentalStartInput.value = saved.startDate;
         if (rentalEndInput && saved.endDate) rentalEndInput.value = saved.endDate;
         if (archaLocationInput && saved.lockerAddress) archaLocationInput.value = saved.lockerAddress;
+        if (deliveryAddressInput && saved.deliveryAddress) deliveryAddressInput.value = saved.deliveryAddress;
+        if (deliveryPreferredTimeInput && saved.deliveryPreferredTime) deliveryPreferredTimeInput.value = saved.deliveryPreferredTime;
+        if (bookingBenefitTypeInput && saved.benefitType) bookingBenefitTypeInput.value = saved.benefitType;
         updateDeliveryNote();
         updateCalculator();
       }
@@ -1243,6 +1259,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         showRentalMessage('Выберите локацию ARCHA POINT.', 'error');
         return;
       }
+      const deliveryAddress = String(deliveryAddressInput?.value || '').trim();
+      const deliveryPreferredTime = String(deliveryPreferredTimeInput?.value || '').trim();
+      if (deliveryType === 'delivery' && deliveryAddress.length < 8) {
+        showRentalMessage('Укажите полный адрес доставки.', 'error');
+        return;
+      }
+      if (deliveryType === 'delivery' && deliveryPreferredTime.length < 3) {
+        showRentalMessage('Укажите удобное время доставки.', 'error');
+        return;
+      }
       submitInFlight = true;
       if (submitBtn) {
         submitBtn.disabled = true;
@@ -1275,7 +1301,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             startDate: draft.startDate,
             endDate: draft.endDate,
             deliveryType,
-            lockerAddress: archaLocation
+            lockerAddress: archaLocation,
+            deliveryAddress,
+            deliveryPreferredTime,
+            benefitType: bookingBenefitTypeInput?.value || ''
           })
         });
         const result = await response.json().catch(() => ({}));
