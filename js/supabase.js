@@ -13,8 +13,8 @@ export const fallbackLaptops = [
     cpu: 'Intel Core i5-1135G7',
     ram: '16 GB',
     storage: '512 GB SSD',
-    dailyRate: 600,
-    priceText: 'От 600 сом / день',
+    dailyRate: 650,
+    priceText: 'От 650 сом / день',
     image: 'https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?w=600&auto=format&fit=crop'
   },
   {
@@ -37,8 +37,8 @@ export const fallbackLaptops = [
     cpu: 'Intel Core i3-10110U',
     ram: '8 GB',
     storage: '256 GB SSD',
-    dailyRate: 400,
-    priceText: 'От 400 сом / день',
+    dailyRate: 650,
+    priceText: 'От 650 сом / день',
     image: 'https://images.unsplash.com/photo-1541807084-5c52b6b3adef?w=600&auto=format&fit=crop'
   },
   {
@@ -61,8 +61,8 @@ export const fallbackLaptops = [
     cpu: 'Intel Core i7-8500U',
     ram: '16 GB',
     storage: '256 GB SSD',
-    dailyRate: 1200,
-    priceText: 'От 1200 сом / день',
+    dailyRate: 1300,
+    priceText: 'От 1300 сом / день',
     image: 'https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?w=600&auto=format&fit=crop'
   }
 ];
