@@ -529,7 +529,6 @@ export default async function handler(request, response) {
       const now = new Date().toISOString();
       const updatedOrder = await database.updateOrder(order.id, {
         laptop_id:replacement.id,
-        daily_rate:Number(replacement.daily_rate || order.daily_rate),
         replacement_pending_laptop_id:null,
         replacement_exchange_method:method,
         replacement_exchange_status:'completed',
