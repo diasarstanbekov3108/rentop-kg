@@ -1,5 +1,9 @@
 export function createSupabaseApi(config) {
   const customerOrderSelect = 'id,laptop_id,customer_name,customer_phone,rental_start_date,rental_end_date,rental_started_at,rental_ends_at,rental_days,daily_rate,discount_percent,status,total_amount,deposit_amount,delivery_type,locker_address,locker_status,offer_version,offer_accepted_at,offer_otp_verified_at,residence_address,customer_note,rental_purpose,archa_handoff_sent_at,locker_loading_reference,locker_loaded_at,customer_access_sent_at,replacement_pending_laptop_id,replacement_exchange_method,replacement_exchange_status,replacement_incident_reason,return_method,return_locker_address,return_collection_address,return_contact_name,return_contact_phone,return_preferred_time,return_delivery_payer,return_access_sent_at,created_at,updated_at';
+  const normalizeLaptopRate = (laptop) => laptop ? ({
+    ...laptop,
+    daily_rate: Number(laptop.daily_rate ?? laptop.dailyRate ?? laptop.dailyrate ?? 0)
+  }) : null;
   const phoneDigits = (value) => String(value || '').replace(/\D/g, '').replace(/^0+/, '');
   async function request(path, options = {}) {
     const isLegacyJwtKey = config.supabaseServerKey.startsWith('eyJ');
@@ -59,8 +63,12 @@ export function createSupabaseApi(config) {
   }
 
   return {
-    getLaptop: (id) => getOne(`laptops?id=eq.${encodeURIComponent(id)}&select=*`),
-    listRentableLaptops: () => request('laptops?category=eq.rent&select=id,title,category,daily_rate,processor,ram,storage,image_url&order=id.asc&limit=50'),
+    getLaptop: (id) => getOne(`laptops?id=eq.${encodeURIComponent(id)}&select=*`).then(normalizeLaptopRate),
+    // The production catalogue predates the current schema in some projects:
+    // its rate may be dailyRate or dailyrate rather than daily_rate. Fetch the
+    // row shape once and normalize it instead of making the manager panel fail.
+    listRentableLaptops: () => request('laptops?category=eq.rent&select=*&order=id.asc&limit=50')
+      .then((rows) => (rows || []).map(normalizeLaptopRate)),
     updateLaptop: (id, patch) => request(`laptops?id=eq.${encodeURIComponent(id)}`, {
       method:'PATCH', body:JSON.stringify(patch)
     }).then((rows) => rows?.[0] || null),
