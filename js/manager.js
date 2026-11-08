@@ -16,6 +16,7 @@ const testBakaiButton = document.getElementById('manager-test-bakai');
 const bakaiCheck = document.getElementById('manager-bakai-check');
 const returnAlert = document.getElementById('manager-return-alert');
 let orders = [];
+let rentableLaptops = [];
 let filter = 'all';
 let pendingManagerPhone = '';
 let isChiefAdmin = false;
@@ -140,7 +141,8 @@ function render() {
     const benefitPanel = benefits.length ? `<section class="manager-section"><h3>Социальная скидка</h3><div class="manager-requests">${benefits.map(item => `<div class="manager-request"><strong>${escape(benefitLabel(item.benefit_type))}</strong> · ${escape(item.status)}${item.reviewer_note ? `<br>${escape(item.reviewer_note)}` : ''}<br><small>Подано ${date(item.created_at)}${item.approved_at ? ` · принято ${date(item.approved_at)}` : ''}</small></div>`).join('')}</div><p>Подтверждённая льгота — 10%. Она не складывается с тарифной скидкой: для расчёта используется наибольшая из доступных скидок.</p></section>` : '';
     const loyaltyAction = order.status === 'completed' ? `<section class="manager-section"><h3>Лояльность клиента</h3><div class="manager-actions"><button class="secondary" data-issue-promo="${order.id}">Выдать персональный промокод</button></div><p>Промокод привязывается к номеру клиента и будет виден только в его личном кабинете.</p></section>` : '';
     const assetTools = isChiefAdmin ? `<section class="manager-section"><h3>Учёт устройства</h3><div class="manager-payment-create"><label>Заводской S/N<input data-asset-serial type="text" maxlength="160" value="${escape(order.laptop_serial_number || '')}" placeholder="Например: C02ABC123XYZ"></label><label>Инвентарный код Rentop<input data-asset-inventory type="text" maxlength="100" value="${escape(order.laptop_inventory_code || '')}" placeholder="Например: RT-0001"></label><button class="secondary" data-save-asset="${order.laptop_id}">Сохранить идентификаторы</button></div></section>` : '';
-    const incidentTools = order.status === 'incident' ? `<button class="secondary" data-admin-resolve-incident="${order.id}">Разрешить инцидент</button>` : '';
+    const incidentCandidates = rentableLaptops.filter(laptop => String(laptop.id) !== String(order.laptop_id) && Number(laptop.daily_rate || 0) >= Number(order.daily_rate || 0));
+    const incidentTools = order.status === 'incident' ? `${order.replacement_exchange_status === 'awaiting_exchange' ? '<p class="manager-request">Замена уже согласуется. Сначала подтвердите физическую передачу выше, затем закройте инцидент.</p>' : `<div class="manager-payment-create"><label>Равная или более дорогая модель<select data-incident-replacement-laptop><option value="">Выберите модель</option>${incidentCandidates.map(laptop => `<option value="${Number(laptop.id)}">${escape(laptop.title)} · ${Number(laptop.daily_rate || 0).toLocaleString('ru-RU')} сом/день</option>`).join('')}</select></label><label>Ответственность<select data-incident-fault-party><option value="rentop">Вина Rentop — замена без доплаты</option><option value="customer">Вина клиента — условия согласует менеджер</option></select></label><label>Передача<select data-incident-method><option value="rentop_courier">Курьер Rentop</option><option value="arca_locker">ARCHA POINT</option><option value="customer_courier">Курьерская служба клиента</option><option value="self_delivery">Самопривоз</option></select></label><button class="secondary" data-admin-offer-incident-replacement="${order.id}">Предложить замену</button></div>`}<button class="secondary" data-admin-resolve-incident="${order.id}">Разрешить инцидент</button>` : '';
     const adminTools = isChiefAdmin ? `<section class="manager-section"><h3>Контроль главного администратора</h3><div class="manager-actions"><a class="cabinet-action secondary" href="/api/manager/dossier?order=${encodeURIComponent(order.id)}" target="_blank" rel="noopener">Открыть защищённое досье</a><a class="cabinet-action ghost" href="/api/manager/dossier?order=${encodeURIComponent(order.id)}&format=json">Скачать технический JSON</a>${['in_use','return_requested','awaiting_return_reservation','awaiting_return_dropoff','returned'].includes(order.status) ? `<button class="secondary" data-admin-close="${order.id}">Досрочно завершить после возврата</button>` : ''}${incidentTools}${!['completed','cancelled','rejected','incident'].includes(order.status) ? `<button class="danger" data-admin-incident="${order.id}">Открыть инцидент</button>` : ''}</div></section>` : '';
     const handoffPanel = archaIssueHandoffPanel(order);
     const documentsPanel = `<section class="manager-section"><h3>Документы</h3><div class="manager-docs">${order.documents.length ? order.documents.map(document => documentCard(document, order.id)).join('') : '<span class="manager-empty">Документы ещё не загружены</span>'}</div></section>`;
@@ -158,7 +160,7 @@ function render() {
   }).join('') : '<div class="manager-empty">По этому фильтру заявок нет.</div>';
 }
 
-async function load(silent = false) { if (activeLoad) return activeLoad; if (!silent) statusEl.textContent = 'Загружаем заявки…'; activeLoad = (async () => { try { const data = await api(); orders = data.orders || []; isChiefAdmin = Boolean(data.isChiefAdmin); gate.hidden = true; dashboard.hidden = false; if (!silent) statusEl.textContent = `Обновлено: ${new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit'}).format(new Date())}`; render(); } catch (error) { dashboard.hidden = true; gate.hidden = error.status !== 401; statusEl.textContent = error.status === 401 ? '' : error.message; } finally { activeLoad = null; } })(); return activeLoad; }
+async function load(silent = false) { if (activeLoad) return activeLoad; if (!silent) statusEl.textContent = 'Загружаем заявки…'; activeLoad = (async () => { try { const data = await api(); orders = data.orders || []; rentableLaptops = data.rentableLaptops || []; isChiefAdmin = Boolean(data.isChiefAdmin); gate.hidden = true; dashboard.hidden = false; if (!silent) statusEl.textContent = `Обновлено: ${new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit'}).format(new Date())}`; render(); } catch (error) { dashboard.hidden = true; gate.hidden = error.status !== 401; statusEl.textContent = error.status === 401 ? '' : error.message; } finally { activeLoad = null; } })(); return activeLoad; }
 function setFilter(nextFilter) { filter = nextFilter; document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item.dataset.filter === filter)); render(); }
 
 document.getElementById('manager-refresh').addEventListener('click', load);
@@ -255,14 +257,15 @@ ordersEl.addEventListener('click', async event => {
   const adminClose = event.target.closest('[data-admin-close]');
   const adminIncident = event.target.closest('[data-admin-incident]');
   const adminResolveIncident = event.target.closest('[data-admin-resolve-incident]');
+  const adminOfferIncidentReplacement = event.target.closest('[data-admin-offer-incident-replacement]');
   const saveAsset = event.target.closest('[data-save-asset]');
   const saveRegistry = event.target.closest('[data-save-registry]');
   const issuePromo = event.target.closest('[data-issue-promo]');
   const resolveSupport = event.target.closest('[data-resolve-support]');
   const replySupport = event.target.closest('[data-reply-support]');
   const button = event.target.closest('[data-document], [data-order-action]');
-  if (!rejectAll && !deleteOrder && !createPayment && !createExtensionPayment && !approveFreeExtension && !confirmReturnCollected && !confirmReplacementExchange && !rejectExtension && !revokePayment && !manualPayment && !prepareArcha && !recordArchaReservation && !markLockerLoaded && !archaSmsSent && !manualPickupCode && !manualReturnCode && !prepareArchaReturn && !completeReturn && !adminClose && !adminIncident && !adminResolveIncident && !saveAsset && !saveRegistry && !issuePromo && !resolveSupport && !replySupport && !button) return;
-  const target = rejectAll || deleteOrder || createPayment || createExtensionPayment || approveFreeExtension || confirmReturnCollected || confirmReplacementExchange || rejectExtension || revokePayment || manualPayment || prepareArcha || recordArchaReservation || markLockerLoaded || archaSmsSent || manualPickupCode || manualReturnCode || prepareArchaReturn || completeReturn || adminClose || adminIncident || adminResolveIncident || saveAsset || saveRegistry || issuePromo || resolveSupport || replySupport || button;
+  if (!rejectAll && !deleteOrder && !createPayment && !createExtensionPayment && !approveFreeExtension && !confirmReturnCollected && !confirmReplacementExchange && !rejectExtension && !revokePayment && !manualPayment && !prepareArcha && !recordArchaReservation && !markLockerLoaded && !archaSmsSent && !manualPickupCode && !manualReturnCode && !prepareArchaReturn && !completeReturn && !adminClose && !adminIncident && !adminResolveIncident && !adminOfferIncidentReplacement && !saveAsset && !saveRegistry && !issuePromo && !resolveSupport && !replySupport && !button) return;
+  const target = rejectAll || deleteOrder || createPayment || createExtensionPayment || approveFreeExtension || confirmReturnCollected || confirmReplacementExchange || rejectExtension || revokePayment || manualPayment || prepareArcha || recordArchaReservation || markLockerLoaded || archaSmsSent || manualPickupCode || manualReturnCode || prepareArchaReturn || completeReturn || adminClose || adminIncident || adminResolveIncident || adminOfferIncidentReplacement || saveAsset || saveRegistry || issuePromo || resolveSupport || replySupport || button;
   if (target.disabled) return;
   const feedback = target.closest('.manager-order')?.querySelector('[data-order-feedback]');
   const showFeedback = (text, type = '') => { if (!feedback) return; feedback.textContent = text; feedback.className = `manager-order-feedback${type ? ` is-${type}` : ''}`; feedback.hidden = !text; };
@@ -368,6 +371,15 @@ ordersEl.addEventListener('click', async event => {
     if (!window.confirm('Открыть инцидент по этой заявке?')) return;
     payload = { action:'admin_open_incident', orderId:adminIncident.dataset.adminIncident, reason:reason.trim() };
     successMessage = 'Инцидент открыт. Заявка требует решения главного администратора.';
+  } else if (adminOfferIncidentReplacement) {
+    const card = adminOfferIncidentReplacement.closest('.manager-order');
+    const replacementLaptopId = Number(card?.querySelector('[data-incident-replacement-laptop]')?.value);
+    const faultParty = card?.querySelector('[data-incident-fault-party]')?.value;
+    const method = card?.querySelector('[data-incident-method]')?.value;
+    if (!Number.isInteger(replacementLaptopId)) { showFeedback('Выберите модель для замены.', 'error'); return; }
+    if (!window.confirm('Предложить эту замену? Модель будет зарезервирована, но аренда не переключится до физической передачи.')) return;
+    payload = { action:'admin_offer_incident_replacement', orderId:adminOfferIncidentReplacement.dataset.adminOfferIncidentReplacement, replacementLaptopId, faultParty, method, reason:'Замена по открытому инциденту' };
+    successMessage = 'Модель зарезервирована для инцидента. Подтвердите физическую передачу после обмена.';
   } else if (adminResolveIncident) {
     const selection = window.prompt('Как разрешить инцидент?\n1 — вернуть аренду в активное состояние\n2 — подтвердить возврат на проверку\n3 — отменить до выдачи', '1');
     const outcome = ({ '1':'in_use', '2':'returned', '3':'cancelled' })[String(selection || '').trim()];

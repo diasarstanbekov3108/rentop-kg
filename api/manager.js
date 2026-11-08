@@ -67,7 +67,7 @@ export default async function handler(request, response) {
       // The dashboard used to sign every attachment for up to fifty orders on
       // every refresh. That can mean hundreds of storage calls and makes the
       // whole panel look stuck. Documents are now signed only when opened.
-      const orders = await database.listRecentOrders(25);
+      const [orders, rentableLaptops] = await Promise.all([database.listRecentOrders(25), database.listRentableLaptops()]);
       const benefitCache = new Map();
       const benefitsFor = phone => {
         const key = String(phone || '');
@@ -98,7 +98,7 @@ export default async function handler(request, response) {
           returnHandoffPrepared:Boolean(returnHandoffEvent)
         };
       });
-      return reply(response, 200, { authenticated:true, managerPhone:session.phone, isChiefAdmin, orders:hydrated });
+      return reply(response, 200, { authenticated:true, managerPhone:session.phone, isChiefAdmin, orders:hydrated, rentableLaptops });
     }
     if (request.method !== 'POST') return reply(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
@@ -164,7 +164,7 @@ export default async function handler(request, response) {
       await database.createEvent({ order_id:order.id, event_type:'manager_issued_loyalty_promo_from_web', actor_type:'manager', metadata:{ promo_id:promo?.id || null, discount_percent:percent, expires_at:expiresAt } }).catch(error => console.error('Manager promo audit event failed:', error.message));
       return reply(response, 201, { ok:true, promo, message:'Персональный промокод создан и появится в кабинете клиента.' });
     }
-    if (payload.action === 'admin_close_rental_early' || payload.action === 'admin_open_incident' || payload.action === 'admin_resolve_incident' || payload.action === 'admin_update_laptop_asset') {
+    if (payload.action === 'admin_close_rental_early' || payload.action === 'admin_open_incident' || payload.action === 'admin_resolve_incident' || payload.action === 'admin_offer_incident_replacement' || payload.action === 'admin_update_laptop_asset') {
       if (!isChiefAdmin) return reply(response, 403, { error:'Это действие доступно только главному администратору.' });
       if (payload.action === 'admin_update_laptop_asset') {
         const laptopId = String(payload.laptopId || '');
@@ -199,6 +199,22 @@ export default async function handler(request, response) {
         const updated = await database.updateOrder(order.id, { status:outcome, admin_note:`Инцидент разрешён: ${reason}` });
         await database.createEvent({ order_id:order.id, event_type:'chief_admin_resolved_incident_from_web', actor_type:'chief_admin', metadata:{ reason, outcome, manager_phone:session.phone } });
         return reply(response, 200, { ok:true, order:updated, message:'Инцидент разрешён, решение и причина записаны в журнал.' });
+      }
+      if (payload.action === 'admin_offer_incident_replacement') {
+        if (order.status !== 'incident') return reply(response, 409, { error:'Замену по инциденту можно предложить только при открытом инциденте.' });
+        const laptopId = Number(payload.replacementLaptopId);
+        const method = String(payload.method || 'rentop_courier');
+        const faultParty = String(payload.faultParty || 'rentop');
+        if (!Number.isInteger(laptopId) || !['arca_locker', 'rentop_courier', 'customer_courier', 'self_delivery'].includes(method) || !['rentop', 'customer'].includes(faultParty)) return reply(response, 400, { error:'Выберите модель, способ передачи и сторону ответственности.' });
+        const replacement = await database.getLaptop(laptopId);
+        if (!replacement || replacement.category !== 'rent' || String(replacement.id) === String(order.laptop_id)) return reply(response, 400, { error:'Выберите другую доступную арендную модель.' });
+        if (Number(replacement.daily_rate || 0) < Number(order.daily_rate || 0)) return reply(response, 409, { error:'Для замены доступна только равная или более дорогая модель.' });
+        const today = new Intl.DateTimeFormat('en-CA', { timeZone:TIME_ZONE, year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
+        const conflict = await database.findOverlappingBlockingOrder(order.id, replacement.id, today, order.rental_end_date);
+        if (conflict) return reply(response, 409, { error:`Эта модель занята с ${conflict.rental_start_date}. Выберите другую.` });
+        const updated = await database.updateOrder(order.id, { replacement_pending_laptop_id:replacement.id, replacement_exchange_method:method, replacement_exchange_status:'awaiting_exchange', replacement_incident_reason:`${faultParty === 'rentop' ? 'По вине Rentop' : 'По вине клиента'}: ${reason}` });
+        await database.createEvent({ order_id:order.id, event_type:'chief_admin_offered_incident_replacement_from_web', actor_type:'chief_admin', metadata:{ replacement_laptop_id:replacement.id, method, fault_party:faultParty, reason } });
+        return reply(response, 200, { ok:true, order:updated, message:faultParty === 'rentop' ? 'Замена предложена за счёт Rentop. Подтвердите физическую передачу после обмена.' : 'Замена предложена. Условия доплаты и залога согласуйте с клиентом до физической передачи.' });
       }
       if (!['in_use','return_requested','awaiting_return_reservation','awaiting_return_dropoff','returned'].includes(order.status)) return reply(response, 409, { error:'Досрочно завершить можно только активную аренду или оформленный возврат.' });
       const documents = await database.listOrderDocuments(order.id);
