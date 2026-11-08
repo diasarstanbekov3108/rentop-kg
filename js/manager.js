@@ -19,6 +19,7 @@ let orders = [];
 let filter = 'all';
 let pendingManagerPhone = '';
 let isChiefAdmin = false;
+let activeLoad = null;
 const transientOrderMessages = new Map();
 let openOrderDetails = new Set();
 
@@ -36,7 +37,7 @@ const nextAction = order => {
 
 function closeDocumentViewer() { if (!documentViewer) return; documentViewer.hidden = true; if (documentViewerContent) documentViewerContent.innerHTML = ''; document.body.style.overflow = ''; }
 function openDocumentViewer(url, name = 'Документ', contentType = '') { if (!documentViewer || !documentViewerContent || !url) return; const isPdf = contentType === 'application/pdf' || /\.pdf(?:[?#]|$)/i.test(name); const isVideo = contentType.startsWith('video/') || /\.(?:mp4|mov)(?:[?#]|$)/i.test(name); documentViewerContent.innerHTML = isVideo ? `<video controls preload="metadata" src="${escape(url)}">Ваш браузер не поддерживает просмотр видео.</video>` : isPdf ? `<iframe src="${escape(url)}" title="${escape(name)}"></iframe>` : `<img src="${escape(url)}" alt="${escape(name)}">`; documentViewer.hidden = false; document.body.style.overflow = 'hidden'; }
-async function api(method = 'GET', payload) { const url = method === 'GET' ? `/api/manager?refresh=${Date.now()}` : '/api/manager'; const response = await fetch(url, { method, credentials:'same-origin', cache:'no-store', headers:payload ? { 'content-type':'application/json' } : {}, body:payload ? JSON.stringify(payload) : undefined }); const data = await response.json().catch(() => ({})); if (!response.ok) { const error = new Error(data.error || 'Не удалось загрузить панель.'); error.status = response.status; throw error; } return data; }
+async function api(method = 'GET', payload) { const url = method === 'GET' ? `/api/manager?refresh=${Date.now()}` : '/api/manager'; const controller = new AbortController(); const timeout = window.setTimeout(() => controller.abort(), 30_000); try { const response = await fetch(url, { method, credentials:'same-origin', cache:'no-store', signal:controller.signal, headers:payload ? { 'content-type':'application/json' } : {}, body:payload ? JSON.stringify(payload) : undefined }); const data = await response.json().catch(() => ({})); if (!response.ok) { const error = new Error(data.error || 'Не удалось загрузить панель.'); error.status = response.status; throw error; } return data; } catch (error) { if (error.name === 'AbortError') throw new Error('Панель не ответила за 30 секунд. Нажмите «Обновить» — предыдущий запрос уже остановлен.'); throw error; } finally { window.clearTimeout(timeout); } }
 async function accountApi(payload) { const response = await fetch('/api/account', { method:'POST', credentials:'same-origin', headers:{ 'content-type':'application/json' }, body:JSON.stringify(payload) }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || 'Не удалось выполнить вход.'); return data; }
 function phoneDigits(value) { let digits = String(value || '').replace(/\D/g, ''); if (digits.startsWith('996')) digits = digits.slice(3); if (digits.startsWith('0')) digits = digits.slice(1); return digits.slice(0, 9); }
 function normalizePhone(value) { const digits = phoneDigits(value); return digits.length === 9 ? `+996${digits}` : ''; }
@@ -58,10 +59,10 @@ function visibleOrders() {
   });
 }
 
-function documentCard(document) {
+function documentCard(document, orderId) {
   const documentType = document.kind === 'supporting' && document.file_name ? ` · ${escape(document.file_name)}` : '';
   const reviewNote = document.reviewer_note ? ` · ${escape(document.reviewer_note)}` : '';
-  return `<div class="manager-doc"><span>${docLabel(document.kind)}${documentType} · ${document.status === 'pending_review' ? 'на проверке' : document.status}${reviewNote}</span>${document.view_url ? `<button class="manager-doc-view" type="button" data-document-view="${escape(document.view_url)}" data-document-name="${escape(document.file_name || docLabel(document.kind))}" data-document-type="${escape(document.content_type || '')}">Открыть</button>` : ''}${document.status === 'pending_review' ? `<button class="accept" data-document="${document.id}" data-status="accepted">Принять</button><button class="reject" data-document="${document.id}" data-status="rejected">Отклонить</button>` : ''}</div>`;
+  return `<div class="manager-doc"><span>${docLabel(document.kind)}${documentType} · ${document.status === 'pending_review' ? 'на проверке' : document.status}${reviewNote}</span><button class="manager-doc-view" type="button" data-document-view="${document.id}" data-order="${escape(orderId)}" data-document-name="${escape(document.file_name || docLabel(document.kind))}" data-document-type="${escape(document.content_type || '')}">Открыть</button>${document.status === 'pending_review' ? `<button class="accept" data-document="${document.id}" data-status="accepted">Принять</button><button class="reject" data-document="${document.id}" data-status="rejected">Отклонить</button>` : ''}</div>`;
 }
 function lockerInstruction(order) {
   if (order.delivery_type !== 'arca_locker') return '';
@@ -140,7 +141,7 @@ function render() {
     const incidentTools = order.status === 'incident' ? `<button class="secondary" data-admin-resolve-incident="${order.id}">Разрешить инцидент</button>` : '';
     const adminTools = isChiefAdmin ? `<section class="manager-section"><h3>Контроль главного администратора</h3><div class="manager-actions"><a class="cabinet-action secondary" href="/api/manager/dossier?order=${encodeURIComponent(order.id)}" target="_blank" rel="noopener">Открыть защищённое досье</a><a class="cabinet-action ghost" href="/api/manager/dossier?order=${encodeURIComponent(order.id)}&format=json">Скачать технический JSON</a>${['in_use','return_requested','awaiting_return_reservation','awaiting_return_dropoff','returned'].includes(order.status) ? `<button class="secondary" data-admin-close="${order.id}">Досрочно завершить после возврата</button>` : ''}${incidentTools}${!['completed','cancelled','rejected','incident'].includes(order.status) ? `<button class="danger" data-admin-incident="${order.id}">Открыть инцидент</button>` : ''}</div></section>` : '';
     const handoffPanel = archaIssueHandoffPanel(order);
-    const documentsPanel = `<section class="manager-section"><h3>Документы</h3><div class="manager-docs">${order.documents.length ? order.documents.map(documentCard).join('') : '<span class="manager-empty">Документы ещё не загружены</span>'}</div></section>`;
+    const documentsPanel = `<section class="manager-section"><h3>Документы</h3><div class="manager-docs">${order.documents.length ? order.documents.map(document => documentCard(document, order.id)).join('') : '<span class="manager-empty">Документы ещё не загружены</span>'}</div></section>`;
     const requestsPanel = order.requests.length ? `<section class="manager-section"><h3>Запросы клиента</h3><div class="manager-requests">${order.requests.map(request => `<div class="manager-request">${escape(request.kind)} · ${escape(request.status)}${request.return_method ? ` · ${escape(request.return_method)}` : ''}${request.return_locker_address ? ` · ${escape(request.return_locker_address)}` : ''}${request.customer_message ? ` · ${escape(request.customer_message)}` : ''}</div>`).join('')}</div></section>` : '';
     const directDocuments = pending ? documentsPanel : '';
     const details = `${pending ? '' : documentsPanel}${offerEvidence}${customerNote}${registry}${paymentState}${lockerInstruction(order)}${assetTools}${benefitPanel}${loyaltyAction}${adminTools}${requestsPanel}`;
@@ -155,7 +156,7 @@ function render() {
   }).join('') : '<div class="manager-empty">По этому фильтру заявок нет.</div>';
 }
 
-async function load(silent = false) { if (!silent) statusEl.textContent = 'Загружаем заявки…'; try { const data = await api(); orders = data.orders || []; isChiefAdmin = Boolean(data.isChiefAdmin); gate.hidden = true; dashboard.hidden = false; if (!silent) statusEl.textContent = `Обновлено: ${new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit'}).format(new Date())}`; render(); } catch (error) { dashboard.hidden = true; gate.hidden = error.status !== 401; statusEl.textContent = error.status === 401 ? '' : error.message; } }
+async function load(silent = false) { if (activeLoad) return activeLoad; if (!silent) statusEl.textContent = 'Загружаем заявки…'; activeLoad = (async () => { try { const data = await api(); orders = data.orders || []; isChiefAdmin = Boolean(data.isChiefAdmin); gate.hidden = true; dashboard.hidden = false; if (!silent) statusEl.textContent = `Обновлено: ${new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit'}).format(new Date())}`; render(); } catch (error) { dashboard.hidden = true; gate.hidden = error.status !== 401; statusEl.textContent = error.status === 401 ? '' : error.message; } finally { activeLoad = null; } })(); return activeLoad; }
 function setFilter(nextFilter) { filter = nextFilter; document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item.dataset.filter === filter)); render(); }
 
 document.getElementById('manager-refresh').addEventListener('click', load);
@@ -201,7 +202,21 @@ returnAlert?.addEventListener('click', () => { setFilter('returns'); document.qu
 searchInput?.addEventListener('input', render);
 ordersEl.addEventListener('click', async event => {
   const preview = event.target.closest('[data-document-view]');
-  if (preview) return openDocumentViewer(preview.dataset.documentView, preview.dataset.documentName, preview.dataset.documentType);
+  if (preview) {
+    const original = preview.textContent;
+    preview.disabled = true;
+    preview.textContent = 'Открываем…';
+    try {
+      const result = await api('POST', { action:'create_document_download', orderId:preview.dataset.order, documentId:preview.dataset.documentView });
+      openDocumentViewer(result.viewUrl, result.fileName || preview.dataset.documentName, result.contentType || preview.dataset.documentType);
+    } catch (error) {
+      statusEl.textContent = error.message;
+    } finally {
+      preview.disabled = false;
+      preview.textContent = original;
+    }
+    return;
+  }
   const copyHandoff = event.target.closest('[data-copy-handoff]');
   if (copyHandoff) {
     const field = copyHandoff.closest('.manager-handoff-primary')?.querySelector('[data-handoff-text]');

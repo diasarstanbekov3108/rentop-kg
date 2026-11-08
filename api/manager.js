@@ -21,6 +21,19 @@ function extendExactDeadline(currentEnd, oldDate, newDate) {
   const extraDays = Math.round((new Date(`${newDate}T00:00:00Z`) - new Date(`${oldDate}T00:00:00Z`)) / 86_400_000);
   return extraDays > 0 ? new Date(Date.parse(currentEnd) + extraDays * 86_400_000).toISOString() : currentEnd;
 }
+async function mapWithConcurrency(items, limit, mapper) {
+  const result = new Array(items.length);
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      result[index] = await mapper(items[index]);
+    }
+  };
+  await Promise.all(Array.from({ length:Math.min(Math.max(1, limit), items.length) }, worker));
+  return result;
+}
 function printableMoment(value) { return new Intl.DateTimeFormat('ru-RU', { timeZone:TIME_ZONE, day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' }).format(new Date(value)); }
 async function sendExactDeadlineSms(config, database, order, paidAt, endsAt) {
   if (!config.nikitaSms?.enabled || !order?.customer_phone) return;
@@ -51,8 +64,17 @@ export default async function handler(request, response) {
   try {
     if (request.method === 'GET') {
       if (String(request.query?.access || '') === '1') return reply(response, 200, { manager:true });
-      const orders = await database.listRecentOrders(50);
-      const hydrated = await Promise.all(orders.map(async order => {
+      // The dashboard used to sign every attachment for up to fifty orders on
+      // every refresh. That can mean hundreds of storage calls and makes the
+      // whole panel look stuck. Documents are now signed only when opened.
+      const orders = await database.listRecentOrders(25);
+      const benefitCache = new Map();
+      const benefitsFor = phone => {
+        const key = String(phone || '');
+        if (!benefitCache.has(key)) benefitCache.set(key, database.listBenefitVerifications(phone).catch(() => []));
+        return benefitCache.get(key);
+      };
+      const hydrated = await mapWithConcurrency(orders, 5, async order => {
         const [laptop, documents, requests, payments, supportCases, returnHandoffEvent, benefits] = await Promise.all([
           database.getLaptop(order.laptop_id),
           database.listOrderDocuments(order.id).catch(() => []),
@@ -60,19 +82,14 @@ export default async function handler(request, response) {
           database.listOrderPayments(order.id).catch(() => []),
           database.listOrderSupportCases(order.id).catch(() => []),
           database.hasOrderEvent(order.id, 'manager_prepared_archa_return_handoff_from_web').catch(() => null),
-          database.listBenefitVerifications(order.customer_phone).catch(() => [])
+          benefitsFor(order.customer_phone)
         ]);
-        const documentsWithLinks = await Promise.all(documents.map(async document => {
-          const signed = await database.createSignedDocumentDownload(document.storage_path).catch(() => null);
-          const path = signed?.signedURL || signed?.signedUrl || signed?.url || '';
-          return { ...document, view_url:path ? (path.startsWith('http') ? path : `${config.supabaseUrl}/storage/v1${path}`) : '' };
-        }));
         return {
           ...order,
           laptop_title:laptop?.title || laptop?.name || 'Ноутбук Rentop',
           laptop_serial_number:laptop?.serial_number || '',
           laptop_inventory_code:laptop?.inventory_code || '',
-          documents:documentsWithLinks,
+          documents,
           requests,
           payment:(payments || []).find(payment => payment.purpose !== 'extension') || null,
           payments,
@@ -80,11 +97,20 @@ export default async function handler(request, response) {
           supportCases,
           returnHandoffPrepared:Boolean(returnHandoffEvent)
         };
-      }));
+      });
       return reply(response, 200, { authenticated:true, managerPhone:session.phone, isChiefAdmin, orders:hydrated });
     }
     if (request.method !== 'POST') return reply(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
+    if (payload.action === 'create_document_download') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      const document = await database.getOrderDocument(String(payload.documentId || ''));
+      if (!order || !document || String(document.order_id) !== String(order.id)) return reply(response, 404, { error:'Документ не найден.' });
+      const signed = await database.createSignedDocumentDownload(document.storage_path);
+      const path = signed?.signedURL || signed?.signedUrl || signed?.url || '';
+      if (!path) return reply(response, 502, { error:'Не удалось подготовить защищённый просмотр документа.' });
+      return reply(response, 200, { ok:true, viewUrl:path.startsWith('http') ? path : `${config.supabaseUrl}/storage/v1${path}`, fileName:document.file_name || 'Документ', contentType:document.content_type || '' });
+    }
     if (payload.action === 'reply_support_case') {
       const order = await database.getOrder(String(payload.orderId || ''));
       const kind = String(payload.kind || '');
