@@ -477,13 +477,13 @@ export default async function handler(request, response) {
       if (extension.kind === 'replacement') {
         const replacementLaptop = await database.getLaptop(extension.replacement_laptop_id);
         if (!replacementLaptop || replacementLaptop.category !== 'rent') return reply(response, 409, { error:'Выбранная модель для замены больше недоступна.' });
-        patch.laptop_id = replacementLaptop.id;
-        patch.daily_rate = Number(replacementLaptop.daily_rate || order.daily_rate);
+        patch.replacement_pending_laptop_id = replacementLaptop.id;
+        patch.replacement_exchange_status = 'awaiting_exchange';
       }
       const updatedOrder = await database.updateOrder(order.id, patch);
-      const updatedRequest = await database.updateCustomerRequest(extension.id, { status:'resolved', resolved_at:now });
+      const updatedRequest = await database.updateCustomerRequest(extension.id, extension.kind === 'replacement' ? { status:'in_progress' } : { status:'resolved', resolved_at:now });
       await database.createEvent({ order_id:order.id, event_type:'manager_approved_free_extension_from_web', actor_type:'manager', metadata:{ request_id:extension.id, request_kind:extension.kind, proposed_return_date:extension.proposed_return_date, replacement_laptop_id:extension.replacement_laptop_id || null } });
-      return reply(response, 200, { ok:true, order:updatedOrder, request:updatedRequest, message:'Продление без доплаты подтверждено.' });
+      return reply(response, 200, { ok:true, order:updatedOrder, request:updatedRequest, message:extension.kind === 'replacement' ? 'Замена согласована. Подтвердите физическую передачу ноутбуков отдельным действием.' : 'Продление без доплаты подтверждено.' });
     }
     if (payload.action === 'reject_extension_request') {
       const order = await database.getOrder(String(payload.orderId || ''));
@@ -496,6 +496,32 @@ export default async function handler(request, response) {
       const updatedRequest = await database.updateCustomerRequest(extension.id, { status:'cancelled', customer_message:message });
       await database.createEvent({ order_id:order.id, event_type:'manager_rejected_extension_from_web', actor_type:'manager', metadata:{ request_id:extension.id, reason:message } });
       return reply(response, 200, { ok:true, request:updatedRequest });
+    }
+    if (payload.action === 'confirm_replacement_exchange') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      const method = String(payload.method || 'rentop_courier');
+      const note = String(payload.note || '').trim().slice(0, 1000);
+      if (!order || !['issued', 'in_use', 'incident'].includes(order.status)) return reply(response, 409, { error:'Физическую замену можно подтвердить только для действующей аренды.' });
+      if (!order.replacement_pending_laptop_id || order.replacement_exchange_status !== 'awaiting_exchange') return reply(response, 409, { error:'Нет ожидающей физической замены.' });
+      if (!['arca_locker', 'rentop_courier', 'customer_courier', 'self_delivery'].includes(method)) return reply(response, 400, { error:'Выберите способ передачи.' });
+      const replacement = await database.getLaptop(order.replacement_pending_laptop_id);
+      if (!replacement || replacement.category !== 'rent') return reply(response, 409, { error:'Новая модель больше недоступна.' });
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone:TIME_ZONE, year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
+      const conflict = await database.findOverlappingBlockingOrder(order.id, replacement.id, today, order.rental_end_date);
+      if (conflict) return reply(response, 409, { error:`Новая модель занята в период физической замены (заявка с ${conflict.rental_start_date}). Выберите другую модель.` });
+      const request = (await database.listCustomerRequests(order.id)).find(item => item.kind === 'replacement' && item.status === 'in_progress' && String(item.replacement_laptop_id) === String(replacement.id));
+      const now = new Date().toISOString();
+      const updatedOrder = await database.updateOrder(order.id, {
+        laptop_id:replacement.id,
+        daily_rate:Number(replacement.daily_rate || order.daily_rate),
+        replacement_pending_laptop_id:null,
+        replacement_exchange_method:method,
+        replacement_exchange_status:'completed',
+        replacement_incident_reason:note || null
+      });
+      if (request) await database.updateCustomerRequest(request.id, { status:'resolved', resolved_at:now, customer_message:`Замена выполнена: ${replacement.title}.` });
+      await database.createEvent({ order_id:order.id, event_type:'manager_confirmed_physical_replacement_exchange_from_web', actor_type:'manager', metadata:{ previous_laptop_id:order.laptop_id, replacement_laptop_id:replacement.id, method, note:note || null, request_id:request?.id || null } });
+      return reply(response, 200, { ok:true, order:updatedOrder, message:'Физическая замена подтверждена. В аренде теперь отражена новая модель.' });
     }
     if (payload.action === 'revoke_bakai_payment') {
       const order = await database.getOrder(String(payload.orderId || ''));
@@ -531,11 +557,11 @@ export default async function handler(request, response) {
         if (customerRequest?.kind === 'replacement') {
           const replacementLaptop = await database.getLaptop(customerRequest.replacement_laptop_id);
           if (!replacementLaptop || replacementLaptop.category !== 'rent') return reply(response, 409, { error:'Выбранная модель для замены больше недоступна. Не подтверждайте оплату до согласования новой модели.' });
-          patch.laptop_id = replacementLaptop.id;
-          patch.daily_rate = Number(replacementLaptop.daily_rate || order.daily_rate);
+          patch.replacement_pending_laptop_id = replacementLaptop.id;
+          patch.replacement_exchange_status = 'awaiting_exchange';
         }
         updatedOrder = await database.updateOrder(order.id, patch);
-        if (payment.request_id) await database.updateCustomerRequest(payment.request_id, { status:'resolved', resolved_at:now });
+        if (payment.request_id) await database.updateCustomerRequest(payment.request_id, customerRequest?.kind === 'replacement' ? { status:'in_progress' } : { status:'resolved', resolved_at:now });
         await database.createEvent({ order_id:order.id, event_type:'bakai_extension_payment_manually_confirmed_from_web', actor_type:'manager', metadata:{ operation_id:payment.operation_id, reference, amount:payment.amount, proposed_return_date:payment.proposed_return_date, request_kind:customerRequest?.kind || 'extension', replacement_laptop_id:customerRequest?.replacement_laptop_id || null } }).catch(error => console.error('Manual Bakai extension payment audit failed:', error.message));
       } else {
         if (order.status === 'awaiting_payment') {

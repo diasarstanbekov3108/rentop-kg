@@ -119,11 +119,11 @@ export default async function handler(request, response) {
       if (customerRequest?.kind === 'replacement') {
         const replacementLaptop = await database.getLaptop(customerRequest.replacement_laptop_id);
         if (!replacementLaptop || replacementLaptop.category !== 'rent') throw new Error('Replacement laptop is no longer available.');
-        patch.laptop_id = replacementLaptop.id;
-        patch.daily_rate = Number(replacementLaptop.daily_rate || order.daily_rate);
+        patch.replacement_pending_laptop_id = replacementLaptop.id;
+        patch.replacement_exchange_status = 'awaiting_exchange';
       }
       await database.updateOrder(order.id, patch);
-      if (payment.request_id) await database.updateCustomerRequest(payment.request_id, { status:'resolved', resolved_at:now });
+      if (payment.request_id) await database.updateCustomerRequest(payment.request_id, customerRequest?.kind === 'replacement' ? { status:'in_progress' } : { status:'resolved', resolved_at:now });
       await database.createEvent({ order_id:payment.order_id, event_type:'bakai_extension_payment_confirmed_webhook', actor_type:'bank', metadata:{ operation_id:operationId, elqr_id:bankElqrId, amount, proposed_return_date:payment.proposed_return_date, request_kind:customerRequest?.kind || 'extension', replacement_laptop_id:customerRequest?.replacement_laptop_id || null } }).catch(error => console.error('Bakai extension payment audit failed:', error.message));
     } else {
       if (order?.status === 'awaiting_payment') {
