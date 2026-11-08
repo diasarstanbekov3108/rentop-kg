@@ -58,7 +58,7 @@ const request = async (method, payload, timeoutMs = 20000) => {
   try {
     const response = await fetch('/api/account', { method, credentials: 'same-origin', cache: 'no-store', signal:controller.signal, headers: payload ? { 'content-type': 'application/json' } : {}, body: payload ? JSON.stringify(payload) : undefined });
     const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.error || 'Не удалось выполнить запрос.');
+    if (!response.ok) { const error = new Error(body.error || 'Не удалось выполнить запрос.'); error.data = body; throw error; }
     return body;
   } catch (error) {
     if (error.name === 'AbortError') throw new Error('Загрузка заняла слишком много времени. Проверьте интернет и попробуйте ещё раз.');
@@ -264,6 +264,7 @@ function watchOrderUpdates(orders) {
 
 function requestLabel(request) {
   if (request.kind === 'extension') return `Продление: +${request.requested_days} дн. до ${date(request.proposed_return_date)}`;
+  if (request.kind === 'replacement') return `Замена для продления: +${request.requested_days} дн. до ${date(request.proposed_return_date)}`;
   return 'Досрочный возврат';
 }
 function latestDocuments(order) {
@@ -349,7 +350,7 @@ function actionPanel(order) {
   const canAct = order.status === 'in_use';
   const deadline = rentalDeadline(order);
   const paidExtension = order.extensionPayment?.status === 'paid';
-  const openExtension = paidExtension ? null : order.requests?.find(request => request.kind === 'extension' && ['open','in_progress'].includes(request.status));
+  const openExtension = paidExtension ? null : order.requests?.find(request => ['extension','replacement'].includes(request.kind) && ['open','in_progress'].includes(request.status));
   const rejectedExtension = order.requests?.find(request => request.kind === 'extension' && request.status === 'cancelled' && request.customer_message?.startsWith('Продление не согласовано:'));
   const openReturn = order.requests?.find(request => request.kind === 'early_return' && ['open','in_progress'].includes(request.status));
   const docState = documentMode(order);
@@ -421,6 +422,10 @@ function actionPanel(order) {
 }
 function requestForm(order) {
   return `<div class="cabinet-request-panel" id="panel-${order.id}" hidden></div>`;
+}
+function replacementChoicesMarkup(orderId, days, alternatives = []) {
+  if (!alternatives.length) return `<div class="cabinet-request-state is-warning"><strong>Продлить эту модель нельзя</strong><p>На нужные даты свободной замены пока нет. Оформите возврат или напишите в поддержку — менеджер проверит другие варианты.</p></div>`;
+  return `<form class="cabinet-inline-form" data-request="replacement_request" data-order="${escape(orderId)}"><input name="days" type="hidden" value="${Number(days)}"><label>Выберите замену на период продления</label><p>Документы и текущая заявка сохраняются. Менеджер подтвердит модель и откроет один счёт с перерасчётом.</p><div class="cabinet-replacement-options">${alternatives.map(item => `<label class="cabinet-replacement-option"><input type="radio" name="replacementLaptopId" value="${Number(item.id)}" required><span><b>${escape(item.title)}</b><small>${Number(item.daily_rate || 0).toLocaleString('ru-RU')} сом/день · скидка ${Number(item.discount_percent || 0)}%</small><em>За ${Number(days)} дн.: ${Number(item.estimated_amount || 0).toLocaleString('ru-RU')} сом · разница ${Number(item.difference || 0) >= 0 ? '+' : ''}${Number(item.difference || 0).toLocaleString('ru-RU')} сом</em></span></label>`).join('')}</div><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Выбрать замену</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
 }
 function promoStatus(promo) {
   if (promo.status === 'redeemed') return 'Использован';
@@ -904,11 +909,15 @@ rentalsEl?.addEventListener('submit', async event => {
   button.disabled = true; button.textContent = 'Отправляем…';
   const data = new FormData(form);
   try {
-    const result = await request('POST', { action:form.dataset.request, orderId:form.dataset.order, requestId:data.get('requestId'), days:data.get('days'), kind:data.get('kind'), message:data.get('message'), returnMethod:data.get('returnMethod'), returnLockerAddress:data.get('returnLockerAddress'), rating:data.get('rating'), review:data.get('review'), suggestion:data.get('suggestion') });
+    const result = await request('POST', { action:form.dataset.request, orderId:form.dataset.order, requestId:data.get('requestId'), days:data.get('days'), replacementLaptopId:data.get('replacementLaptopId'), kind:data.get('kind'), message:data.get('message'), returnMethod:data.get('returnMethod'), returnLockerAddress:data.get('returnLockerAddress'), rating:data.get('rating'), review:data.get('review'), suggestion:data.get('suggestion') });
     message(result.message || 'Запрос отправлен.', 'success');
     const fresh = await request('GET');
     if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos, fresh.benefits);
   } catch (error) {
+    if (form.dataset.request === 'extension_request' && error.data?.code === 'LAPTOP_UNAVAILABLE') {
+      form.outerHTML = replacementChoicesMarkup(form.dataset.order, error.data.days || data.get('days'), error.data.alternatives || []);
+      return;
+    }
     const output = form.querySelector('.cabinet-form-error') || document.createElement('p');
     output.className = 'cabinet-form-error'; output.textContent = error.message; form.append(output);
     button.disabled = false; button.textContent = 'Попробовать снова';

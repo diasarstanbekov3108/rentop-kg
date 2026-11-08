@@ -114,9 +114,17 @@ export default async function handler(request, response) {
       const end = new Date(`${payment.proposed_return_date}T00:00:00Z`);
       const rentalDays = Math.max(1, Math.round((end - start) / 86_400_000));
       const rentalEndsAt = extendExactDeadline(order.rental_ends_at, order.rental_end_date, payment.proposed_return_date);
-      await database.updateOrder(order.id, { rental_end_date:payment.proposed_return_date, rental_days:rentalDays, ...(rentalEndsAt ? { rental_ends_at:rentalEndsAt } : {}) });
+      const customerRequest = payment.request_id ? (await database.listCustomerRequests(order.id)).find(item => item.id === payment.request_id) : null;
+      const patch = { rental_end_date:payment.proposed_return_date, rental_days:rentalDays, total_amount:Number(order.total_amount || 0) + Number(payment.amount || 0), ...(rentalEndsAt ? { rental_ends_at:rentalEndsAt } : {}) };
+      if (customerRequest?.kind === 'replacement') {
+        const replacementLaptop = await database.getLaptop(customerRequest.replacement_laptop_id);
+        if (!replacementLaptop || replacementLaptop.category !== 'rent') throw new Error('Replacement laptop is no longer available.');
+        patch.laptop_id = replacementLaptop.id;
+        patch.daily_rate = Number(replacementLaptop.daily_rate || order.daily_rate);
+      }
+      await database.updateOrder(order.id, patch);
       if (payment.request_id) await database.updateCustomerRequest(payment.request_id, { status:'resolved', resolved_at:now });
-      await database.createEvent({ order_id:payment.order_id, event_type:'bakai_extension_payment_confirmed_webhook', actor_type:'bank', metadata:{ operation_id:operationId, elqr_id:bankElqrId, amount, proposed_return_date:payment.proposed_return_date } }).catch(error => console.error('Bakai extension payment audit failed:', error.message));
+      await database.createEvent({ order_id:payment.order_id, event_type:'bakai_extension_payment_confirmed_webhook', actor_type:'bank', metadata:{ operation_id:operationId, elqr_id:bankElqrId, amount, proposed_return_date:payment.proposed_return_date, request_kind:customerRequest?.kind || 'extension', replacement_laptop_id:customerRequest?.replacement_laptop_id || null } }).catch(error => console.error('Bakai extension payment audit failed:', error.message));
     } else {
       if (order?.status === 'awaiting_payment') {
         const endsAt = exactDeadline(now, order.rental_days);

@@ -60,6 +60,7 @@ export function createSupabaseApi(config) {
 
   return {
     getLaptop: (id) => getOne(`laptops?id=eq.${encodeURIComponent(id)}&select=*`),
+    listRentableLaptops: () => request('laptops?category=eq.rent&select=id,title,category,daily_rate,processor,ram,storage,image_url&order=id.asc&limit=50'),
     updateLaptop: (id, patch) => request(`laptops?id=eq.${encodeURIComponent(id)}`, {
       method:'PATCH', body:JSON.stringify(patch)
     }).then((rows) => rows?.[0] || null),

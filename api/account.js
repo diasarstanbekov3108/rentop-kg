@@ -119,7 +119,7 @@ export default async function handler(request, response) {
       response.setHeader('Set-Cookie', [sessionCookie(COOKIE, '', 0), sessionCookie(COMPAT_COOKIE, '', 0)]);
       return json(response, 200, { ok:true });
     }
-    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'delete_draft_document' || payload.action === 'create_document_download' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'request_offer_sms_consent' || payload.action === 'verify_offer_sms_consent' || payload.action === 'save_profile' || payload.action === 'save_residence_address' || payload.action === 'extension_request' || payload.action === 'cancel_extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup_access_received' || payload.action === 'confirm_pickup' || payload.action === 'confirm_return_access_received' || payload.action === 'confirm_return_dropoff' || payload.action === 'submit_feedback') {
+    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'delete_draft_document' || payload.action === 'create_document_download' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'request_offer_sms_consent' || payload.action === 'verify_offer_sms_consent' || payload.action === 'save_profile' || payload.action === 'save_residence_address' || payload.action === 'extension_request' || payload.action === 'replacement_request' || payload.action === 'cancel_extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup_access_received' || payload.action === 'confirm_pickup' || payload.action === 'confirm_return_access_received' || payload.action === 'confirm_return_dropoff' || payload.action === 'submit_feedback') {
       const session = await verifySession();
       if (!session) return json(response, 401, { error:'Сессия истекла. Войдите в кабинет снова.', code:'AUTH_REQUIRED' });
       if (payload.action === 'save_profile') {
@@ -321,7 +321,22 @@ export default async function handler(request, response) {
         if (!Number.isInteger(days) || days < 1 || days > 30) return json(response, 400, { error:'Выберите целое количество дней: от 1 до 30.' });
         const newEndDate = addDays(order.rental_end_date, days);
         const conflict = await database.findOverlappingBlockingOrder(order.id, order.laptop_id, order.rental_end_date, newEndDate);
-        if (conflict) return json(response, 409, { error:`Продление недоступно: ноутбук уже забронирован с ${conflict.rental_start_date}.` });
+        if (conflict) {
+          const allLaptops = await database.listRentableLaptops();
+          const candidates = [];
+          for (const candidate of allLaptops) {
+            if (String(candidate.id) === String(order.laptop_id)) continue;
+            const candidateConflict = await database.findOverlappingBlockingOrder(order.id, candidate.id, order.rental_end_date, newEndDate);
+            if (candidateConflict) continue;
+            const benefits = await database.listBenefitVerifications(session.phone).catch(() => []);
+            const discount = discountForTerm(Number(order.rental_days || 0) + days, benefits);
+            const replacementTotal = Math.round(Number(candidate.daily_rate || 0) * days * (100 - discount) / 100);
+            const currentTotal = Math.round(Number(order.daily_rate || 0) * days * (100 - discount) / 100);
+            candidates.push({ id:candidate.id, title:candidate.title, daily_rate:Number(candidate.daily_rate || 0), estimated_amount:replacementTotal, difference:replacementTotal - currentTotal, discount_percent:discount });
+            if (candidates.length >= 4) break;
+          }
+          return json(response, 409, { code:'LAPTOP_UNAVAILABLE', error:`Продление недоступно: этот ноутбук уже забронирован с ${conflict.rental_start_date}.`, alternatives:candidates, days, proposedReturnDate:newEndDate });
+        }
         const benefits = await database.listBenefitVerifications(session.phone).catch(() => []);
         const totalDays = Number(order.rental_days || 0) + days;
         const discount = discountForTerm(totalDays, benefits);
@@ -332,10 +347,32 @@ export default async function handler(request, response) {
         await notifyManager(`📅 Запрос на продление с сайта\n\nЗаявка ${orderRef(order)} · ${laptop?.title || 'Ноутбук'}\nКлиент: ${order.customer_name || '—'}\n+${days} дн. · до ${newEndDate}\nПредварительная доплата: ${amount} сом · скидка ${discount}%`);
         return json(response, 201, { ok:true, request:customerRequest, message:`Запрос передан менеджеру. Предварительная доплата: ${amount.toLocaleString('ru-RU')} сом, скидка ${discount}%.` });
       }
+      if (payload.action === 'replacement_request') {
+        const days = Number(payload.days);
+        const replacementLaptopId = Number(payload.replacementLaptopId);
+        if (!EXTENDABLE_STATUSES.has(order.status)) return json(response, 400, { error:'Замену для продления можно выбрать только при активной аренде.' });
+        if (!Number.isInteger(days) || days < 1 || days > 30 || !Number.isFinite(replacementLaptopId)) return json(response, 400, { error:'Не удалось определить срок или выбранную модель.' });
+        const replacementLaptop = await database.getLaptop(replacementLaptopId);
+        if (!replacementLaptop || replacementLaptop.category !== 'rent' || String(replacementLaptop.id) === String(order.laptop_id)) return json(response, 400, { error:'Выберите доступный ноутбук для замены.' });
+        const proposedReturnDate = addDays(order.rental_end_date, days);
+        const conflict = await database.findOverlappingBlockingOrder(order.id, replacementLaptop.id, order.rental_end_date, proposedReturnDate);
+        if (conflict) return json(response, 409, { error:'Эту модель уже успели забронировать. Выберите другой вариант.' });
+        const existing = (await database.listCustomerRequests(order.id)).find(item => ['extension','replacement'].includes(item.kind) && ['open','in_progress'].includes(item.status));
+        if (existing) return json(response, 409, { error:'По продлению уже есть активный запрос. Дождитесь решения менеджера или отмените прежний запрос.' });
+        const benefits = await database.listBenefitVerifications(session.phone).catch(() => []);
+        const discount = discountForTerm(Number(order.rental_days || 0) + days, benefits);
+        const amount = Math.round(Number(replacementLaptop.daily_rate || 0) * days * (100 - discount) / 100);
+        const currentAmount = Math.round(Number(order.daily_rate || 0) * days * (100 - discount) / 100);
+        const difference = amount - currentAmount;
+        const customerRequest = await database.createCustomerRequest({ order_id:order.id, kind:'replacement', requested_days:days, estimated_amount:amount, proposed_return_date:proposedReturnDate, replacement_laptop_id:replacementLaptop.id, replacement_difference:difference, replacement_note:`Замена на ${replacementLaptop.title}; скидка ${discount}%` });
+        await database.createEvent({ order_id:order.id, event_type:'customer_requested_replacement_for_extension_from_cabinet', actor_type:'customer', metadata:{ replacement_laptop_id:replacementLaptop.id, requested_days:days, estimated_amount:amount, difference, proposed_return_date:proposedReturnDate, discount_percent:discount } });
+        await notifyManager(`🔁 Замена ноутбука для продления\n\nЗаявка ${orderRef(order)}\n${laptop?.title || 'Текущий ноутбук'} → ${replacementLaptop.title}\n+${days} дн. · до ${proposedReturnDate}\nДоплата за продление: ${amount} сом\nРазница относительно текущей модели: ${difference >= 0 ? '+' : ''}${difference} сом`);
+        return json(response, 201, { ok:true, request:customerRequest, message:`Вариант замены отправлен менеджеру. Доплата за продление: ${amount.toLocaleString('ru-RU')} сом; разница по модели: ${difference >= 0 ? '+' : ''}${difference.toLocaleString('ru-RU')} сом.` });
+      }
       if (payload.action === 'cancel_extension_request') {
         if (!EXTENDABLE_STATUSES.has(order.status)) return json(response, 400, { error:'Отменить продление можно только для активной аренды.' });
         const requestId = String(payload.requestId || '');
-        const extension = (await database.listCustomerRequests(order.id)).find(item => item.id === requestId && item.kind === 'extension' && item.status === 'open');
+        const extension = (await database.listCustomerRequests(order.id)).find(item => item.id === requestId && ['extension', 'replacement'].includes(item.kind) && item.status === 'open');
         if (!extension) return json(response, 409, { error:'Этот запрос уже обрабатывается или для него создан счёт. Свяжитесь с менеджером, чтобы отменить его безопасно.' });
         await database.updateCustomerRequest(extension.id, { status:'cancelled' });
         await database.createEvent({ order_id:order.id, event_type:'customer_cancelled_extension_from_cabinet', actor_type:'customer', metadata:{ request_id:extension.id } });

@@ -395,20 +395,21 @@ export default async function handler(request, response) {
       const order = await database.getOrder(String(payload.orderId || ''));
       const requestId = String(payload.requestId || '');
       if (!order || !['issued', 'in_use'].includes(order.status)) return reply(response, 409, { error:'Продление можно оплатить только для активной аренды.' });
-      const extension = (await database.listCustomerRequests(order.id)).find(item => item.id === requestId && item.kind === 'extension' && ['open', 'in_progress'].includes(item.status));
+      const extension = (await database.listCustomerRequests(order.id)).find(item => item.id === requestId && ['extension', 'replacement'].includes(item.kind) && ['open', 'in_progress'].includes(item.status));
       if (!extension) return reply(response, 404, { error:'Активный запрос продления не найден.' });
-      const conflict = await database.findOverlappingBlockingOrder(order.id, order.laptop_id, order.rental_end_date, extension.proposed_return_date);
+      const targetLaptopId = extension.kind === 'replacement' ? extension.replacement_laptop_id : order.laptop_id;
+      const conflict = await database.findOverlappingBlockingOrder(order.id, targetLaptopId, order.rental_end_date, extension.proposed_return_date);
       if (conflict) return reply(response, 409, { error:`Ноутбук уже занят с ${conflict.rental_start_date}; продление нельзя оплатить.` });
       const active = (await database.listOrderPayments(order.id)).find(item => item.purpose === 'extension' && item.request_id === extension.id && item.status === 'awaiting_payment' && new Date(item.expires_at) > new Date());
       if (active) return reply(response, 409, { error:'Для этого продления уже создан активный QR.' });
       const amount = Number(payload.amount || extension.estimated_amount);
       if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) return reply(response, 400, { error:'Укажите корректную сумму продления.' });
       const operationId = makePaymentOperationId(order.id);
-      const comment = `Rentop extension ${String(order.id).slice(0, 8).toUpperCase()}`;
+      const comment = `Rentop ${extension.kind === 'replacement' ? 'replacement' : 'extension'} ${String(order.id).slice(0, 8).toUpperCase()}`;
       const qr = await generateBakaiQr(config, { operationId, amount, comment, ttlHours:24 });
       const payment = await database.createOrderPayment({ order_id:order.id, request_id:extension.id, purpose:'extension', proposed_return_date:extension.proposed_return_date, provider:'bakai', operation_id:operationId, amount, currency_id:417, comment, qr_image:qr.qrImage || null, qr_image_with_frame:qr.qrImageWithFrame || null, qr_link:qr.qrLink || null, status:'awaiting_payment', expires_at:new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() });
       await database.updateCustomerRequest(extension.id, { status:'in_progress', estimated_amount:amount });
-      await database.createEvent({ order_id:order.id, event_type:'bakai_extension_qr_created_from_web', actor_type:'manager', metadata:{ operation_id:operationId, amount, request_id:extension.id, proposed_return_date:extension.proposed_return_date } });
+      await database.createEvent({ order_id:order.id, event_type:'bakai_extension_qr_created_from_web', actor_type:'manager', metadata:{ operation_id:operationId, amount, request_id:extension.id, request_kind:extension.kind, proposed_return_date:extension.proposed_return_date } });
       return reply(response, 201, { ok:true, payment });
     }
     if (payload.action === 'reject_extension_request') {
@@ -452,9 +453,17 @@ export default async function handler(request, response) {
         const end = new Date(`${payment.proposed_return_date}T00:00:00Z`);
         const rentalDays = Math.max(1, Math.round((end - start) / 86_400_000));
         const rentalEndsAt = extendExactDeadline(order.rental_ends_at, order.rental_end_date, payment.proposed_return_date);
-        updatedOrder = await database.updateOrder(order.id, { rental_end_date:payment.proposed_return_date, rental_days:rentalDays, ...(rentalEndsAt ? { rental_ends_at:rentalEndsAt } : {}) });
+        const customerRequest = payment.request_id ? (await database.listCustomerRequests(order.id)).find(item => item.id === payment.request_id) : null;
+        const patch = { rental_end_date:payment.proposed_return_date, rental_days:rentalDays, total_amount:Number(order.total_amount || 0) + Number(payment.amount || 0), ...(rentalEndsAt ? { rental_ends_at:rentalEndsAt } : {}) };
+        if (customerRequest?.kind === 'replacement') {
+          const replacementLaptop = await database.getLaptop(customerRequest.replacement_laptop_id);
+          if (!replacementLaptop || replacementLaptop.category !== 'rent') return reply(response, 409, { error:'Выбранная модель для замены больше недоступна. Не подтверждайте оплату до согласования новой модели.' });
+          patch.laptop_id = replacementLaptop.id;
+          patch.daily_rate = Number(replacementLaptop.daily_rate || order.daily_rate);
+        }
+        updatedOrder = await database.updateOrder(order.id, patch);
         if (payment.request_id) await database.updateCustomerRequest(payment.request_id, { status:'resolved', resolved_at:now });
-        await database.createEvent({ order_id:order.id, event_type:'bakai_extension_payment_manually_confirmed_from_web', actor_type:'manager', metadata:{ operation_id:payment.operation_id, reference, amount:payment.amount, proposed_return_date:payment.proposed_return_date } }).catch(error => console.error('Manual Bakai extension payment audit failed:', error.message));
+        await database.createEvent({ order_id:order.id, event_type:'bakai_extension_payment_manually_confirmed_from_web', actor_type:'manager', metadata:{ operation_id:payment.operation_id, reference, amount:payment.amount, proposed_return_date:payment.proposed_return_date, request_kind:customerRequest?.kind || 'extension', replacement_laptop_id:customerRequest?.replacement_laptop_id || null } }).catch(error => console.error('Manual Bakai extension payment audit failed:', error.message));
       } else {
         if (order.status === 'awaiting_payment') {
           const endsAt = exactDeadline(now, order.rental_days);
