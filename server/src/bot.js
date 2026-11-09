@@ -309,9 +309,11 @@ export function createRentopBot({ config, telegram, database }) {
       await sendPickupInspectionInstructions(order, session);
       return telegram.sendMessage(chatId, 'Сначала отправьте видео осмотра ноутбука. После этого появится подтверждение получения.');
     }
-    await database.updateOrder(order.id, { status: 'in_use', locker_status: 'client_picked_up', received_status: 'confirmed_ok' });
+    const startedAt = new Date().toISOString();
+    const endsAt = new Date(Date.parse(startedAt) + Math.max(1, Number(order.rental_days) || 1) * 86_400_000).toISOString();
+    await database.updateOrder(order.id, { status: 'in_use', locker_status: 'client_picked_up', received_status: 'confirmed_ok', rental_started_at:startedAt, rental_ends_at:endsAt });
     await saveStep(session, { step: 'in_use' });
-    await recordEvent({ order_id: order.id, event_type: 'pickup_confirmed', actor_type: source, metadata: {} });
+    await recordEvent({ order_id: order.id, event_type: 'pickup_confirmed', actor_type: source, metadata: { rental_started_at:startedAt, rental_ends_at:endsAt } });
     await telegram.sendMessage(session.telegram_chat_id,
       '✅ Получение ноутбука подтверждено. Хорошего пользования! Если потребуется продление, поддержка Rentop или помощь с ARCHA POINT — используйте кнопки ниже.',
       activeRentalKeyboard(order.id)
@@ -1343,8 +1345,9 @@ export function createRentopBot({ config, telegram, database }) {
     }
 
     if (action === 'archa_issued') {
-      await confirmPickup(order, session, callback.message.chat.id, 'archa_point');
-      return telegram.answerCallback(callback.id, 'Выдача подтверждена.');
+      if (order.status !== 'awaiting_pickup') return telegram.answerCallback(callback.id, 'Выдача уже обновлена или пока не готова.');
+      await sendPickupInspectionInstructions(order, session);
+      return telegram.answerCallback(callback.id, 'Инструкция отправлена клиенту. Срок начнётся после его подтверждения.');
     }
 
     if (action === 'return_start') {
@@ -1524,7 +1527,9 @@ export function createRentopBot({ config, telegram, database }) {
       await saveStep(session, { step: 'awaiting_receipt' });
       await telegram.sendMessage(session.telegram_chat_id, 'Чек не удалось подтвердить. Проверьте оплату и отправьте корректный чек ещё раз.');
     } else if (action === 'issued') {
-      await confirmPickup(order, session, callback.message.chat.id, 'manager');
+      if (order.status !== 'awaiting_pickup') return telegram.answerCallback(callback.id, 'Выдача уже обновлена или пока не готова.');
+      await sendPickupInspectionInstructions(order, session);
+      await telegram.sendMessage(callback.message.chat.id, `Инструкция осмотра повторно отправлена клиенту по заявке ${orderRef(order)}. Аренда начнётся только после подтверждения клиента.`);
     }
     return telegram.answerCallback(callback.id, 'Готово');
   }
