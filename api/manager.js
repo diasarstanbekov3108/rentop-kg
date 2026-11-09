@@ -399,6 +399,7 @@ export default async function handler(request, response) {
       const documents = await database.listOrderDocuments(order.id);
       const returnVideo = documents.find(document => document.kind === 'return_video');
       if (returnVideo?.status !== 'accepted') return reply(response, 409, { error:'Сначала откройте и примите видео возврата.' });
+      if (['customer_courier','self_delivery'].includes(order.return_method) && String(order.return_destination_address || '').trim().length < 8) return reply(response, 409, { error:'Сначала сообщите клиенту адрес приёма и инструкции для передачи ноутбука.' });
       const returnedAt = new Date().toISOString();
       const updated = await database.updateOrder(order.id, { status:'returned', returned_at:returnedAt });
       await database.createEvent({ order_id:order.id, event_type:'manager_confirmed_physical_return_collection_from_web', actor_type:'manager', metadata:{ return_method:order.return_method, manager_phone:session.phone } });
