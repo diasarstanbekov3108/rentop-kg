@@ -33,16 +33,6 @@ async function mapWithConcurrency(items, limit, mapper) {
   await Promise.all(Array.from({ length:Math.min(Math.max(1, limit), items.length) }, worker));
   return result;
 }
-function printableMoment(value) { return new Intl.DateTimeFormat('ru-RU', { timeZone:TIME_ZONE, day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' }).format(new Date(value)); }
-async function sendExactDeadlineSms(config, database, order, paidAt, endsAt) {
-  if (!config.nikitaSms?.enabled || !order?.customer_phone) return;
-  const eventType = 'rental_exact_deadline_sms_sent_after_payment';
-  if (await database.hasOrderEvent(order.id, eventType)) return;
-  try {
-    await createNikitaSmsClient(config.nikitaSms).send({ phone:order.customer_phone, text:`RENTOP.KG: оплата по заявке ${String(order.id).slice(0, 8).toUpperCase()} подтверждена. Аренда действует с ${printableMoment(paidAt)} до ${printableMoment(endsAt)} (Бишкек). Заранее напомним о продлении или возврате.` });
-    await database.createEvent({ order_id:order.id, event_type:eventType, actor_type:'system', metadata:{ paid_at:paidAt, rental_ends_at:endsAt, channel:'sms' } });
-  } catch (error) { console.error('Exact rental deadline SMS failed:', error.message); }
-}
 function archaMessage(order, laptop, mode = 'issue') {
   const reference = String(order.id || '').slice(0, 8).toUpperCase();
   const location = mode === 'return' ? order.return_locker_address : order.locker_address;

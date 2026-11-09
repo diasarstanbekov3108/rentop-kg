@@ -1,14 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { loadConfig } from '../../../server/src/config.js';
 import { createSupabaseApi } from '../../../server/src/supabase.js';
-import { createNikitaSmsClient } from '../../../server/src/sms.js';
 import { createTelegramApi } from '../../../server/src/telegram.js';
-
-const TIME_ZONE = 'Asia/Bishkek';
-
-function exactDeadline(paidAt, days) {
-  return new Date(Date.parse(paidAt) + Math.max(1, Number(days) || 1) * 86_400_000).toISOString();
-}
 
 function extendExactDeadline(currentEnd, oldDate, newDate) {
   if (!currentEnd) return null;
@@ -16,35 +9,15 @@ function extendExactDeadline(currentEnd, oldDate, newDate) {
   return extraDays > 0 ? new Date(Date.parse(currentEnd) + extraDays * 86_400_000).toISOString() : currentEnd;
 }
 
-function printableMoment(value) {
-  return new Intl.DateTimeFormat('ru-RU', {
-    timeZone:TIME_ZONE, day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit'
-  }).format(new Date(value));
-}
-
-async function sendExactDeadlineSms(config, database, order, paidAt, endsAt) {
-  if (!config.nikitaSms?.enabled || !order?.customer_phone) return;
-  const eventType = 'rental_exact_deadline_sms_sent_after_payment';
-  if (await database.hasOrderEvent(order.id, eventType)) return;
-  try {
-    await createNikitaSmsClient(config.nikitaSms).send({
-      phone:order.customer_phone,
-      text:`RENTOP.KG: оплата по заявке ${String(order.id).slice(0, 8).toUpperCase()} подтверждена. Аренда действует с ${printableMoment(paidAt)} до ${printableMoment(endsAt)} (Бишкек). Заранее напомним о продлении или возврате.`
-    });
-    await database.createEvent({
-      order_id:order.id, event_type:eventType, actor_type:'system', metadata:{ paid_at:paidAt, rental_ends_at:endsAt, channel:'sms' }
-    });
-  } catch (error) {
-    // Подтверждение платежа не должно откатываться из-за временной ошибки SMS.
-    console.error('Exact rental deadline SMS failed:', error.message);
-  }
-}
-
 async function notifyManagerAboutPaidOrder(config, order) {
   if (!config.telegramBotToken || !config.adminChatId || !order) return;
   try {
+    const isCourier = order.delivery_type === 'delivery';
+    const handoff = isCourier
+      ? `Доставка: ${order.delivery_address || 'адрес не указан'}\nВремя: ${order.delivery_preferred_time || 'не указано'}\n\nОткройте панель, согласуйте стоимость и время, затем отметьте только фактическую передачу ноутбука курьеру.`
+      : `ARCHA POINT: ${order.locker_address || 'не выбран'}\n\nОткройте панель менеджера и нажмите «Подготовить сообщение для ARCHA POINT». Без этого шага заявка не передаётся в постамат.`;
     await createTelegramApi(config.telegramBotToken).sendMessage(config.adminChatId,
-      `💳 Оплата подтверждена\n\nЗаявка ${String(order.id).slice(0, 8).toUpperCase()} · ${order.customer_name || 'Клиент'}\nARCHA POINT: ${order.locker_address || 'не выбран'}\n\nОткройте панель менеджера и нажмите «Подготовить сообщение для ARCHA POINT». Без этого шага заявка не передаётся в постамат.`
+      `💳 Оплата подтверждена\n\nЗаявка ${String(order.id).slice(0, 8).toUpperCase()} · ${order.customer_name || 'Клиент'}\n${handoff}`
     );
   } catch (error) { console.error('Paid order manager notification failed:', error.message); }
 }
