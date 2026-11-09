@@ -391,6 +391,18 @@ export default async function handler(request, response) {
       await database.createEvent({ order_id:order.id, event_type:'manager_prepared_archa_return_handoff_from_web', actor_type:'manager', metadata:{ locker:order.return_locker_address } });
       return reply(response, 200, { ok:true, message:archaMessage(order, laptop, 'return') });
     }
+    if (payload.action === 'save_return_handoff') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      if (!order || order.status !== 'awaiting_return_collection' || !['customer_courier','self_delivery'].includes(order.return_method)) return reply(response, 409, { error:'Адрес приёма нужен только для самопривоза или курьерской службы клиента на этапе согласования возврата.' });
+      const destinationAddress = String(payload.destinationAddress || '').trim().slice(0, 500);
+      const destinationNote = String(payload.destinationNote || '').trim().slice(0, 1000);
+      if (destinationAddress.length < 8) return reply(response, 400, { error:'Укажите полный адрес приёма — не менее 8 символов.' });
+      const updated = await database.updateOrder(order.id, { return_destination_address:destinationAddress, return_destination_note:destinationNote || null });
+      const openRequest = (await database.listCustomerRequests(order.id)).find(item => item.kind === 'early_return' && item.status === 'open');
+      if (openRequest) await database.updateCustomerRequest(openRequest.id, { return_destination_address:destinationAddress, return_destination_note:destinationNote || null });
+      await database.createEvent({ order_id:order.id, event_type:'manager_saved_return_handoff_destination_from_web', actor_type:'manager', metadata:{ return_method:order.return_method, has_note:Boolean(destinationNote) } });
+      return reply(response, 200, { ok:true, order:updated, message:'Адрес приёма сохранён и уже виден клиенту в личном кабинете.' });
+    }
     if (payload.action === 'confirm_return_collected') {
       const order = await database.getOrder(String(payload.orderId || ''));
       if (!order || order.status !== 'awaiting_return_collection') return reply(response, 409, { error:'Эта заявка сейчас не ожидает физического получения.' });
