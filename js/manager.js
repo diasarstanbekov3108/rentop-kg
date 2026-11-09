@@ -241,7 +241,6 @@ ordersEl.addEventListener('click', async event => {
     return;
   }
   const rejectAll = event.target.closest('[data-reject-all]');
-  const deleteOrder = event.target.closest('[data-delete-order]');
   const createPayment = event.target.closest('[data-create-payment]');
   const createExtensionPayment = event.target.closest('[data-create-extension-payment]');
   const approveFreeExtension = event.target.closest('[data-approve-free-extension]');
@@ -269,8 +268,8 @@ ordersEl.addEventListener('click', async event => {
   const resolveSupport = event.target.closest('[data-resolve-support]');
   const replySupport = event.target.closest('[data-reply-support]');
   const button = event.target.closest('[data-document], [data-order-action]');
-  if (!rejectAll && !deleteOrder && !createPayment && !createExtensionPayment && !approveFreeExtension && !confirmReturnCollected && !confirmReplacementExchange && !rejectExtension && !revokePayment && !manualPayment && !prepareArcha && !recordArchaReservation && !markLockerLoaded && !markDeliveryDispatched && !archaSmsSent && !manualPickupCode && !manualReturnCode && !prepareArchaReturn && !completeReturn && !adminClose && !adminIncident && !adminResolveIncident && !adminOfferIncidentReplacement && !saveAsset && !saveRegistry && !issuePromo && !resolveSupport && !replySupport && !button) return;
-  const target = rejectAll || deleteOrder || createPayment || createExtensionPayment || approveFreeExtension || confirmReturnCollected || confirmReplacementExchange || rejectExtension || revokePayment || manualPayment || prepareArcha || recordArchaReservation || markLockerLoaded || markDeliveryDispatched || archaSmsSent || manualPickupCode || manualReturnCode || prepareArchaReturn || completeReturn || adminClose || adminIncident || adminResolveIncident || adminOfferIncidentReplacement || saveAsset || saveRegistry || issuePromo || resolveSupport || replySupport || button;
+  if (!rejectAll && !createPayment && !createExtensionPayment && !approveFreeExtension && !confirmReturnCollected && !confirmReplacementExchange && !rejectExtension && !revokePayment && !manualPayment && !prepareArcha && !recordArchaReservation && !markLockerLoaded && !markDeliveryDispatched && !archaSmsSent && !manualPickupCode && !manualReturnCode && !prepareArchaReturn && !completeReturn && !adminClose && !adminIncident && !adminResolveIncident && !adminOfferIncidentReplacement && !saveAsset && !saveRegistry && !issuePromo && !resolveSupport && !replySupport && !button) return;
+  const target = rejectAll || createPayment || createExtensionPayment || approveFreeExtension || confirmReturnCollected || confirmReplacementExchange || rejectExtension || revokePayment || manualPayment || prepareArcha || recordArchaReservation || markLockerLoaded || markDeliveryDispatched || archaSmsSent || manualPickupCode || manualReturnCode || prepareArchaReturn || completeReturn || adminClose || adminIncident || adminResolveIncident || adminOfferIncidentReplacement || saveAsset || saveRegistry || issuePromo || resolveSupport || replySupport || button;
   if (target.disabled) return;
   const feedback = target.closest('.manager-order')?.querySelector('[data-order-feedback]');
   const showFeedback = (text, type = '') => { if (!feedback) return; feedback.textContent = text; feedback.className = `manager-order-feedback${type ? ` is-${type}` : ''}`; feedback.hidden = !text; };
@@ -281,10 +280,6 @@ ordersEl.addEventListener('click', async event => {
     if (!note?.trim()) return;
     payload = { action:'reject_all_documents', orderId:rejectAll.dataset.rejectAll, note:note.trim() };
     successMessage = 'Документы отклонены, причина отправлена клиенту.';
-  } else if (deleteOrder) {
-    if (!window.confirm('Удалить эту тестовую заявку вместе с её документами? Действие нельзя отменить.')) return;
-    payload = { action:'delete_test_order', orderId:deleteOrder.dataset.deleteOrder };
-    successMessage = 'Тестовая заявка удалена.';
   } else if (createPayment) {
     const amount = Number(createPayment.closest('.manager-order')?.querySelector('[data-payment-amount]')?.value);
     if (!Number.isFinite(amount) || amount <= 0) { statusEl.textContent = 'Введите корректную сумму в сомах.'; return; }
@@ -440,7 +435,6 @@ ordersEl.addEventListener('click', async event => {
   if (createPayment || createExtensionPayment) showFeedback('Отправляем запрос в Bakai…');
   try {
     const result = await api('POST', payload);
-    if (payload.action === 'delete_test_order') orders = orders.filter(order => order.id !== payload.orderId);
     if (payload.action === 'reject_all_documents') orders.forEach(order => { if (order.id === payload.orderId) order.documents.forEach(document => { if (document.status === 'pending_review') { document.status = 'rejected'; document.reviewer_note = payload.note; } }); });
     if (payload.action === 'review_document') orders.forEach(order => order.documents.forEach(document => { if (document.id === payload.documentId) { document.status = result.document?.status || payload.status; document.reviewer_note = payload.note || document.reviewer_note; if (result.order?.status) order.status = result.order.status; } }));
     if (payload.action === 'advance_order') { const order = orders.find(item => item.id === payload.orderId); if (order) order.status = result.order?.status || payload.nextStatus; }
