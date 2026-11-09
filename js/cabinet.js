@@ -930,7 +930,7 @@ rentalsEl?.addEventListener('submit', async event => {
         button.textContent = `Загружаем ${index + 1}/${files.length}…`;
         const contentType = contentTypeForFile(file);
         const isVideo = ['video/mp4', 'video/quicktime'].includes(contentType);
-        if (file.size > (isVideo ? 50 : 8) * 1024 * 1024) throw new Error('Фото или документ «' + file.name + '» больше 8 МБ. Уменьшите размер и выберите файл заново.');
+        if (file.size > (isVideo ? 50 : 8) * 1024 * 1024) throw new Error(`${isVideo ? 'Видео' : 'Фото или документ'} «${file.name}» больше ${isVideo ? 50 : 8} МБ. Уменьшите размер и выберите файл заново.`);
         const ticket = await request('POST', { action:'create_document_upload', orderId:documentForm.dataset.order, kind, fileName, contentType, byteSize:file.size });
         const upload = await fetch(ticket.uploadUrl, { method:'PUT', headers:{ Authorization:`Bearer ${ticket.token}`, 'x-upsert':'false', 'content-type':contentType }, body:file });
         if (!upload.ok) throw new Error('Не удалось загрузить файл. Проверьте соединение и попробуйте снова.');
