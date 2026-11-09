@@ -262,6 +262,7 @@ export default async function handler(request, response) {
         let benefit = null;
         if (kind === 'benefit_proof') {
           benefit = await database.createBenefitVerification({ phone:session.phone, benefit_type:benefitType, document_id:document.id });
+          await database.updateOrder(order.id, { benefit_requested_type:benefitType });
           await database.createEvent({ order_id:order.id, event_type:'customer_submitted_benefit_verification_from_cabinet', actor_type:'customer', metadata:{ benefit_type:benefitType, verification_id:benefit.id } });
         }
         await database.createEvent({ order_id:order.id, event_type:'customer_uploaded_document_from_cabinet', actor_type:'customer', metadata:{ kind } });
