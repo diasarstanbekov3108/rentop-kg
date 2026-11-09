@@ -73,6 +73,23 @@ export function getFallbackLaptops() {
   return fallbackLaptops.map((laptop) => ({ ...laptop }));
 }
 
+const CATALOG_CACHE_KEY = 'rentop-catalog-cache-v1';
+const CATALOG_CACHE_TTL_MS = 15 * 60 * 1000;
+
+function readCatalogCache() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(CATALOG_CACHE_KEY) || 'null');
+    if (!cached || !Array.isArray(cached.items) || Date.now() - Number(cached.savedAt) > CATALOG_CACHE_TTL_MS) return null;
+    return cached.items;
+  } catch {
+    return null;
+  }
+}
+
+function writeCatalogCache(items) {
+  try { localStorage.setItem(CATALOG_CACHE_KEY, JSON.stringify({ savedAt:Date.now(), items })); } catch { /* cache is optional */ }
+}
+
 function withTimeout(promise, timeoutMs = 4500) {
   let timer;
   const timeout = new Promise((resolve) => {
@@ -88,11 +105,15 @@ function withTimeout(promise, timeoutMs = 4500) {
 export async function fetchLaptops() {
   if (!supabaseClient) return getFallbackLaptops();
 
+  const cached = readCatalogCache();
+  if (cached?.length) return cached;
+
   try {
     const { data, error } = await withTimeout(supabaseClient.from('laptops').select('*'));
     if (error || !data || data.length === 0) {
       return getFallbackLaptops();
     }
+    writeCatalogCache(data);
     return data;
   } catch (e) {
     console.warn('Ошибка подключения к Supabase, используем локальные данные:', e);

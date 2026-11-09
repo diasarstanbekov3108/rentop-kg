@@ -46,6 +46,24 @@ export function createSupabaseApi(config) {
     return rows?.[0] || null;
   }
 
+  async function listRentableLaptops() {
+    // The manager only needs identifiers, titles, categories and a rate when
+    // offering a replacement. Do not transfer catalog images or descriptions
+    // to every dashboard refresh. Older catalogues use one of three names for
+    // the rate, so try the compatible projections in order.
+    const projections = ['id,title,category,dailyRate', 'id,title,category,dailyrate', 'id,title,category,daily_rate'];
+    let lastError;
+    for (const projection of projections) {
+      try {
+        const rows = await request(`laptops?category=eq.rent&select=${projection}&order=id.asc&limit=50`);
+        return (rows || []).map(normalizeLaptopRate);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error('Не удалось загрузить каталог для замены.');
+  }
+
   async function storageRequest(path, options = {}) {
     const isLegacyJwtKey = config.supabaseServerKey.startsWith('eyJ');
     const response = await fetch(`${config.supabaseUrl}/storage/v1/${path}`, {
@@ -64,11 +82,7 @@ export function createSupabaseApi(config) {
 
   return {
     getLaptop: (id) => getOne(`laptops?id=eq.${encodeURIComponent(id)}&select=*`).then(normalizeLaptopRate),
-    // The production catalogue predates the current schema in some projects:
-    // its rate may be dailyRate or dailyrate rather than daily_rate. Fetch the
-    // row shape once and normalize it instead of making the manager panel fail.
-    listRentableLaptops: () => request('laptops?category=eq.rent&select=*&order=id.asc&limit=50')
-      .then((rows) => (rows || []).map(normalizeLaptopRate)),
+    listRentableLaptops,
     updateLaptop: (id, patch) => request(`laptops?id=eq.${encodeURIComponent(id)}`, {
       method:'PATCH', body:JSON.stringify(patch)
     }).then((rows) => rows?.[0] || null),
