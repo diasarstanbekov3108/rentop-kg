@@ -287,7 +287,11 @@ export default async function handler(request, response) {
         return json(response, 200, { ok:true, message:'Комментарий сохранён. Менеджер увидит его при подготовке заказа.' });
       }
       if (payload.action === 'confirm_pickup') {
-        if (order.status !== 'awaiting_pickup' || !['access_sent','loaded'].includes(String(order.locker_status || ''))) return json(response, 409, { error:'Подтверждение доступно после помещения ноутбука в ячейку и отправки инструкции.' });
+        const pickupReady = order.status === 'awaiting_pickup' && (
+          (order.delivery_type === 'arca_locker' && ['access_sent','loaded'].includes(String(order.locker_status || '')))
+          || (order.delivery_type === 'delivery' && String(order.locker_status || '') === 'delivery_dispatched')
+        );
+        if (!pickupReady) return json(response, 409, { error:'Подтверждение доступно после готовности выдачи: закладки в постамат или согласованной передачи курьеру.' });
         const evidence = await database.listOrderDocuments(order.id);
         const issueVideo = evidence.find(document => document.kind === 'issue_video' && document.status !== 'rejected');
         if (!issueVideo) return json(response, 409, { error:'Сначала прикрепите короткое видео получения: ноутбук, экран, корпус, зарядку и комплект.' });
