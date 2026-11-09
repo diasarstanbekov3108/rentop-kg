@@ -216,10 +216,11 @@ export default async function handler(request, response) {
         await database.createEvent({ order_id:order.id, event_type:'chief_admin_offered_incident_replacement_from_web', actor_type:'chief_admin', metadata:{ replacement_laptop_id:replacement.id, method, fault_party:faultParty, reason } });
         return reply(response, 200, { ok:true, order:updated, message:faultParty === 'rentop' ? 'Замена предложена за счёт Rentop. Подтвердите физическую передачу после обмена.' : 'Замена предложена. Условия доплаты и залога согласуйте с клиентом до физической передачи.' });
       }
-      if (!['in_use','return_requested','awaiting_return_reservation','awaiting_return_dropoff','returned'].includes(order.status)) return reply(response, 409, { error:'Досрочно завершить можно только активную аренду или оформленный возврат.' });
+      if (order.status !== 'returned') return reply(response, 409, { error:'Досрочно завершить можно только после физической приёмки ноутбука. Сначала проведите возврат в статус «Проверка возврата».' });
       const documents = await database.listOrderDocuments(order.id);
       const returnVideo = documents.find(document => document.kind === 'return_video');
       if (returnVideo?.status !== 'accepted') return reply(response, 409, { error:'Сначала примите видео состояния устройства при возврате. Это защищает Rentop и клиента.' });
+      if (String(order.return_condition_note || '').trim().length < 3) return reply(response, 409, { error:'Сначала заполните состояние ноутбука после физического осмотра в реестре.' });
       const updated = await database.updateOrder(order.id, { status:'completed', admin_note:`Досрочно завершено: ${reason}` });
       await database.createEvent({ order_id:order.id, event_type:'chief_admin_closed_rental_early_from_web', actor_type:'chief_admin', metadata:{ reason, previous_status:order.status, manager_phone:session.phone } });
       return reply(response, 200, { ok:true, order:updated, message:'Аренда досрочно завершена и действие записано в журнал.' });
@@ -254,12 +255,16 @@ export default async function handler(request, response) {
               await database.createEvent({ order_id:order.id, event_type:'manager_waiting_for_offer_sms_consent_from_web', actor_type:'manager', metadata:{} }).catch(() => {});
               return reply(response, 200, { ok:true, document:reviewed, order:null, message:'Документы приняты. Заявка ждёт, пока клиент подтвердит оферту кодом из SMS.' });
             }
-            updatedOrder = await database.updateOrder(order.id, { status:'awaiting_payment', hold_expires_at:new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() });
-            await database.createEvent({ order_id:order.id, event_type:'documents_accepted_waiting_payment_from_web', actor_type:'manager', metadata:{} }).catch(error => console.error('Manager order audit event failed:', error.message));
+            // Acceptance of files is deliberately not an approval for payment.
+            // The manager must first save the ID registry fields and then use the
+            // explicit "Перевести к оплате" transition below. This prevents an
+            // incomplete identity check from being bypassed by the last document.
+            updatedOrder = order;
+            await database.createEvent({ order_id:order.id, event_type:'documents_accepted_waiting_identity_registry_from_web', actor_type:'manager', metadata:{} }).catch(error => console.error('Manager order audit event failed:', error.message));
           }
         }
       }
-      return reply(response, 200, { ok:true, document:reviewed, order:updatedOrder });
+      return reply(response, 200, { ok:true, document:reviewed, order:updatedOrder, message:updatedOrder ? 'Документы приняты. Сверьте ID, сохраните реестр и только затем переведите заявку к оплате.' : '' });
     }
     if (payload.action === 'reject_all_documents') {
       const order = await database.getOrder(String(payload.orderId || ''));
@@ -306,6 +311,11 @@ export default async function handler(request, response) {
       if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
       if (!statusTransitions[order.status]?.includes(nextStatus)) return reply(response, 409, { error:'Этот переход недоступен для текущего статуса заявки.' });
       if (nextStatus === 'awaiting_payment') {
+        const documents = await database.listOrderDocuments(order.id);
+        const latest = new Map();
+        for (const item of documents) if (!latest.has(item.kind)) latest.set(item.kind, item);
+        const identityFrontAccepted = latest.get('identity_front')?.status === 'accepted' || latest.get('identity')?.status === 'accepted';
+        if (!identityFrontAccepted || !['identity_back','selfie','supporting'].every(kind => latest.get(kind)?.status === 'accepted')) return reply(response, 409, { error:'Сначала примите все четыре обязательных документа клиента.' });
         if (String(order.residence_address || '').trim().length < 8 || String(order.supporting_document_type || '').trim().length < 3) return reply(response, 409, { error:'До оплаты клиент должен указать адрес проживания и загрузить обязательное подтверждение адреса, работы или учёбы.' });
         if (String(order.identity_document_number || '').trim().length < 3 || String(order.identity_document_issuer || '').trim().length < 3 || !order.identity_verified_at) return reply(response, 409, { error:'Сначала сверьте паспорт/ID по файлам и сохраните в реестре номер документа и кем он выдан.' });
       }

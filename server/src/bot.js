@@ -1506,19 +1506,19 @@ export function createRentopBot({ config, telegram, database }) {
       }
     } else if (action === 'paid') {
       const paidAt = new Date().toISOString();
-      const rentalEndsAt = new Date(Date.parse(paidAt) + Math.max(1, Number(order.rental_days) || 1) * 86_400_000).toISOString();
-      await database.updateOrder(order.id, { status: 'awaiting_pickup', payment_confirmed_at: paidAt, rental_started_at:paidAt, rental_ends_at:rentalEndsAt });
+      // Payment reserves the order but never starts the rental. The start/end
+      // timestamps are set only when the customer confirms physical pickup.
+      await database.updateOrder(order.id, { status: 'confirmed', payment_confirmed_at: paidAt });
       await telegram.sendMessage(session.telegram_chat_id,
         order.delivery_type === 'arca_locker'
-          ? 'Оплата подтверждена. Rentop передаёт заявку в ARCHA POINT. Они отправят код/PIN или QR на ваш номер. После получения кода бот проведёт вас по инструкции осмотра и получения.'
-          : 'Оплата подтверждена. Rentop готовит ноутбук к выдаче. PIN/QR придёт сюда после загрузки в постамат.',
-        order.delivery_type === 'arca_locker' ? pickupAccessKeyboard(order.id) : helpKeyboard(order.id)
+          ? 'Оплата подтверждена. Rentop готовит выдачу через ARCHA POINT. Код/PIN или QR придёт после закладки ноутбука в ячейку. Срок аренды начнётся только после фактического получения.'
+          : 'Оплата подтверждена. Rentop согласует выдачу. Срок аренды начнётся только после фактического получения.',
+        helpKeyboard(order.id)
       );
-      const paidButtons = [[{ text: '🔐 Резервно отправить PIN / QR', callback_data: `pin_custom:${order.id}` }]];
-      if (order.delivery_type === 'arca_locker') paidButtons.unshift([{ text: '📦 Текст для ARCHA POINT', callback_data: `archa_request:${order.id}` }]);
-      await telegram.sendMessage(callback.message.chat.id, `Оплата подтверждена по заявке ${orderRef(order)}. Для ARCHA POINT используйте готовый текст ниже. Если их SMS с кодом не дойдёт клиенту, используйте резервную отправку PIN/QR.`, {
-        reply_markup: { inline_keyboard: paidButtons }
-      });
+      const paidButtons = order.delivery_type === 'arca_locker'
+        ? [[{ text: '📦 Текст для ARCHA POINT', callback_data: `archa_request:${order.id}` }]]
+        : [];
+      await telegram.sendMessage(callback.message.chat.id, `Оплата подтверждена по заявке ${orderRef(order)}. ${order.delivery_type === 'arca_locker' ? 'Подготовьте передачу в ARCHA POINT. Резервный PIN/QR доступен только после фактической закладки ноутбука.' : 'Согласуйте фактическую выдачу с клиентом.'}`, paidButtons.length ? { reply_markup: { inline_keyboard: paidButtons } } : undefined);
     } else if (action === 'payment_reject') {
       await database.updateOrder(order.id, { status: 'awaiting_payment' });
       await saveStep(session, { step: 'awaiting_receipt' });
