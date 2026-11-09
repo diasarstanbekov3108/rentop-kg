@@ -1,5 +1,19 @@
 BEGIN;
 
+-- Courier delivery has the same physical-handover gate as a locker: the
+-- manager marks the transfer to the courier, then the customer confirms the
+-- actual receipt after recording the issue video.
+ALTER TABLE public.rental_orders
+  DROP CONSTRAINT IF EXISTS rental_orders_locker_status_allowed;
+ALTER TABLE public.rental_orders
+  ADD CONSTRAINT rental_orders_locker_status_allowed CHECK (
+    locker_status IN (
+      'none', 'pending', 'reservation_requested', 'reserved', 'loaded', 'access_sent',
+      'delivery_dispatched', 'client_picked_up', 'return_pending', 'return_reserved',
+      'return_access_sent', 'return_access_received', 'returned', 'failed'
+    )
+  );
+
 -- A pending replacement reserves a second physical laptop. Check both
 -- directions: a replacement cannot take a laptop already held by another
 -- order, and a fresh reservation cannot take a laptop held for replacement.
