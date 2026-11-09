@@ -212,12 +212,16 @@ export function createSupabaseApi(config) {
       '&status=eq.in_use' +
       '&order=rental_ends_at.asc.nullslast&limit=500'
     ),
-    findOverlappingBlockingOrder: (orderId, laptopId, startDate, endDate) => request(
-      `rental_orders?select=id,status,rental_start_date,rental_end_date&or=(laptop_id.eq.${encodeURIComponent(laptopId)},replacement_pending_laptop_id.eq.${encodeURIComponent(laptopId)})` +
-      `&id=neq.${encodeURIComponent(orderId)}&rental_start_date=lt.${encodeURIComponent(endDate)}` +
-      `&rental_end_date=gt.${encodeURIComponent(startDate)}` +
-      '&status=in.(confirmed,awaiting_archa_reservation,awaiting_locker_loading,awaiting_pickup,issued,in_use,return_requested,awaiting_return_reservation,awaiting_return_dropoff,awaiting_return_collection,returned,incident)&limit=1'
-    ).then((rows) => rows?.[0] || null),
+    findOverlappingBlockingOrder: async (orderId, laptopId, startDate, endDate) => {
+      const scope = `rental_orders?select=id,status,rental_start_date,rental_end_date&or=(laptop_id.eq.${encodeURIComponent(laptopId)},replacement_pending_laptop_id.eq.${encodeURIComponent(laptopId)})` +
+        `&id=neq.${encodeURIComponent(orderId)}&rental_start_date=lt.${encodeURIComponent(endDate)}` +
+        `&rental_end_date=gt.${encodeURIComponent(startDate)}`;
+      const [active, held] = await Promise.all([
+        request(`${scope}&status=in.(confirmed,awaiting_archa_reservation,awaiting_locker_loading,awaiting_pickup,issued,in_use,return_requested,awaiting_return_reservation,awaiting_return_dropoff,awaiting_return_collection,returned,incident)&limit=1`),
+        request(`${scope}&status=eq.awaiting_payment&hold_expires_at=gt.${encodeURIComponent(new Date().toISOString())}&limit=1`)
+      ]);
+      return active?.[0] || held?.[0] || null;
+    },
     claimWebhookUpdate: (updateId) => request('telegram_webhook_updates?on_conflict=update_id', {
       method: 'POST',
       headers: { Prefer: 'resolution=ignore-duplicates,return=representation' },
