@@ -6,7 +6,6 @@ import { createNikitaSmsClient } from '../server/src/sms.js';
 
 const COOKIE = '__Host-rentop_session';
 const allowedDocumentStates = new Set(['accepted', 'rejected']);
-const removableStatuses = new Set(['draft', 'pending_review', 'awaiting_payment', 'payment_review', 'confirmed', 'awaiting_pickup', 'cancelled', 'rejected']);
 const statusTransitions = Object.freeze({
   pending_review:['awaiting_payment']
 });
@@ -278,29 +277,8 @@ export default async function handler(request, response) {
       await database.createEvent({ order_id:order.id, event_type:'manager_rejected_all_documents_from_web', actor_type:'manager', metadata:{ count:pending.length, reviewer_note:note } }).catch(error => console.error('Manager rejection audit event failed:', error.message));
       return reply(response, 200, { ok:true, documents:reviewed, note });
     }
-    if (payload.action === 'delete_test_order') {
-      const order = await database.getOrder(String(payload.orderId || ''));
-      if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
-      if (!removableStatuses.has(order.status)) return reply(response, 409, { error:'Активную или завершённую аренду удалять нельзя. Для неё используйте штатный статус.' });
-      const documents = await database.listOrderDocuments(order.id).catch(() => []);
-      const cleanup = await Promise.allSettled(documents.map(document => database.deleteDocumentFile(document.storage_path)));
-      cleanup.filter(result => result.status === 'rejected').forEach(result => console.error('Test document cleanup failed:', result.reason?.message || result.reason));
-      await database.deleteOrder(order.id);
-      return reply(response, 200, { ok:true, deletedOrderId:order.id });
-    }
-    if (payload.action === 'clear_test_orders') {
-      const orders = await database.listRecentOrders(100);
-      const testOrders = orders.filter(order => removableStatuses.has(order.status));
-      const deletedOrderIds = [];
-      for (const order of testOrders) {
-        const documents = await database.listOrderDocuments(order.id).catch(() => []);
-        const cleanup = await Promise.allSettled(documents.map(document => database.deleteDocumentFile(document.storage_path)));
-        cleanup.filter(result => result.status === 'rejected').forEach(result => console.error('Bulk test document cleanup failed:', result.reason?.message || result.reason));
-        await database.deleteOrder(order.id);
-        deletedOrderIds.push(order.id);
-      }
-      return reply(response, 200, { ok:true, deletedOrderIds, preserved:orders.length - deletedOrderIds.length });
-    }
+    if (payload.action === 'delete_test_order') return reply(response, 403, { error:'Удаление заявок из рабочей панели отключено. Для отмены используйте штатный статус, чтобы история и документы остались в учёте.' });
+    if (payload.action === 'clear_test_orders') return reply(response, 403, { error:'Массовое удаление заявок из рабочей панели отключено. Историю аренды нужно сохранять для контроля и разборов.' });
     if (payload.action === 'check_bakai_connection') {
       await verifyBakaiToken(config);
       return reply(response, 200, { ok:true, message:'Токен Bakai сохранён. Для проверки доступа создайте тестовый QR на 1 сом.' });

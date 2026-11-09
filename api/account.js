@@ -326,8 +326,9 @@ export default async function handler(request, response) {
       if (payload.action === 'confirm_return_dropoff') {
         if (order.status !== 'awaiting_return_dropoff' || order.return_method !== 'arca_locker' || !['return_access_sent','return_access_received'].includes(String(order.locker_status || ''))) return json(response, 409, { error:'Подтверждение доступно только после получения кода возврата ARCHA POINT.' });
         const evidence = await database.listOrderDocuments(order.id);
-        const returnVideo = evidence.find(document => document.kind === 'return_video' && document.status !== 'rejected');
+        const returnVideo = evidence.find(document => document.kind === 'return_video');
         if (!returnVideo) return json(response, 409, { error:'Сначала прикрепите короткое видео состояния ноутбука и комплекта.' });
+        if (returnVideo.status !== 'accepted') return json(response, 409, { error:'Видео возврата ещё не проверено менеджером. Не помещайте ноутбук в ячейку до подтверждения.' });
         const returnedAt = new Date().toISOString();
         const updated = await database.updateOrder(order.id, { status:'returned', locker_status:'returned', returned_at:returnedAt });
         await database.createEvent({ order_id:order.id, event_type:'customer_confirmed_return_dropoff_from_cabinet', actor_type:'customer', metadata:{ return_method:'arca_locker' } });

@@ -29,7 +29,6 @@ const date = value => value ? new Intl.DateTimeFormat('ru-RU', { day:'numeric', 
 const statusLabel = status => ({ draft:'Новая заявка', pending_review:'Проверка документов', awaiting_payment:'Ожидает оплаты', payment_review:'Проверка оплаты', confirmed:'Оплата подтверждена', awaiting_archa_reservation:'Резервируем ячейку', awaiting_locker_loading:'Ожидает закладки', awaiting_pickup:'Готово к получению', issued:'Ожидаем подтверждение', in_use:'Активна', return_requested:'Возврат', awaiting_return_reservation:'Резервируем возврат', awaiting_return_dropoff:'Ожидаем возврат в ячейку', awaiting_return_collection:'Ожидаем физический возврат', returned:'Проверка возврата', completed:'Завершена', cancelled:'Отменена', rejected:'Отклонена', incident:'Инцидент — требуется решение' }[status] || status || 'Новая');
 const docLabel = kind => ({ identity:'Документ', identity_front:'Документ — лицевая сторона', identity_back:'Документ — обратная сторона', selfie:'Селфи', supporting:'Подтверждение', issue_video:'Видео до получения', return_video:'Видео возврата', benefit_proof:'Льготный документ' }[kind] || 'Документ');
 const benefitLabel = kind => ({ student:'Студент', pensioner:'Пенсионер', disability:'Инвалидность / ОВЗ' }[kind] || kind);
-const canDelete = order => ['draft', 'pending_review', 'awaiting_payment', 'payment_review', 'confirmed', 'awaiting_archa_reservation', 'awaiting_locker_loading', 'awaiting_pickup', 'cancelled', 'rejected'].includes(order.status);
 const deliveryLabel = order => order.delivery_type === 'arca_locker' ? 'ARCHA POINT 24/7' : order.delivery_type === 'delivery' ? 'Доставка курьером' : order.delivery_type === 'pickup' ? 'Архивный способ получения' : 'Уточняется';
 const nextAction = order => {
   if (order.status === 'pending_review') return { next:'awaiting_payment', label:'Подтвердить проверку и перейти к оплате' };
@@ -173,7 +172,7 @@ function render() {
         ? `<section class="manager-return-acceptance"><h3>Приёмка возврата и акт</h3><label for="return-condition-${order.id}">Состояние после физического осмотра <span>обязательно</span></label><textarea id="return-condition-${order.id}" data-return-acceptance-condition maxlength="2000" placeholder="Например: корпус и экран без повреждений, зарядка и комплект на месте.">${escape(order.return_condition_note || '')}</textarea><p>Проверьте ноутбук физически и видео возврата. После подтверждения это описание войдёт в акт приёма‑передачи, а аренда будет завершена.</p><button data-complete-return="${order.id}">Подтвердить приём и сформировать акт</button></section>`
         : `<section class="manager-return-acceptance"><h3>Приёмка возврата</h3><p>Сначала откройте и примите видео возврата клиента. После этого здесь появится поле осмотра и кнопка формирования акта.</p></section>`)
       : '';
-    const workflowActions = `${pending ? `<button class="secondary" data-reject-all="${order.id}">Отклонить все с причиной</button>` : ''}${extensionAction}${exchangeAction}${paymentAction}${manualPaymentAction}${archaControls(order)}${deliveryControls(order)}${paymentReadiness}${action ? `<button data-order-action="advance" data-order="${order.id}" data-next-status="${action.next}">${action.label}</button>` : ''}${canDelete(order) ? `<button class="danger" data-delete-order="${order.id}">Удалить тестовую заявку</button>` : ''}`;
+    const workflowActions = `${pending ? `<button class="secondary" data-reject-all="${order.id}">Отклонить все с причиной</button>` : ''}${extensionAction}${exchangeAction}${paymentAction}${manualPaymentAction}${archaControls(order)}${deliveryControls(order)}${paymentReadiness}${action ? `<button data-order-action="advance" data-order="${order.id}" data-next-status="${action.next}">${action.label}</button>` : ''}`;
     const deliveryDetails = order.delivery_type === 'delivery' && (order.delivery_address || order.delivery_preferred_time) ? `<br><small>${escape(order.delivery_address || 'Адрес уточняется')} · ${escape(order.delivery_preferred_time || 'время уточняется')}</small>` : order.locker_address ? `<br><small>${escape(order.locker_address)}</small>` : '';
     return `<article class="manager-order" data-manager-order="${order.id}"><div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p></div><span class="manager-status-pill ${escape(order.status)}">${escape(statusLabel(order.status))}</span></div><div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда</span><strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(deliveryLabel(order))}${deliveryDetails}</strong></div><div><span>Сумма аренды</span><strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div><span>Залог / скидка</span><strong>${Number(order.deposit_amount || 0).toLocaleString('ru-RU')} сом · ${Number(order.discount_percent || 0)}%</strong></div></div>${directDocuments}${supportPanel}${returnAcceptance}${handoffPanel}<div class="manager-actions manager-workflow-actions">${workflowActions || '<span class="manager-action-note">Следующее действие появится после обновления статуса.</span>'}</div><p class="manager-order-feedback" data-order-feedback="${order.id}" hidden></p><details class="manager-order-details" ${openOrderDetails.has(String(order.id)) ? 'open' : ''}><summary>Детали заявки, реестр и служебные данные</summary>${details}</details></article>`;
   }).join('') : '<div class="manager-empty">По этому фильтру заявок нет.</div>';
@@ -204,21 +203,7 @@ testBakaiButton?.addEventListener('click', async () => {
     testBakaiButton.textContent = original;
   }
 });
-clearTestsButton?.addEventListener('click', async () => {
-  const count = orders.filter(canDelete).length;
-  if (!count) { statusEl.textContent = 'Безопасных тестовых заявок для удаления нет.'; return; }
-  if (!window.confirm(`Удалить ${count} тестовых заявок и их прикреплённые документы? Активные, выданные и завершённые аренды останутся.`)) return;
-  clearTestsButton.disabled = true;
-  const original = clearTestsButton.textContent;
-  clearTestsButton.textContent = 'Очищаем…';
-  try {
-    const result = await api('POST', { action:'clear_test_orders' });
-    const removed = new Set(result.deletedOrderIds || []);
-    orders = orders.filter(order => !removed.has(order.id));
-    statusEl.textContent = `Удалено тестовых заявок: ${removed.size}. Сохранено активных/завершённых: ${result.preserved}.`;
-    render();
-  } catch (error) { statusEl.textContent = error.message; } finally { clearTestsButton.disabled = false; clearTestsButton.textContent = original; }
-});
+if (clearTestsButton) clearTestsButton.hidden = true;
 document.querySelector('.manager-filters').addEventListener('click', event => { const button = event.target.closest('[data-filter]'); if (button) setFilter(button.dataset.filter); });
 statsEl.addEventListener('click', event => { const button = event.target.closest('[data-filter]'); if (button) setFilter(button.dataset.filter); });
 returnAlert?.addEventListener('click', () => { setFilter('returns'); document.querySelector('.manager-toolbar')?.scrollIntoView({ behavior:'smooth', block:'start' }); });
