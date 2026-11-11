@@ -20,6 +20,10 @@ function extendExactDeadline(currentEnd, oldDate, newDate) {
   const extraDays = Math.round((new Date(`${newDate}T00:00:00Z`) - new Date(`${oldDate}T00:00:00Z`)) / 86_400_000);
   return extraDays > 0 ? new Date(Date.parse(currentEnd) + extraDays * 86_400_000).toISOString() : currentEnd;
 }
+function discountForTerm(days, hasApprovedBenefit = false) {
+  const tariff = Number(days) >= 15 ? 30 : Number(days) >= 7 ? 15 : 0;
+  return Math.max(tariff, hasApprovedBenefit ? 10 : 0);
+}
 async function mapWithConcurrency(items, limit, mapper) {
   const result = new Array(items.length);
   let cursor = 0;
@@ -222,6 +226,7 @@ export default async function handler(request, response) {
       const note = String(payload.note || '').trim().slice(0, 500);
       const reviewed = await database.reviewOrderDocument(document.id, { status:state, reviewed_at:new Date().toISOString(), reviewer_note:note || null });
       await database.createEvent({ order_id:document.order_id, event_type:`manager_${state}_document_from_web`, actor_type:'manager', metadata:{ document_kind:document.kind, reviewer_note:note || null } }).catch(error => console.error('Manager document audit event failed:', error.message));
+      let benefitMessage = '';
       if (document.kind === 'benefit_proof') {
         const verification = await database.getBenefitVerificationByDocument(document.id);
         if (verification) {
@@ -229,6 +234,20 @@ export default async function handler(request, response) {
             ? { status:'approved', reviewer_note:note || null, approved_at:new Date().toISOString(), expires_at:null }
             : { status:'rejected', reviewer_note:note || 'Документ не подтверждает право на социальную скидку.' };
           await database.updateBenefitVerification(verification.id, patch);
+          if (state === 'accepted') {
+            const benefitOrder = await database.getOrder(document.order_id);
+            // The amount may only change before payment is issued. A paid
+            // order is a financial record and requires a manager decision.
+            if (benefitOrder && ['draft','pending_review'].includes(benefitOrder.status)) {
+              const discount = discountForTerm(benefitOrder.rental_days, true);
+              const total = Math.round(Number(benefitOrder.rental_days || 0) * Number(benefitOrder.daily_rate || 0) * (100 - discount) / 100);
+              if (Number(benefitOrder.discount_percent || 0) !== discount || Number(benefitOrder.total_amount || 0) !== total) {
+                await database.updateOrder(benefitOrder.id, { discount_percent:discount, total_amount:total });
+                await database.createEvent({ order_id:benefitOrder.id, event_type:'manager_applied_approved_social_discount_from_web', actor_type:'manager', metadata:{ discount_percent:discount, total_amount:total, benefit_type:verification.benefit_type } });
+                benefitMessage = discount === 10 ? 'Льготная скидка 10% одобрена, сумма заявки пересчитана.' : `Льгота одобрена. Тарифная скидка ${discount}% уже выгоднее, поэтому сумма не менялась.`;
+              } else benefitMessage = discount === 10 ? 'Льготная скидка 10% одобрена и уже учтена в сумме заявки.' : `Льгота одобрена. Тарифная скидка ${discount}% уже выгоднее.`;
+            } else benefitMessage = 'Льгота одобрена. Для уже выставленного или оплаченного счёта изменение суммы согласуйте отдельно.';
+          }
         }
       }
       let updatedOrder = null;
@@ -253,7 +272,7 @@ export default async function handler(request, response) {
           }
         }
       }
-      return reply(response, 200, { ok:true, document:reviewed, order:updatedOrder, message:updatedOrder ? 'Документы приняты. Сверьте ID, сохраните реестр и только затем переведите заявку к оплате.' : '' });
+      return reply(response, 200, { ok:true, document:reviewed, order:updatedOrder, message:updatedOrder ? 'Документы приняты. Сверьте ID, сохраните реестр и только затем переведите заявку к оплате.' : benefitMessage });
     }
     if (payload.action === 'reject_all_documents') {
       const order = await database.getOrder(String(payload.orderId || ''));
