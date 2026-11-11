@@ -1442,3 +1442,26 @@ button.condition-card:focus-visible,
   .hero-archa-mobile img{display:block!important;width:101px!important;height:58px!important;object-fit:cover!important;object-position:center 52%!important;mix-blend-mode:screen}
   .hero-archa-mobile span{color:#e1f2fa!important;font-size:13px!important;font-weight:600}
 }
+
+/* Product returns to the atmosphere; readability comes from typography, not black tiles. */
+@media(max-width:768px){
+  .hero-layout{min-height:625px!important}
+  .hero-visual{position:absolute!important;z-index:1!important;top:178px!important;right:-118px!important;width:410px!important;height:360px!important;margin:0!important;opacity:.68!important}
+  .hero-visual::before{width:360px!important;height:360px!important;left:52%!important;top:48%!important;opacity:1!important}
+  .hero-product-stage{min-height:360px!important;height:360px!important}
+  .hero-product-image{right:auto!important;bottom:auto!important;top:28px!important;left:-12%!important;width:135%!important;filter:drop-shadow(0 20px 22px rgba(0,0,0,.34))!important}
+  .hero-copy{isolation:isolate}
+  .hero-kicker{background:linear-gradient(135deg,rgba(11,91,132,.62),rgba(6,29,52,.35))!important}
+  .hero h1{color:#c7efff!important;text-shadow:0 2px 13px rgba(0,7,15,.8),0 0 25px rgba(53,203,244,.35)!important}
+  .hero-lead{max-width:325px!important;padding:0!important;border:0!important;background:transparent!important;color:#d3e9f5!important;font-size:15px!important;font-weight:500!important;line-height:1.5!important;text-shadow:0 2px 10px rgba(0,6,14,.9)!important}
+  .hero-points{max-width:315px!important;margin-top:16px!important;padding:8px 0!important;border-color:rgba(123,216,249,.23)!important;background:transparent!important;backdrop-filter:none!important}
+  .hero-points li{color:#c4e3ef!important;text-shadow:0 1px 7px rgba(0,6,14,.9)!important}
+  .hero-points li+li{border-color:rgba(123,216,249,.17)!important}
+  .hero-buttons{margin-top:22px!important}
+  .hero-archa-mobile{margin-top:21px!important;background:linear-gradient(130deg,rgba(12,52,76,.82),rgba(4,21,36,.82))!important}
+}
+@media(max-width:390px){
+  .hero-layout{min-height:600px!important}
+  .hero-visual{top:168px!important;right:-132px!important;width:390px!important}
+  .hero-product-image{top:30px!important}
+}
