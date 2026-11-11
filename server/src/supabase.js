@@ -64,6 +64,12 @@ export function createSupabaseApi(config) {
     throw lastError || new Error('Не удалось загрузить каталог для замены.');
   }
 
+  async function listCatalogLaptops() {
+    return request('laptops?select=*&order=sort_order.asc,id.asc&limit=200').then((rows) =>
+      (rows || []).map(normalizeLaptopRate)
+    );
+  }
+
   async function storageRequest(path, options = {}) {
     const isLegacyJwtKey = config.supabaseServerKey.startsWith('eyJ');
     const response = await fetch(`${config.supabaseUrl}/storage/v1/${path}`, {
@@ -83,6 +89,10 @@ export function createSupabaseApi(config) {
   return {
     getLaptop: (id) => getOne(`laptops?id=eq.${encodeURIComponent(id)}&select=*`).then(normalizeLaptopRate),
     listRentableLaptops,
+    listCatalogLaptops,
+    createLaptop: (laptop) => request('laptops', {
+      method:'POST', body:JSON.stringify(laptop)
+    }).then((rows) => rows?.[0] || null),
     updateLaptop: (id, patch) => request(`laptops?id=eq.${encodeURIComponent(id)}`, {
       method:'PATCH', body:JSON.stringify(patch)
     }).then((rows) => rows?.[0] || null),
@@ -170,6 +180,9 @@ export function createSupabaseApi(config) {
     }).then((rows) => rows?.[0] || null),
     deleteOrderDocument: (id) => request(`rental_order_documents?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' }),
     createSignedDocumentUpload: (path) => storageRequest(`object/upload/sign/rental-documents/${path}`, {
+      method: 'POST', body: JSON.stringify({})
+    }),
+    createSignedCatalogImageUpload: (path) => storageRequest(`object/upload/sign/catalog-images/${path}`, {
       method: 'POST', body: JSON.stringify({})
     }),
     createSignedDocumentDownload: (path, expiresIn = 3600) => storageRequest(`object/sign/rental-documents/${path}`, {

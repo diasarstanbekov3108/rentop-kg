@@ -73,7 +73,7 @@ export function getFallbackLaptops() {
   return fallbackLaptops.map((laptop) => ({ ...laptop }));
 }
 
-const CATALOG_CACHE_KEY = 'rentop-catalog-cache-v1';
+const CATALOG_CACHE_KEY = 'rentop-catalog-cache-v2';
 const CATALOG_CACHE_TTL_MS = 15 * 60 * 1000;
 
 function readCatalogCache() {
@@ -113,8 +113,17 @@ export async function fetchLaptops() {
     if (error || !data || data.length === 0) {
       return getFallbackLaptops();
     }
-    writeCatalogCache(data);
-    return data;
+    const normalized = data
+      .filter((laptop) => laptop.is_visible !== false)
+      .map((laptop) => ({
+        ...laptop,
+        dailyRate: Number(laptop.daily_rate ?? laptop.dailyRate ?? laptop.dailyrate ?? 0),
+        priceText: laptop.price_text || laptop.priceText || laptop.pricetext || '',
+        image: laptop.image_url || laptop.image || '/assets/catalog-placeholder.svg'
+      }))
+      .sort((left, right) => Number(left.sort_order || 0) - Number(right.sort_order || 0) || Number(left.id || 0) - Number(right.id || 0));
+    writeCatalogCache(normalized);
+    return normalized;
   } catch (e) {
     console.warn('Ошибка подключения к Supabase, используем локальные данные:', e);
     return getFallbackLaptops();

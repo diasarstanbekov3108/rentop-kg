@@ -24,6 +24,26 @@ function discountForTerm(days, hasApprovedBenefit = false) {
   const tariff = Number(days) >= 15 ? 30 : Number(days) >= 7 ? 15 : 0;
   return Math.max(tariff, hasApprovedBenefit ? 10 : 0);
 }
+function catalogText(value, maxLength) { return String(value || '').trim().replace(/\s+/g, ' ').slice(0, maxLength); }
+function catalogPayload(payload) {
+  const category = String(payload.category || 'rent');
+  const dailyRate = Number(payload.dailyRate);
+  const sortOrder = Number(payload.sortOrder || 0);
+  const imageUrl = catalogText(payload.imageUrl, 2000);
+  if (!['rent', 'sale'].includes(category)) throw new Error('Выберите «Аренда» или «Продажа».');
+  const record = {
+    title:catalogText(payload.title, 140), category, badge:catalogText(payload.badge, 32) || (category === 'rent' ? 'АРЕНДА' : 'ПРОДАЖА'),
+    cpu:catalogText(payload.cpu, 160), ram:catalogText(payload.ram, 80), storage:catalogText(payload.storage, 160),
+    daily_rate:category === 'rent' ? dailyRate : 0,
+    price_text:catalogText(payload.priceText, 80), image_url:imageUrl || '/assets/catalog-placeholder.svg',
+    description:catalogText(payload.description, 500), is_visible:Boolean(payload.isVisible), sort_order:Number.isInteger(sortOrder) ? Math.max(-10000, Math.min(10000, sortOrder)) : 0
+  };
+  if (record.title.length < 3 || record.cpu.length < 2 || record.ram.length < 2 || record.storage.length < 2) throw new Error('Заполните модель, процессор, память и накопитель.');
+  if (category === 'rent' && (!Number.isFinite(dailyRate) || dailyRate < 100 || dailyRate > 100000)) throw new Error('Укажите корректную ставку аренды от 100 до 100 000 сом в день.');
+  if (category === 'rent' && !record.price_text) record.price_text = `От ${dailyRate} сом / день`;
+  if (category === 'sale' && !record.price_text) throw new Error('Для продажи укажите цену или текст цены.');
+  return record;
+}
 async function mapWithConcurrency(items, limit, mapper) {
   const result = new Array(items.length);
   let cursor = 0;
@@ -57,6 +77,10 @@ export default async function handler(request, response) {
   try {
     if (request.method === 'GET') {
       if (String(request.query?.access || '') === '1') return reply(response, 200, { manager:true });
+      if (String(request.query?.catalog || '') === '1') {
+        if (!isChiefAdmin) return reply(response, 403, { error:'Управление каталогом доступно только главному администратору.' });
+        return reply(response, 200, { ok:true, catalog:await database.listCatalogLaptops() });
+      }
       // The dashboard used to sign every attachment for up to fifty orders on
       // every refresh. That can mean hundreds of storage calls and makes the
       // whole panel look stuck. Documents are now signed only when opened.
@@ -95,6 +119,35 @@ export default async function handler(request, response) {
     }
     if (request.method !== 'POST') return reply(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
+    if (payload.action === 'save_catalog_laptop' || payload.action === 'set_catalog_visibility' || payload.action === 'create_catalog_image_upload') {
+      if (!isChiefAdmin) return reply(response, 403, { error:'Управление каталогом доступно только главному администратору.' });
+      if (payload.action === 'save_catalog_laptop') {
+        const laptop = catalogPayload(payload);
+        const laptopId = String(payload.laptopId || '');
+        const saved = laptopId ? await database.updateLaptop(laptopId, laptop) : await database.createLaptop(laptop);
+        if (!saved) return reply(response, 500, { error:'Не удалось сохранить модель.' });
+        return reply(response, laptopId ? 200 : 201, { ok:true, laptop:saved, message:laptopId ? 'Карточка ноутбука обновлена.' : 'Ноутбук добавлен в каталог.' });
+      }
+      if (payload.action === 'set_catalog_visibility') {
+        const laptopId = String(payload.laptopId || '');
+        const laptop = await database.getLaptop(laptopId);
+        if (!laptop) return reply(response, 404, { error:'Ноутбук не найден.' });
+        const updated = await database.updateLaptop(laptopId, { is_visible:Boolean(payload.isVisible) });
+        return reply(response, 200, { ok:true, laptop:updated, message:payload.isVisible ? 'Модель снова видна в каталоге.' : 'Модель скрыта из витрины. История заявок сохранена.' });
+      }
+      const contentType = String(payload.contentType || '').toLowerCase();
+      const byteSize = Number(payload.byteSize);
+      const allowedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+      if (!allowedImageTypes.has(contentType) || !Number.isInteger(byteSize) || byteSize < 1 || byteSize > 8 * 1024 * 1024) return reply(response, 400, { error:'Загрузите JPG, PNG или WEBP до 8 МБ.' });
+      const extension = contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp' : 'jpg';
+      const path = `catalog/${randomBytes(18).toString('hex')}.${extension}`;
+      const signed = await database.createSignedCatalogImageUpload(path);
+      const signedPath = signed?.url || signed?.signedURL || signed?.signedUrl;
+      if (!signedPath || !signed?.token) throw new Error('Не удалось подготовить загрузку изображения.');
+      const uploadUrl = signedPath.startsWith('http') ? signedPath : `${config.supabaseUrl}/storage/v1${signedPath}`;
+      const publicUrl = `${config.supabaseUrl}/storage/v1/object/public/catalog-images/${path}`;
+      return reply(response, 200, { ok:true, uploadUrl, token:signed.token, publicUrl });
+    }
     if (payload.action === 'create_document_download') {
       const order = await database.getOrder(String(payload.orderId || ''));
       const document = await database.getOrderDocument(String(payload.documentId || ''));

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-labelledby="title desc">
+  <title id="title">Фотография ноутбука готовится</title>
+  <desc id="desc">Тёмный фон Rentop с контуром ноутбука.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#07111e"/><stop offset="1" stop-color="#153e55"/></linearGradient>
+    <linearGradient id="screen" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#173e58"/><stop offset="1" stop-color="#0a1524"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="14"/></filter>
+  </defs>
+  <rect width="1200" height="800" fill="url(#bg)"/>
+  <ellipse cx="600" cy="654" rx="390" ry="42" fill="#6bdcff" opacity=".2" filter="url(#glow)"/>
+  <path d="M330 185h540a24 24 0 0 1 24 24v330H306V209a24 24 0 0 1 24-24Z" fill="#06101b" stroke="#8bdfff" stroke-width="7"/>
+  <rect x="336" y="215" width="528" height="294" rx="7" fill="url(#screen)"/>
+  <path d="M222 556h756l87 83H135l87-83Z" fill="#111d2b" stroke="#8bdfff" stroke-width="7" stroke-linejoin="round"/>
+  <path d="M487 587h226l20 20H467l20-20Z" fill="#08111d" stroke="#5ccced" stroke-width="4"/>
+  <text x="600" y="690" fill="#bdecff" font-family="Arial, sans-serif" font-size="29" font-weight="700" text-anchor="middle">ФОТО ГОТОВИТСЯ</text>
+  <text x="600" y="728" fill="#82a9bc" font-family="Arial, sans-serif" font-size="21" text-anchor="middle">Rentop.KG</text>
+</svg>

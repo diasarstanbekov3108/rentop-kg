@@ -15,8 +15,15 @@ const clearTestsButton = document.getElementById('manager-clear-tests');
 const testBakaiButton = document.getElementById('manager-test-bakai');
 const bakaiCheck = document.getElementById('manager-bakai-check');
 const returnAlert = document.getElementById('manager-return-alert');
+const catalogOpenButton = document.getElementById('manager-catalog-open');
+const catalogPanel = document.getElementById('manager-catalog-panel');
+const catalogCloseButton = document.getElementById('manager-catalog-close');
+const catalogForm = document.getElementById('manager-catalog-form');
+const catalogList = document.getElementById('manager-catalog-list');
+const catalogResetButton = document.getElementById('manager-catalog-reset');
 let orders = [];
 let rentableLaptops = [];
+let catalogLaptops = [];
 let filter = 'all';
 let pendingManagerPhone = '';
 let isChiefAdmin = false;
@@ -39,11 +46,62 @@ function closeDocumentViewer() { if (!documentViewer) return; documentViewer.hid
 function openDocumentViewer(url, name = 'Документ', contentType = '') { if (!documentViewer || !documentViewerContent || !url) return; const isPdf = contentType === 'application/pdf' || /\.pdf(?:[?#]|$)/i.test(name); const isVideo = contentType.startsWith('video/') || /\.(?:mp4|mov)(?:[?#]|$)/i.test(name); documentViewerContent.innerHTML = isVideo ? `<video controls preload="metadata" src="${escape(url)}">Ваш браузер не поддерживает просмотр видео.</video>` : isPdf ? `<iframe src="${escape(url)}" title="${escape(name)}"></iframe>` : `<img src="${escape(url)}" alt="${escape(name)}">`; documentViewer.hidden = false; document.body.style.overflow = 'hidden'; }
 async function api(method = 'GET', payload) { const url = method === 'GET' ? `/api/manager?refresh=${Date.now()}` : '/api/manager'; const controller = new AbortController(); const timeout = window.setTimeout(() => controller.abort(), 30_000); try { const response = await fetch(url, { method, credentials:'same-origin', cache:'no-store', signal:controller.signal, headers:payload ? { 'content-type':'application/json' } : {}, body:payload ? JSON.stringify(payload) : undefined }); const data = await response.json().catch(() => ({})); if (!response.ok) { const error = new Error(data.error || 'Не удалось загрузить панель.'); error.status = response.status; throw error; } return data; } catch (error) { if (error.name === 'AbortError') throw new Error('Панель не ответила за 30 секунд. Нажмите «Обновить» — предыдущий запрос уже остановлен.'); throw error; } finally { window.clearTimeout(timeout); } }
 async function accountApi(payload) { const response = await fetch('/api/account', { method:'POST', credentials:'same-origin', headers:{ 'content-type':'application/json' }, body:JSON.stringify(payload) }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || 'Не удалось выполнить вход.'); return data; }
+async function catalogApi(method = 'GET', payload) {
+  const response = await fetch(method === 'GET' ? `/api/manager?catalog=1&refresh=${Date.now()}` : '/api/manager', {
+    method, credentials:'same-origin', cache:'no-store', headers:payload ? { 'content-type':'application/json' } : {}, body:payload ? JSON.stringify(payload) : undefined
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || 'Не удалось обновить каталог.');
+  return data;
+}
 function phoneDigits(value) { let digits = String(value || '').replace(/\D/g, ''); if (digits.startsWith('996')) digits = digits.slice(3); if (digits.startsWith('0')) digits = digits.slice(1); return digits.slice(0, 9); }
 function normalizePhone(value) { const digits = phoneDigits(value); return digits.length === 9 ? `+996${digits}` : ''; }
 function formatPhone(value) { const digits = phoneDigits(value); return `+996${digits ? ` (${digits.slice(0, 3)}${digits.length > 3 ? ')' : ''}${digits.length > 3 ? ` ${digits.slice(3, 5)}` : ''}${digits.length > 5 ? `-${digits.slice(5, 7)}` : ''}${digits.length > 7 ? `-${digits.slice(7, 9)}` : ''}` : ' '}`; }
 function loginMessage(text = '', type = '') { if (!managerLoginStatus) return; managerLoginStatus.textContent = text; managerLoginStatus.className = `cabinet-status${type ? ` is-${type}` : ''}`; }
 function bakaiMessage(text = '', type = '') { if (!bakaiCheck) return; bakaiCheck.textContent = text; bakaiCheck.className = `manager-bakai-check${type ? ` is-${type}` : ''}`; bakaiCheck.hidden = !text; }
+
+function catalogField(laptop, ...keys) { for (const key of keys) if (laptop?.[key] !== undefined && laptop?.[key] !== null) return laptop[key]; return ''; }
+function catalogPrice(laptop) { return catalogField(laptop, 'price_text', 'priceText') || (laptop.category === 'rent' ? `От ${Number(catalogField(laptop, 'daily_rate', 'dailyRate') || 0).toLocaleString('ru-RU')} сом / день` : 'Цена уточняется'); }
+function resetCatalogForm() {
+  if (!catalogForm) return;
+  catalogForm.reset();
+  catalogForm.elements.laptopId.value = '';
+  catalogForm.elements.category.value = 'rent';
+  catalogForm.elements.badge.value = 'АРЕНДА';
+  catalogForm.elements.isVisible.checked = true;
+  catalogForm.elements.sortOrder.value = '0';
+}
+function renderCatalogManager() {
+  if (!catalogList) return;
+  if (!catalogLaptops.length) { catalogList.innerHTML = '<p class="manager-empty">В каталоге пока нет моделей.</p>'; return; }
+  catalogList.innerHTML = catalogLaptops.map(laptop => {
+    const visible = laptop.is_visible !== false;
+    const image = catalogField(laptop, 'image_url', 'image') || '/assets/catalog-placeholder.svg';
+    return `<article class="manager-catalog-item ${visible ? '' : 'is-hidden'}"><img src="${escape(image)}" alt="${escape(laptop.title || 'Ноутбук')}"><div><span>${escape(laptop.category === 'sale' ? 'ПРОДАЖА' : 'АРЕНДА')} · ${visible ? 'видна на сайте' : 'скрыта'}</span><h3>${escape(laptop.title || 'Без названия')}</h3><p>${escape(catalogPrice(laptop))} · ${escape(catalogField(laptop, 'cpu') || '—')} · ${escape(catalogField(laptop, 'ram') || '—')}</p></div><div class="manager-catalog-item-actions"><button type="button" class="secondary" data-catalog-edit="${escape(laptop.id)}">Изменить</button><button type="button" class="${visible ? 'danger' : 'secondary'}" data-catalog-visibility="${escape(laptop.id)}" data-visible="${visible ? '0' : '1'}">${visible ? 'Скрыть' : 'Показать'}</button></div></article>`;
+  }).join('');
+}
+async function loadCatalogManager() {
+  const data = await catalogApi();
+  catalogLaptops = data.catalog || [];
+  renderCatalogManager();
+}
+function editCatalogLaptop(id) {
+  const laptop = catalogLaptops.find(item => String(item.id) === String(id));
+  if (!laptop || !catalogForm) return;
+  catalogForm.elements.laptopId.value = laptop.id;
+  catalogForm.elements.title.value = laptop.title || '';
+  catalogForm.elements.category.value = laptop.category || 'rent';
+  catalogForm.elements.badge.value = laptop.badge || (laptop.category === 'sale' ? 'ПРОДАЖА' : 'АРЕНДА');
+  catalogForm.elements.cpu.value = laptop.cpu || '';
+  catalogForm.elements.ram.value = laptop.ram || '';
+  catalogForm.elements.storage.value = laptop.storage || '';
+  catalogForm.elements.dailyRate.value = catalogField(laptop, 'daily_rate', 'dailyRate') || '';
+  catalogForm.elements.priceText.value = catalogField(laptop, 'price_text', 'priceText') || '';
+  catalogForm.elements.sortOrder.value = laptop.sort_order || 0;
+  catalogForm.elements.description.value = laptop.description || '';
+  catalogForm.elements.isVisible.checked = laptop.is_visible !== false;
+  catalogForm.scrollIntoView({ behavior:'smooth', block:'start' });
+}
 
 function visibleOrders() {
   const query = String(searchInput?.value || '').trim().toLowerCase();
@@ -178,7 +236,7 @@ function render() {
   }).join('') : '<div class="manager-empty">По этому фильтру заявок нет.</div>';
 }
 
-async function load(silent = false) { if (activeLoad) return activeLoad; if (!silent) statusEl.textContent = 'Загружаем заявки…'; activeLoad = (async () => { try { const data = await api(); orders = data.orders || []; rentableLaptops = data.rentableLaptops || []; isChiefAdmin = Boolean(data.isChiefAdmin); gate.hidden = true; dashboard.hidden = false; if (!silent) statusEl.textContent = `Обновлено: ${new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit'}).format(new Date())}`; render(); } catch (error) { dashboard.hidden = true; gate.hidden = error.status !== 401; statusEl.textContent = error.status === 401 ? '' : error.message; } finally { activeLoad = null; } })(); return activeLoad; }
+async function load(silent = false) { if (activeLoad) return activeLoad; if (!silent) statusEl.textContent = 'Загружаем заявки…'; activeLoad = (async () => { try { const data = await api(); orders = data.orders || []; rentableLaptops = data.rentableLaptops || []; isChiefAdmin = Boolean(data.isChiefAdmin); if (catalogOpenButton) catalogOpenButton.hidden = !isChiefAdmin; gate.hidden = true; dashboard.hidden = false; if (!silent) statusEl.textContent = `Обновлено: ${new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit'}).format(new Date())}`; render(); } catch (error) { dashboard.hidden = true; if (catalogOpenButton) catalogOpenButton.hidden = true; gate.hidden = error.status !== 401; statusEl.textContent = error.status === 401 ? '' : error.message; } finally { activeLoad = null; } })(); return activeLoad; }
 function setFilter(nextFilter) { filter = nextFilter; document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item.dataset.filter === filter)); render(); }
 
 document.getElementById('manager-refresh').addEventListener('click', load);
@@ -485,4 +543,52 @@ managerPhoneInput?.addEventListener('input', () => { managerPhoneInput.value = f
 managerPhoneForm?.addEventListener('submit', async event => { event.preventDefault(); const phone = normalizePhone(managerPhoneInput.value); if (!phone) return loginMessage('Введите рабочий номер Кыргызстана: +996XXXXXXXXX.', 'error'); const button = managerPhoneForm.querySelector('button'); button.disabled = true; loginMessage('Отправляем код…'); try { await accountApi({ action:'request_code', phone }); pendingManagerPhone = phone; managerPhoneForm.hidden = true; managerCodeForm.hidden = false; managerCodeInput.focus(); loginMessage('Код отправлен. Введите 6 цифр из сообщения.', 'success'); } catch (error) { loginMessage(error.message, 'error'); } finally { button.disabled = false; } });
 managerCodeForm?.addEventListener('submit', async event => { event.preventDefault(); const code = managerCodeInput.value.replace(/\D/g, ''); if (code.length !== 6) return loginMessage('Введите все 6 цифр кода.', 'error'); const button = managerCodeForm.querySelector('button'); button.disabled = true; loginMessage('Проверяем доступ…'); try { await accountApi({ action:'verify_code', phone:pendingManagerPhone, code, remember:true }); await load(); if (!dashboard.hidden) loginMessage(''); else loginMessage('Этот номер не имеет доступа к панели менеджера.', 'error'); } catch (error) { loginMessage(error.message, 'error'); } finally { button.disabled = false; } });
 document.getElementById('manager-change-phone')?.addEventListener('click', () => { managerCodeForm.hidden = true; managerPhoneForm.hidden = false; managerCodeInput.value = ''; loginMessage(''); managerPhoneInput.focus(); });
+catalogOpenButton?.addEventListener('click', async () => {
+  dashboard.hidden = true;
+  catalogPanel.hidden = false;
+  statusEl.textContent = 'Загружаем каталог…';
+  try { await loadCatalogManager(); statusEl.textContent = 'Каталог загружен.'; } catch (error) { statusEl.textContent = error.message; }
+});
+catalogCloseButton?.addEventListener('click', () => { catalogPanel.hidden = true; dashboard.hidden = false; });
+catalogResetButton?.addEventListener('click', resetCatalogForm);
+catalogList?.addEventListener('click', async event => {
+  const edit = event.target.closest('[data-catalog-edit]');
+  if (edit) return editCatalogLaptop(edit.dataset.catalogEdit);
+  const visibility = event.target.closest('[data-catalog-visibility]');
+  if (!visibility) return;
+  const isVisible = visibility.dataset.visible === '1';
+  if (!window.confirm(isVisible ? 'Показать эту модель на сайте?' : 'Скрыть модель из витрины? Старые заявки сохранятся.')) return;
+  visibility.disabled = true;
+  try {
+    const result = await catalogApi('POST', { action:'set_catalog_visibility', laptopId:visibility.dataset.catalogVisibility, isVisible });
+    const index = catalogLaptops.findIndex(item => String(item.id) === String(visibility.dataset.catalogVisibility));
+    if (index >= 0) catalogLaptops[index] = { ...catalogLaptops[index], ...result.laptop };
+    renderCatalogManager(); statusEl.textContent = result.message;
+  } catch (error) { visibility.disabled = false; statusEl.textContent = error.message; }
+});
+catalogForm?.addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = catalogForm.querySelector('[type="submit"]');
+  const data = new FormData(catalogForm);
+  const file = data.get('imageFile');
+  button.disabled = true; button.textContent = 'Сохраняем…';
+  try {
+    let imageUrl = '';
+    if (file instanceof File && file.size) {
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 8 * 1024 * 1024) throw new Error('Загрузите JPG, PNG или WEBP до 8 МБ.');
+      button.textContent = 'Загружаем фото…';
+      const ticket = await catalogApi('POST', { action:'create_catalog_image_upload', contentType:file.type, byteSize:file.size });
+      const upload = await fetch(ticket.uploadUrl, { method:'PUT', headers:{ Authorization:`Bearer ${ticket.token}`, 'x-upsert':'false', 'content-type':file.type }, body:file });
+      if (!upload.ok) throw new Error('Не удалось загрузить фото. Проверьте соединение и попробуйте снова.');
+      imageUrl = ticket.publicUrl;
+    }
+    const existing = catalogLaptops.find(item => String(item.id) === String(data.get('laptopId')));
+    const payload = { action:'save_catalog_laptop', laptopId:data.get('laptopId'), title:data.get('title'), category:data.get('category'), badge:data.get('badge'), cpu:data.get('cpu'), ram:data.get('ram'), storage:data.get('storage'), dailyRate:data.get('dailyRate'), priceText:data.get('priceText'), sortOrder:data.get('sortOrder'), description:data.get('description'), isVisible:data.get('isVisible') === 'on', imageUrl:imageUrl || catalogField(existing, 'image_url', 'image') || '' };
+    const result = await catalogApi('POST', payload);
+    const index = catalogLaptops.findIndex(item => String(item.id) === String(result.laptop.id));
+    if (index >= 0) catalogLaptops[index] = result.laptop; else catalogLaptops.push(result.laptop);
+    catalogLaptops.sort((left, right) => Number(left.sort_order || 0) - Number(right.sort_order || 0) || Number(left.id || 0) - Number(right.id || 0));
+    renderCatalogManager(); resetCatalogForm(); statusEl.textContent = result.message;
+  } catch (error) { statusEl.textContent = error.message; } finally { button.disabled = false; button.textContent = 'Сохранить модель'; }
+});
 load();

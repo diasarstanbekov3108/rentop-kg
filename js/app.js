@@ -18,7 +18,9 @@ let filteredLaptops = [];
 let blockingRentals = [];
 let availabilityLoaded = false;
 let currentLaptop = null;
-let activeCategoryFilter = 'all';
+// Главная витрина Rentop — аренда. Продажа остаётся отдельной понятной
+// вкладкой, чтобы клиент случайно не смешивал два разных сценария.
+let activeCategoryFilter = 'rent';
 let activeUseFilter = 'all';
 let savedLaptopIds = new Set();
 let comparisonLaptopIds = new Set();
@@ -307,14 +309,14 @@ function renderLaptops(items, append = false, target = catalogGrid) {
         <h3>${formatLaptopTitle(laptop.title)}</h3>
         <div class="laptop-fit">
           <span class="laptop-fit-label">${taskLabel(laptop)}</span>
-          <p>${profile.description}</p>
+          <p>${laptop.description || profile.description}</p>
         </div>
         <ul class="specs-list">
           <li><span>Процессор</span>${laptop.cpu || '—'}</li>
           <li><span>Память</span>${laptop.ram || '—'}</li>
           <li><span>Накопитель</span>${laptop.storage || '—'}</li>
         </ul>
-        <p class="rental-includes">${isRent ? 'В аренду входит: подготовка, зарядка и сумка.' : 'Проверка устройства и консультация перед покупкой.'}</p>
+        <p class="rental-includes">${isRent ? 'В аренду входит: Word, офисные программы, подготовка, зарядка и сумка.' : 'Проверка устройства и консультация перед покупкой.'}</p>
       </div>
       <div>
         <div class="price-block">
@@ -389,12 +391,29 @@ function renderCatalogPreview(items) {
     const isRent = laptop.category === 'rent';
     const availability = cardAvailability(blockingRentals, laptop.id, todayIso());
     const profile = getCatalogProfile(laptop);
-    return `<article class="catalog-preview-card"><img src="${laptop.image}" alt="${laptop.title}" loading="lazy"><div class="catalog-preview-copy"><span>${availability.label}</span><h3>${formatLaptopTitle(laptop.title)}</h3><p><b>${taskLabel(laptop)}</b><small>${profile.description}</small></p><strong>${laptop.priceText || 'Цена уточняется'}</strong><div><button type="button" class="catalog-preview-reserve" data-id="${laptop.id}">${isRent ? 'Забронировать' : 'Купить / Предзаказ'}</button><button type="button" class="catalog-preview-more" data-open-full>Подробнее</button></div></div></article>`;
+    return `<article class="catalog-preview-card"><img src="${laptop.image}" alt="${laptop.title}" class="catalog-preview-image" loading="lazy" data-title="${laptop.title}" role="button" tabindex="0" aria-label="Открыть фото: ${laptop.title}"><div class="catalog-preview-copy"><span>${availability.label}</span><h3>${formatLaptopTitle(laptop.title)}</h3><p><b>${taskLabel(laptop)}</b><small>${laptop.description || profile.description}</small></p><strong>${laptop.priceText || 'Цена уточняется'}</strong><div><button type="button" class="catalog-preview-reserve" data-id="${laptop.id}">${isRent ? 'Забронировать' : 'Купить / Предзаказ'}</button><button type="button" class="catalog-preview-more" data-open-full>Подробнее</button></div></div></article>`;
   }).join('');
   catalogPreviewGrid.querySelectorAll('[data-id]').forEach(button => {
     button.addEventListener('click', (event) => openOrderModal(Number(event.currentTarget.dataset.id), { deliveryType: archaSelectionMode ? 'arca_locker' : 'delivery' }));
   });
   catalogPreviewGrid.querySelectorAll('[data-open-full]').forEach(button => button.addEventListener('click', () => setCatalogBrowser(true)));
+  catalogPreviewGrid.querySelectorAll('.catalog-preview-image').forEach(image => {
+    const openPreviewImage = () => {
+      if (!lightbox || !lightboxImg || !lightboxCaption) return;
+      lightboxImg.src = image.currentSrc || image.src;
+      lightboxImg.alt = image.alt || '';
+      lightboxCaption.textContent = image.dataset.title || image.alt || '';
+      lightbox.classList.add('active');
+      document.body.style.overflow = 'hidden';
+    };
+    image.addEventListener('click', openPreviewImage);
+    image.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        openPreviewImage();
+      }
+    });
+  });
 }
 
 function setCatalogBrowser(open) {
