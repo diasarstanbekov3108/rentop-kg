@@ -36,8 +36,8 @@
   
   <!-- Fonts & Styles -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261111-catalog-use-tags">
-  <link rel="stylesheet" href="css/premium.css">
+  <link rel="stylesheet" href="css/style.css?v=20261112-catalog-structure">
+  <link rel="stylesheet" href="css/premium.css?v=20261112-mascot-compact">
 
   <!-- Микроразметка Schema.org для Google -->
   <script type="application/ld+json">
@@ -143,8 +143,11 @@
   <!-- Каталог -->
   <section id="catalog">
     <div class="container">
-      <h2 class="section-title">Каталог устройств</h2>
-        <p class="catalog-intro">Выберите ноутбук для аренды или покупки. Используйте фильтры, чтобы быстрее найти подходящую модель.</p>
+      <div class="catalog-command-center">
+        <div class="catalog-heading">
+          <h2 class="section-title">Каталог устройств</h2>
+          <p class="catalog-intro">Выберите ноутбук для аренды или покупки. Используйте фильтры, чтобы быстрее найти подходящую модель.</p>
+        </div>
       <div class="archa-selection-notice" id="archa-selection-notice" hidden role="status">
         <div><strong>Получение через ARCHA POINT 24/7</strong><span>Шаг 1 из 2: выберите ноутбук — в заявке уже будет выбран постамат.</span></div>
         <button type="button" id="close-archa-selection" aria-label="Закрыть режим выбора через постамат">×</button>
@@ -165,6 +168,8 @@
           <button class="filter-btn active" data-filter="rent">Аренда</button>
           <button class="filter-btn" data-filter="sale">Продажа</button>
         </div>
+        <button type="button" class="catalog-open-all catalog-open-all-prominent" id="open-full-catalog">Смотреть весь каталог <span>→</span></button>
+      </div>
       </div>
       <section class="catalog-showcase" aria-label="Быстрый просмотр каталога">
         <p class="catalog-showcase-label">РЕКОМЕНДУЕМАЯ МОДЕЛЬ</p>
@@ -195,7 +200,6 @@
           <div class="skeleton-line"></div>
         </div>
         </div>
-        <button type="button" class="catalog-open-all" id="open-full-catalog">Смотреть весь каталог</button>
       </section>
     </div>
   </section>
