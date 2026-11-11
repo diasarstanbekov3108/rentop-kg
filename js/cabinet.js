@@ -379,9 +379,10 @@ function actionPanel(order) {
     if (order.delivery_type === 'delivery') {
       const issueVideo = (order.documents || []).find(document => document.kind === 'issue_video' && document.status !== 'rejected');
       const primary = issueVideo
-        ? `<button class="cabinet-action" data-confirm-pickup="${order.id}">Подтвердить получение</button>`
+        ? `<button class="cabinet-action" data-confirm-pickup="${order.id}">Ноутбук получил(а) — начать аренду</button>`
         : `<button class="cabinet-action" data-panel="issue-video" data-order="${order.id}">Прикрепить видео получения</button>`;
-      return `${documents}<section class="cabinet-pickup-flow is-ready"><div><strong>Доставка согласована</strong><span>Срок аренды начнётся после вашего подтверждения</span></div><p>Подтвердите получение только когда курьер передал вам ноутбук. Сначала снимите короткое видео ноутбука, экрана, зарядки и комплекта.</p><ol><li>Примите ноутбук от курьера.</li><li>Снимите видео комплекта и состояния устройства.</li><li>Прикрепите видео и подтвердите получение.</li></ol><div class="cabinet-actions">${primary}<button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Помощь</button>${whatsapp}</div></section>`;
+      const deliveryActor = order.delivery_dispatch_mode === 'third_party_courier' ? 'Ноутбук передан сторонней курьерской службе.' : 'Ноутбук передан курьеру Rentop.';
+      return `${documents}<section class="cabinet-pickup-flow is-ready"><div><strong>Ноутбук в пути</strong><span>Срок аренды начнётся только после вашего подтверждения</span></div><p>${deliveryActor} Перед отправкой с вами свяжутся для уточнения, а примерно за 10 минут до приезда предупредят. Подтвердите получение только когда ноутбук действительно передан вам. Сначала снимите короткое видео ноутбука, экрана, зарядки и комплекта.</p><ol><li>Примите ноутбук.</li><li>Снимите видео комплекта и состояния устройства.</li><li>Прикрепите видео и нажмите «Ноутбук получил(а)».</li></ol><div class="cabinet-actions">${primary}<button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Уточнить доставку</button>${whatsapp}</div></section>`;
     }
     const accessSent = order.locker_status === 'access_sent';
     const issueVideo = (order.documents || []).find(document => document.kind === 'issue_video' && document.status !== 'rejected');
@@ -544,7 +545,10 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   if (codeSent) { dashboardNotice.hidden = false; dashboardNotice.textContent = 'Код доступа ARCHA POINT отмечен как отправленный. Откройте заявку и пройдите получение.'; }
   if (loyaltyPanelEl) loyaltyPanelEl.innerHTML = loyaltyPanel(customerPromos, customerBenefits, cabinetOrders[0]?.id || '');
   rentalsEl.innerHTML = cabinetOrders.map(order => {
-    const state = statusInfo(order.status);
+    const baseState = statusInfo(order.status);
+    const state = order.delivery_type === 'delivery' && order.status === 'awaiting_pickup'
+      ? { ...baseState, title:'Ноутбук в пути', text:order.delivery_dispatch_mode === 'third_party_courier' ? 'Ноутбук передан сторонней курьерской службе. Перед отправкой с вами свяжутся для уточнения, а примерно за 10 минут до приезда предупредят. Подтвердите получение только после фактической передачи ноутбука.' : 'Ноутбук передан курьеру Rentop. Перед отправкой с вами свяжутся для уточнения, а примерно за 10 минут до приезда предупредят. Подтвердите получение только после фактической передачи ноутбука.' }
+      : baseState;
     const rentalTerm = order.rental_started_at && order.rental_ends_at ? `${moment(order.rental_started_at)} — ${moment(order.rental_ends_at)} (Бишкек)` : `${date(order.rental_start_date)} — ${date(order.rental_end_date)}`;
     return `<article class="cabinet-rental" data-rental="${order.id}"><div class="cabinet-rental-top"><div><h3>${escape(order.laptop_title || 'Ноутбук Rentop')}</h3><p class="cabinet-rental-ref">Заявка ${escape(order.reference)}</p></div><span class="cabinet-badge">${escape(state.title)}</span></div><div class="cabinet-progress" aria-label="Этап ${state.step} из 5"><span class="is-done"></span><span class="${state.step >= 2 ? 'is-done' : ''}"></span><span class="${state.step >= 3 ? 'is-done' : ''}"></span><span class="${state.step >= 4 ? 'is-done' : ''}"></span><span class="${state.step >= 5 ? 'is-done' : ''}"></span></div><p class="cabinet-next-step">${escape(state.text)}</p>${documentSummary(order)}${supportUpdates(order)}<div class="cabinet-rental-grid"><div>Срок<strong>${rentalTerm}</strong></div><div>Получение<strong>${escape(order.delivery_label)}</strong></div><div>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div>Скидка<strong>${Number(order.discount_percent || 0)}%</strong></div></div>${pickupInstruction(order)}${paymentPanel(order)}${actionPanel(order)}${requestForm(order)}</article>`;
   }).join('');

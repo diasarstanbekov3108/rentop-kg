@@ -422,14 +422,16 @@ export default async function handler(request, response) {
     }
     if (payload.action === 'mark_delivery_dispatched') {
       const order = await database.getOrder(String(payload.orderId || ''));
+      const dispatchMode = ['rentop_courier','third_party_courier'].includes(String(payload.dispatchMode || '')) ? String(payload.dispatchMode) : '';
       if (!order || order.delivery_type !== 'delivery') return reply(response, 400, { error:'Эта заявка не использует доставку курьером.' });
       if (order.status === 'awaiting_pickup' && order.locker_status === 'delivery_dispatched') return reply(response, 200, { ok:true, order, message:'Передача курьеру уже отмечена. Клиенту доступна видеофиксация и подтверждение фактического получения.' });
       if (order.status !== 'confirmed') return reply(response, 409, { error:'Передачу курьеру можно отметить только после подтверждения оплаты.' });
+      if (!dispatchMode) return reply(response, 400, { error:'Выберите способ доставки: курьер Rentop или сторонняя служба.' });
       if (String(order.delivery_address || '').trim().length < 8 || String(order.delivery_preferred_time || '').trim().length < 3) return reply(response, 409, { error:'В заявке нет полного адреса или желаемого времени доставки. Уточните их у клиента перед передачей курьеру.' });
       const now = new Date().toISOString();
-      const updated = await database.updateOrder(order.id, { status:'awaiting_pickup', locker_status:'delivery_dispatched', locker_loaded_at:now });
-      await database.createEvent({ order_id:order.id, event_type:'manager_marked_delivery_dispatched_from_web', actor_type:'manager', metadata:{ delivery_address:order.delivery_address, preferred_time:order.delivery_preferred_time } });
-      return reply(response, 200, { ok:true, order:updated, message:'Передача курьеру отмечена. Клиент увидит инструкцию снять видео и подтвердить фактическое получение.' });
+      const updated = await database.updateOrder(order.id, { status:'awaiting_pickup', locker_status:'delivery_dispatched', locker_loaded_at:now, delivery_dispatch_mode:dispatchMode, delivery_dispatched_at:now });
+      await database.createEvent({ order_id:order.id, event_type:'manager_marked_delivery_dispatched_from_web', actor_type:'manager', metadata:{ delivery_address:order.delivery_address, preferred_time:order.delivery_preferred_time, dispatch_mode:dispatchMode } });
+      return reply(response, 200, { ok:true, order:updated, message:dispatchMode === 'third_party_courier' ? 'Передача стороннему курьеру отмечена. Клиент увидит статус «Ноутбук в пути» и подтвердит получение после передачи.' : 'Передача курьеру Rentop отмечена. Клиент увидит статус «Ноутбук в пути» и подтвердит получение после передачи.' });
     }
     if (payload.action === 'mark_archa_access_sent' || payload.action === 'send_manual_pickup_code') {
       const order = await database.getOrder(String(payload.orderId || ''));

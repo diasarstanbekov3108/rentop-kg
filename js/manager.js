@@ -144,8 +144,8 @@ function archaControls(order) {
 }
 function deliveryControls(order) {
   if (order.delivery_type !== 'delivery') return '';
-  if (order.status === 'confirmed') return `<section class="manager-section manager-locker-instruction"><h3>Доставка курьером</h3><p><strong>Адрес:</strong> ${escape(order.delivery_address || 'не указан')}<br><strong>Желаемое время:</strong> ${escape(order.delivery_preferred_time || 'не указано')}<br><strong>Контакт:</strong> ${escape(order.delivery_contact_name || order.customer_name || '—')} · ${escape(order.delivery_contact_phone || order.customer_phone || '—')}</p><p>Сначала согласуйте точное время и отдельную стоимость доставки с клиентом. Нажимайте кнопку только после фактической передачи ноутбука курьеру.</p><div class="manager-actions"><button class="secondary" data-mark-delivery-dispatched="${order.id}">Ноутбук передан курьеру</button></div></section>`;
-  if (order.status === 'awaiting_pickup' && order.locker_status === 'delivery_dispatched') return `<div class="manager-request">Ноутбук передан курьеру. Клиент должен снять видео и подтвердить фактическое получение в личном кабинете. До его подтверждения срок аренды не начинается.</div>`;
+  if (order.status === 'confirmed') return `<section class="manager-section manager-locker-instruction"><h3>Доставка клиенту</h3><p><strong>Адрес:</strong> ${escape(order.delivery_address || 'не указан')}<br><strong>Желаемое время:</strong> ${escape(order.delivery_preferred_time || 'не указано')}<br><strong>Контакт:</strong> ${escape(order.delivery_contact_name || order.customer_name || '—')} · ${escape(order.delivery_contact_phone || order.customer_phone || '—')}</p><p>Перед отправкой подтвердите с клиентом детали. Курьер или менеджер звонит для уточнения, а примерно за 10 минут до приезда предупреждает клиента.</p><label>Способ доставки<select data-delivery-dispatch-mode><option value="rentop_courier">Курьер Rentop</option><option value="third_party_courier">Сторонний курьер (Яндекс и др.)</option></select></label><div class="manager-actions"><button class="secondary" data-mark-delivery-dispatched="${order.id}">Ноутбук в пути к клиенту</button></div></section>`;
+  if (order.status === 'awaiting_pickup' && order.locker_status === 'delivery_dispatched') { const courier = order.delivery_dispatch_mode === 'third_party_courier' ? 'Ноутбук передан сторонней курьерской службе.' : 'Ноутбук передан курьеру Rentop.'; return `<div class="manager-request"><strong>Ноутбук в пути</strong><br>${courier}<br>Перед отправкой клиенту звонят для уточнения, а примерно за 10 минут до приезда предупреждают о прибытии.<br>После физической передачи клиент снимет видео и нажмёт «Ноутбук получил(а) — начать аренду». До его подтверждения срок аренды не начинается.</div>`; }
   return '';
 }
 
@@ -406,9 +406,10 @@ ordersEl.addEventListener('click', async event => {
     payload = { action:'mark_locker_loaded', orderId:markLockerLoaded.dataset.markLockerLoaded };
     successMessage = 'Закладка зафиксирована. Ожидаем SMS-код клиенту от ARCHA POINT.';
   } else if (markDeliveryDispatched) {
-    if (!window.confirm('Подтвердите только после согласования времени и стоимости, а также фактической передачи ноутбука курьеру. Срок аренды начнётся лишь после подтверждения клиента.')) return;
-    payload = { action:'mark_delivery_dispatched', orderId:markDeliveryDispatched.dataset.markDeliveryDispatched };
-    successMessage = 'Передача курьеру отмечена. Клиенту доступна видеофиксация и подтверждение получения.';
+    const dispatchMode = markDeliveryDispatched.closest('.manager-order')?.querySelector('[data-delivery-dispatch-mode]')?.value || '';
+    if (!window.confirm('Подтвердите только после согласования времени и стоимости, когда ноутбук действительно вышел к клиенту. Срок аренды начнётся лишь после подтверждения клиента.')) return;
+    payload = { action:'mark_delivery_dispatched', orderId:markDeliveryDispatched.dataset.markDeliveryDispatched, dispatchMode };
+    successMessage = dispatchMode === 'third_party_courier' ? 'Передача стороннему курьеру отмечена. Клиент увидит статус «Ноутбук в пути».' : 'Передача курьеру Rentop отмечена. Клиент увидит статус «Ноутбук в пути».';
   } else if (manualPickupCode) {
     const code = window.prompt('Введите код получения, подтверждённый у ARCHA POINT. Он будет отправлен клиенту по SMS через Rentop:');
     if (!code?.trim()) return;
