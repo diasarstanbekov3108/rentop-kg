@@ -74,7 +74,10 @@ export function getFallbackLaptops() {
 }
 
 const CATALOG_CACHE_KEY = 'rentop-catalog-cache-v2';
-const CATALOG_CACHE_TTL_MS = 15 * 60 * 1000;
+// Каталог меняется менеджером: показывать скрытые/проданные модели даже
+// несколько минут недопустимо. Кэш используется лишь как запасной вариант
+// при недоступной сети, а не как основной источник витрины.
+const CATALOG_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 function readCatalogCache() {
   try {
@@ -106,12 +109,11 @@ export async function fetchLaptops() {
   if (!supabaseClient) return getFallbackLaptops();
 
   const cached = readCatalogCache();
-  if (cached?.length) return cached;
 
   try {
     const { data, error } = await withTimeout(supabaseClient.from('laptops').select('*'));
     if (error || !data || data.length === 0) {
-      return getFallbackLaptops();
+      return cached?.length ? cached : getFallbackLaptops();
     }
     const normalized = data
       .filter((laptop) => laptop.is_visible !== false)
@@ -123,10 +125,10 @@ export async function fetchLaptops() {
       }))
       .sort((left, right) => Number(left.sort_order || 0) - Number(right.sort_order || 0) || Number(left.id || 0) - Number(right.id || 0));
     writeCatalogCache(normalized);
-    return normalized;
+    return normalized.length ? normalized : [];
   } catch (e) {
-    console.warn('Ошибка подключения к Supabase, используем локальные данные:', e);
-    return getFallbackLaptops();
+    console.warn('Ошибка подключения к Supabase, используем сохранённый каталог:', e);
+    return cached?.length ? cached : getFallbackLaptops();
   }
 }
 
