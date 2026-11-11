@@ -89,6 +89,10 @@ export function createRentopBot({ config, telegram, database }) {
   // inspection gates. Older Telegram admin buttons do not carry all of that
   // context, so they must never be able to update an order on their own.
   const managerPanelUrl = `${config.publicAppUrl.replace(/\/$/, '')}/manager`;
+  const customerCabinetUrl = `${config.publicAppUrl.replace(/\/$/, '')}/account`;
+  // Keep the legacy customer conversation code below as a recovery reference,
+  // but never enable it until it has full parity with the cabinet workflow.
+  const legacyCustomerBotFlowEnabled = false;
   const managerPanelKeyboard = {
     reply_markup: {
       inline_keyboard: [[{ text: 'Открыть панель менеджера', url: managerPanelUrl }]]
@@ -104,6 +108,23 @@ export function createRentopBot({ config, telegram, database }) {
       'Эта кнопка относится к старому сценарию бота и больше не меняет заявку. ' +
       'Откройте панель менеджера: там работают актуальные этапы оплаты, выдачи, продления, замены и возврата.',
       managerPanelKeyboard
+    );
+  }
+
+  const customerCabinetKeyboard = {
+    reply_markup: {
+      inline_keyboard: [[{ text: 'Открыть личный кабинет Rentop', url: customerCabinetUrl }]]
+    }
+  };
+
+  async function directCustomerToCabinet(chatId, callbackId = null) {
+    if (callbackId) {
+      await telegram.answerCallback(callbackId, 'Продолжите в личном кабинете Rentop.');
+    }
+    return telegram.sendMessage(
+      chatId,
+      'Чтобы не потерять данные и не создать дубль, оформление, документы, выдача, продление и возврат ведутся в личном кабинете Rentop.',
+      customerCabinetKeyboard
     );
   }
 
@@ -696,37 +717,11 @@ export function createRentopBot({ config, telegram, database }) {
     return database.saveSession({ ...session, ...patch, updated_at: new Date().toISOString() });
   }
 
-  async function startClient(message, token) {
-    if (!token) {
-      return telegram.sendMessage(message.chat.id,
-        'Здравствуйте! Здесь можно открыть ваши аренды или создать новую заявку на сайте Rentop.',
-        customerMenuKeyboard()
-      );
-    }
-
-    const order = await database.getOrderByToken(token);
-    if (!order || ['cancelled', 'rejected', 'expired', 'completed'].includes(order.status)) {
-      await telegram.sendMessage(message.chat.id, 'Ссылка на заявку недействительна. Пожалуйста, создайте новую заявку на сайте Rentop KG.');
-      return;
-    }
-    if (order.telegram_user_id && String(order.telegram_user_id) !== String(message.from.id)) {
-      await telegram.sendMessage(message.chat.id, 'Эта заявка уже открыта в другом Telegram-аккаунте.');
-      return;
-    }
-
-    await database.updateOrder(order.id, { telegram_user_id: message.from.id, telegram_chat_id: message.chat.id });
-    const existing = await database.getSession(order.id);
-    const initialStep = order.customer_name ? 'awaiting_phone_contact' : 'awaiting_name';
-    const session = existing || await database.saveSession({
-      order_id: order.id,
-      telegram_user_id: message.from.id,
-      telegram_chat_id: message.chat.id,
-      step: initialStep
-    });
-
-    // Черновики не засоряют рабочую группу: отдельная тема создаётся после полного пакета документов.
-
-    return sendOrderResume(order, session, message.chat.id);
+  async function startClient(message) {
+    // Website cabinet replaced the previous Telegram-only application flow.
+    // Keeping the old token path active would let it create orders and
+    // requests outside the validation used by the website.
+    return directCustomerToCabinet(message.chat.id);
   }
 
   async function sendForReview(order, session) {
@@ -749,12 +744,11 @@ export function createRentopBot({ config, telegram, database }) {
 
   async function handleClientMessage(message) {
     const text = message.text?.trim();
-    if (text === '🏠 Мои аренды') return sendMyRentals(message.chat.id, message.from.id);
-    if (text === '➕ Новая заявка') return sendNewApplication(message.chat.id);
+    if (text === '🏠 Мои аренды' || text === '➕ Новая заявка') return directCustomerToCabinet(message.chat.id);
     const session = await database.getSessionByUser(message.from.id);
-    if (!session || String(session.telegram_chat_id) !== String(message.chat.id)) return;
+    if (!session || String(session.telegram_chat_id) !== String(message.chat.id)) return directCustomerToCabinet(message.chat.id);
     const order = await database.getOrder(session.order_id);
-    if (!order) return;
+    if (!order) return directCustomerToCabinet(message.chat.id);
 
     if (session.step === 'awaiting_support_message') {
       if (!text || text.length < 5) return telegram.sendMessage(message.chat.id, 'Опишите, пожалуйста, что произошло: где, когда и в чём проблема.');
@@ -763,6 +757,17 @@ export function createRentopBot({ config, telegram, database }) {
       await openCustomerSupportCase(order, session, message.from.id, kind, text.slice(0, 1500));
       return telegram.sendMessage(message.chat.id, 'Спасибо, описание передано в поддержку. Менеджер изучит обращение и свяжется с вами.');
     }
+    if (text === '💬 У меня вопрос') {
+      await saveStep(session, { step: 'awaiting_support_message', support_kind_pending: 'rentop' });
+      return telegram.sendMessage(message.chat.id, 'Опишите, пожалуйста, ваш вопрос одним сообщением. Мы передадим его менеджеру Rentop.');
+    }
+    if (text === '🛠 Проблема с ARCHA POINT') {
+      await saveStep(session, { step: 'awaiting_support_message', support_kind_pending: 'archa' });
+      return telegram.sendMessage(message.chat.id, 'Опишите, пожалуйста, проблему с ARCHA POINT: локация, ячейка, код или другое. Мы передадим сообщение менеджеру.');
+    }
+
+    if (!legacyCustomerBotFlowEnabled) return directCustomerToCabinet(message.chat.id);
+
     if (session.step === 'awaiting_extension_days') {
       if (!/^\d{1,2}$/.test(text || '')) {
         return telegram.sendMessage(message.chat.id, 'Введите количество дней целым числом от 1 до 30. Например: 5');
@@ -1065,6 +1070,12 @@ export function createRentopBot({ config, telegram, database }) {
     const clientActions = new Set(['bank', 'document_type', 'offer_accept', 'support', 'archa_support', 'caseok', 'pickup_ready', 'pickup_received', 'extend_request', 'extend_choose', 'extend_custom', 'extension_bank', 'early_return', 'my_rentals', 'new_application', 'rental_open']);
     if (!isAdmin(callback.from.id) && !clientActions.has(action)) {
       return telegram.answerCallback(callback.id, 'Нет прав. Проверьте RENTOP_ADMIN_USER_IDS в настройках сервера.');
+    }
+    // Telegram remains a notification and support channel. The cabinet is the
+    // only place where a customer can change an order, preventing an old bot
+    // button from creating a parallel extension, return or payment flow.
+    if (!isAdmin(callback.from.id) && !['support', 'archa_support', 'caseok'].includes(action)) {
+      return directCustomerToCabinet(callback.message.chat.id, callback.id);
     }
     if (action === 'my_rentals') {
       await sendMyRentals(callback.message.chat.id, callback.from.id);
