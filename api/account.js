@@ -144,7 +144,7 @@ export default async function handler(request, response) {
         if (order.status !== 'draft') return json(response, 409, { error:'Адрес уже зафиксирован в заявке. Для исправления обратитесь к менеджеру.' });
         const residenceAddress = String(payload.residenceAddress || '').trim().replace(/\s+/g, ' ').slice(0, 500);
         const supportingDocumentType = String(payload.supportingDocumentType || '').trim().replace(/\s+/g, ' ').slice(0, 120);
-        if (residenceAddress.length < 8) return json(response, 400, { error:'Укажите полный адрес проживания: город, улица, дом и квартира (если есть).' });
+        if (residenceAddress.length < 15 || !/\d/.test(residenceAddress)) return json(response, 400, { error:'Укажите полный адрес проживания: город, район, улицу, номер дома и квартиру.' });
         if (supportingDocumentType.length < 3) return json(response, 400, { error:'Выберите тип официального подтверждающего документа.' });
         const profile = await database.getCustomerProfile(session.phone).catch(() => null);
         const updated = await database.updateOrder(order.id, { residence_address:residenceAddress, supporting_document_type:supportingDocumentType, customer_name:profile?.full_name || order.customer_name || null });
@@ -263,8 +263,13 @@ export default async function handler(request, response) {
         }
         const benefitType = String(payload.benefitType || '');
         if (kind === 'benefit_proof' && !BENEFIT_TYPES.has(benefitType)) return json(response, 400, { error:'Выберите категорию социальной скидки.' });
-        const latestOfKind = (await database.listOrderDocuments(order.id)).find(document => document.kind === kind);
-        if (latestOfKind && latestOfKind.status !== 'rejected') return json(response, 409, { error:'Этот документ уже отправлен. Дождитесь проверки или запросите исправление.' });
+        const orderDocuments = await database.listOrderDocuments(order.id);
+        const sameUpload = orderDocuments.find(document => document.kind === kind && document.storage_path === path);
+        // A connection can fail after the database accepted a file but before
+        // the browser received the response. An exact retry is safe to accept.
+        if (sameUpload) return json(response, 200, { ok:true, document:sameUpload, message:'Файл уже был безопасно сохранён в заявке.' });
+        const latestOfKind = orderDocuments.find(document => document.kind === kind);
+        if (latestOfKind && latestOfKind.status !== 'rejected') return json(response, 409, { error:`В раздел «${documentLabel(kind)}» уже отправлен файл и он ждёт проверки. Это не запрет на одинаковые файлы в разных разделах: повторно загружать нельзя только тот же раздел. Для замены попросите исправление у менеджера.` });
         const document = await database.registerOrderDocument({ order_id:order.id, kind, storage_path:path, file_name:fileName, content_type:contentType, byte_size:byteSize });
         let benefit = null;
         if (kind === 'benefit_proof') {

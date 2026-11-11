@@ -467,10 +467,10 @@ function panelMarkup(kind, orderId, documentState = {}) {
     const replacement = documentState.mode === 'replacement';
     const kinds = replacement ? String(documentState.kinds || '').split(',').filter(Boolean) : ['identity_front', 'identity_back', 'selfie', 'supporting'];
     const requiredKinds = replacement ? kinds : ['identity_front', 'identity_back', 'selfie', 'supporting'];
-    const smsConsent = !replacement && offerSmsConsentRequired && !documentState.offerSmsVerified ? `<div class="cabinet-offer-box"><strong>Подтверждение оферты одноразовым кодом</strong><p>После ознакомления подтвердите согласие кодом, отправленным на номер из заявки.</p><button class="cabinet-action secondary" type="button" data-request-offer-sms="${orderId}">Получить код согласия</button><div class="cabinet-inline-row" data-offer-sms-verify hidden><input inputmode="numeric" maxlength="6" placeholder="Код из сообщения" aria-label="Код согласия"><button class="cabinet-action" type="button" data-verify-offer-sms="${orderId}">Подтвердить оферту</button></div></div>` : '';
-    const offer = replacement ? '' : `<div class="cabinet-offer-compact"><button class="cabinet-action secondary" type="button" data-open-offer="true">Открыть договор-оферту</button><label class="cabinet-document-consent"><input name="offerConsent" type="checkbox" required><span>Я ознакомился(лась) с публичной офертой и принимаю её условия.</span></label>${smsConsent}</div>`;
+    const smsConsent = !replacement && offerSmsConsentRequired && !documentState.offerSmsVerified ? `<div class="cabinet-offer-sms"><p>3. Подтвердите согласие кодом из SMS на номер заявки.</p><button class="cabinet-action secondary" type="button" data-request-offer-sms="${orderId}">Получить код по SMS</button><div class="cabinet-inline-row" data-offer-sms-verify hidden><input inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 цифр из SMS" aria-label="Код подтверждения оферты"><button class="cabinet-action" type="button" data-verify-offer-sms="${orderId}">Подтвердить</button></div></div>` : '<p class="cabinet-offer-confirmed">✓ Согласие с офертой уже подтверждено кодом.</p>';
+    const offer = replacement ? '' : `<section class="cabinet-offer-flow"><strong>Договор-оферта и подтверждение</strong><p>Всё оформляется здесь, в одном шаге — без перехода в другие разделы.</p><button class="cabinet-action secondary" type="button" data-open-offer="true">1. Открыть договор-оферту</button><label class="cabinet-document-consent"><input name="offerConsent" type="checkbox" required><span>2. Я прочитал(а) договор-оферту и принимаю его условия.</span></label>${smsConsent}</section>`;
     const warnings = replacement ? '' : `<details class="cabinet-safety-notice"><summary>Важно о документах и технике</summary><p>Подделка, использование чужих или заведомо недостоверных документов может повлечь ответственность по законодательству Кыргызской Республики. Rentop проверяет документы до выдачи.</p><p>На выдаваемом оборудовании установлены средства контроля местонахождения и целостности, включая GPS-трекеры и гарантийные пломбы. Несанкционированное вскрытие, нарушение пломб или попытка отключить средства контроля считаются нарушением правил эксплуатации и могут повлечь штраф, возмещение ущерба и обращение в уполномоченные органы.</p></details>`;
-    const residence = replacement ? '' : `<label>Адрес проживания <span>обязательно</span></label><textarea name="residenceAddress" required minlength="8" maxlength="500" placeholder="Город, район, улица, дом, квартира (если есть)"></textarea><p class="cabinet-form-hint">Адрес фиксируется в заявке и в защищённом досье. Менеджер сверит его с официальным подтверждающим документом.</p>`;
+    const residence = replacement ? '' : `<label>Полный адрес проживания <span>обязательно</span></label><textarea name="residenceAddress" required minlength="15" maxlength="500" autocomplete="street-address" placeholder="г. Бишкек, район, ул. Пример, д. 12, кв. 34"></textarea><p class="cabinet-form-hint">Укажите город, район, улицу, номер дома и квартиру. Адрес фиксируется в защищённой заявке и сверяется с подтверждающим документом.</p>`;
     const delivery = replacement ? '' : documentState.deliveryType === 'arca_locker'
       ? `<section class="cabinet-delivery-inline"><strong>Получение через ARCHA POINT</strong><p>Выберите удобную точку. Получение из ячейки включено в тариф аренды.</p><label>Точка ARCHA POINT <span>обязательно</span></label><select name="lockerAddress" required><option value="">Выберите точку</option>${ARCHA_LOCATIONS.map(location => `<option value="${escape(location.value)}" ${documentState.lockerAddress === location.value ? 'selected' : ''}>${escape(location.value)} · ${escape(location.hours)}</option>`).join('')}</select></section>`
       : `<section class="cabinet-delivery-inline"><strong>Доставка курьером</strong><p>Укажите адрес и удобный интервал. Доставка платная: точную стоимость и время подтвердит менеджер до выдачи.</p><label>Адрес доставки <span>обязательно</span></label><textarea name="deliveryAddress" required minlength="8" maxlength="500" placeholder="Город, район, улица, дом, квартира (если есть)">${escape(documentState.deliveryAddress || '')}</textarea><label>Желаемое время доставки <span>обязательно</span></label><input name="deliveryPreferredTime" required minlength="3" maxlength="300" value="${escape(documentState.deliveryPreferredTime || '')}" placeholder="Например: после 20:00, по согласованию"></section>`;
@@ -648,7 +648,7 @@ rentalsEl?.addEventListener('click', event => {
     request('POST', { action:'accept_offer', orderId:requestOfferSms.dataset.requestOfferSms })
       .then(() => request('POST', { action:'request_offer_sms_consent', orderId:requestOfferSms.dataset.requestOfferSms }))
       .then(() => {
-        const verify = requestOfferSms.closest('.cabinet-offer-box')?.querySelector('[data-offer-sms-verify]');
+        const verify = requestOfferSms.closest('.cabinet-offer-flow')?.querySelector('[data-offer-sms-verify]');
         if (verify) verify.hidden = false;
         let secondsLeft = 60;
         requestOfferSms.textContent = `Повторить через ${secondsLeft} сек.`;
@@ -669,7 +669,7 @@ rentalsEl?.addEventListener('click', event => {
   }
   const verifyOfferSms = event.target.closest('[data-verify-offer-sms]');
   if (verifyOfferSms) {
-    const code = verifyOfferSms.closest('.cabinet-offer-box')?.querySelector('[data-offer-sms-verify] input')?.value?.replace(/\D/g, '');
+    const code = verifyOfferSms.closest('.cabinet-offer-flow')?.querySelector('[data-offer-sms-verify] input')?.value?.replace(/\D/g, '');
     if (!/^\d{6}$/.test(code || '')) return message('Введите 6 цифр из сообщения.', 'error');
     verifyOfferSms.disabled = true;
     request('POST', { action:'verify_offer_sms_consent', orderId:verifyOfferSms.dataset.verifyOfferSms, code })
@@ -679,8 +679,8 @@ rentalsEl?.addEventListener('click', event => {
         // make passport photos disappear right after the OTP was accepted.
         const form = verifyOfferSms.closest('form');
         if (form) form.dataset.offerSmsVerified = '1';
-        const box = verifyOfferSms.closest('.cabinet-offer-box');
-        if (box) box.innerHTML = '<strong>✓ Оферта подтверждена по SMS</strong><p>Согласие зафиксировано. Выбранные документы сохранены в форме — теперь отправьте их на проверку.</p>';
+        const box = verifyOfferSms.closest('.cabinet-offer-sms');
+        if (box) box.innerHTML = '<p class="cabinet-offer-confirmed">✓ Оферта подтверждена по SMS. Выбранные документы остались в форме — теперь отправьте их на проверку.</p>';
         message('Согласие с офертой подтверждено и зафиксировано.', 'success');
       })
       .catch(error => { verifyOfferSms.disabled = false; message(error.message, 'error'); });
@@ -914,7 +914,7 @@ rentalsEl?.addEventListener('submit', async event => {
     if (!isEvidence && !isReplacement && documentForm.elements.deliveryPreferredTime && deliveryPreferredTime.length < 3) return formError('Укажите удобное время доставки.');
     if (!isEvidence && !isReplacement && documentForm.elements.lockerAddress && lockerAddress.length < 8) return formError('Выберите точку ARCHA POINT.');
     const residenceAddress = String(documentForm.elements.residenceAddress?.value || '').trim();
-    if (!isEvidence && !isReplacement && residenceAddress.length < 8) return formError('Укажите полный адрес проживания: город, улица, дом и квартира (если есть).');
+    if (!isEvidence && !isReplacement && (residenceAddress.length < 15 || !/\d/.test(residenceAddress))) return formError('Укажите полный адрес проживания: город, район, улицу, номер дома и квартиру.');
     const fullName = String(documentForm.elements.fullName?.value || '').trim();
     if (!isEvidence && !isReplacement && !isValidFullName(customerProfile?.full_name) && !isValidFullName(fullName)) return formError('Укажите фамилию, имя и отчество — как в документе.');
     const unsupported = files.find(({ file }) => !['image/jpeg', 'image/png', 'application/pdf', 'video/mp4', 'video/quicktime'].includes(contentTypeForFile(file)));
@@ -942,9 +942,22 @@ rentalsEl?.addEventListener('submit', async event => {
         const isVideo = ['video/mp4', 'video/quicktime'].includes(contentType);
         if (file.size > (isVideo ? 50 : 8) * 1024 * 1024) throw new Error(`${isVideo ? 'Видео' : 'Фото или документ'} «${file.name}» больше ${isVideo ? 50 : 8} МБ. Уменьшите размер и выберите файл заново.`);
         const ticket = await request('POST', { action:'create_document_upload', orderId:documentForm.dataset.order, kind, fileName, contentType, byteSize:file.size });
-        const upload = await fetch(ticket.uploadUrl, { method:'PUT', headers:{ Authorization:`Bearer ${ticket.token}`, 'x-upsert':'false', 'content-type':contentType }, body:file });
-        if (!upload.ok) throw new Error('Не удалось загрузить файл. Проверьте соединение и попробуйте снова.');
-        await request('POST', { action:'register_document', orderId:documentForm.dataset.order, kind, path:ticket.path, fileName, contentType, byteSize:file.size, benefitType:documentForm.elements.benefitType?.value || documentForm.dataset.benefitType || '' });
+        let upload = await fetch(ticket.uploadUrl, { method:'PUT', headers:{ Authorization:`Bearer ${ticket.token}`, 'x-upsert':'false', 'content-type':contentType }, body:file });
+        if (!upload.ok) {
+          button.textContent = `Повторяем загрузку ${index + 1}/${files.length}…`;
+          upload = await fetch(ticket.uploadUrl, { method:'PUT', headers:{ Authorization:`Bearer ${ticket.token}`, 'x-upsert':'false', 'content-type':contentType }, body:file });
+        }
+        if (!upload.ok) throw new Error(`Не удалось загрузить «${file.name}». Файл остался выбранным в форме: проверьте соединение и нажмите «Загрузить документы» ещё раз.`);
+        const registerPayload = { action:'register_document', orderId:documentForm.dataset.order, kind, path:ticket.path, fileName, contentType, byteSize:file.size, benefitType:documentForm.elements.benefitType?.value || documentForm.dataset.benefitType || '' };
+        try {
+          await request('POST', registerPayload);
+        } catch (error) {
+          // Retry once with the same storage path. The API treats an exact
+          // retry as success, so an interrupted response cannot duplicate or
+          // lose a document that has already reached the protected storage.
+          button.textContent = `Проверяем сохранение ${index + 1}/${files.length}…`;
+          await request('POST', registerPayload);
+        }
       }
       message(documentForm.dataset.requiredKinds === 'benefit_proof' ? 'Льготный документ отправлен. Ожидайте проверки менеджером.' : isEvidence ? 'Видео загружено. Выполните следующий шаг в заявке.' : 'Документы загружены. Менеджер проверит их и сообщит следующий шаг.', 'success');
       const fresh = await request('GET');
