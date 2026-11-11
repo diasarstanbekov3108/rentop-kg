@@ -474,7 +474,7 @@ function panelMarkup(kind, orderId, documentState = {}) {
     const replacement = documentState.mode === 'replacement';
     const kinds = replacement ? String(documentState.kinds || '').split(',').filter(Boolean) : ['identity_front', 'identity_back', 'selfie', 'supporting'];
     const requiredKinds = replacement ? kinds : ['identity_front', 'identity_back', 'selfie', 'supporting'];
-    const smsConsent = !replacement && offerSmsConsentRequired && !documentState.offerSmsVerified ? `<div class="cabinet-offer-sms"><p>3. Подтвердите согласие кодом из SMS на номер заявки.</p><button class="cabinet-action secondary" type="button" data-request-offer-sms="${orderId}">Получить код по SMS</button><div class="cabinet-inline-row" data-offer-sms-verify hidden><input inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 цифр из SMS" aria-label="Код подтверждения оферты"><button class="cabinet-action" type="button" data-verify-offer-sms="${orderId}">Подтвердить</button></div></div>` : '<p class="cabinet-offer-confirmed">✓ Согласие с офертой уже подтверждено кодом.</p>';
+    const smsConsent = !replacement && offerSmsConsentRequired && !documentState.offerSmsVerified ? `<div class="cabinet-offer-sms"><p>3. Подтвердите согласие кодом из SMS. Код придёт только на номер, с которым вы вошли в Rentop: <strong>${escape(documentState.phone || 'ваш подтверждённый номер')}</strong>.</p><button class="cabinet-action secondary" type="button" data-request-offer-sms="${orderId}">Получить код по SMS</button><p class="cabinet-offer-sms-status" data-offer-sms-status aria-live="polite"></p><div class="cabinet-inline-row" data-offer-sms-verify hidden><input inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 цифр из SMS" aria-label="Код подтверждения оферты"><button class="cabinet-action" type="button" data-verify-offer-sms="${orderId}">Подтвердить код</button></div></div>` : '<p class="cabinet-offer-confirmed">✓ Согласие с офертой уже подтверждено кодом.</p>';
     const offer = replacement ? '' : `<section class="cabinet-offer-flow"><strong>Договор-оферта и подтверждение</strong><p>Всё оформляется здесь, в одном шаге — без перехода в другие разделы.</p><button class="cabinet-action secondary" type="button" data-open-offer="true">1. Открыть договор-оферту</button><label class="cabinet-document-consent"><input name="offerConsent" type="checkbox" required><span>2. Я прочитал(а) договор-оферту и принимаю его условия.</span></label>${smsConsent}</section>`;
     const warnings = replacement ? '' : `<details class="cabinet-safety-notice"><summary>Важно о документах и технике</summary><p>Подделка, использование чужих или заведомо недостоверных документов может повлечь ответственность по законодательству Кыргызской Республики. Rentop проверяет документы до выдачи.</p><p>На выдаваемом оборудовании установлены средства контроля местонахождения и целостности, включая GPS-трекеры и гарантийные пломбы. Несанкционированное вскрытие, нарушение пломб или попытка отключить средства контроля считаются нарушением правил эксплуатации и могут повлечь штраф, возмещение ущерба и обращение в уполномоченные органы.</p></details>`;
     const residence = replacement ? '' : `<label>Полный адрес проживания <span>обязательно</span></label><textarea name="residenceAddress" required minlength="15" maxlength="500" autocomplete="street-address" placeholder="г. Бишкек, район, ул. Пример, д. 12, кв. 34"></textarea><p class="cabinet-form-hint">Укажите город, район, улицу, номер дома и квартиру. Адрес фиксируется в защищённой заявке и сверяется с подтверждающим документом.</p>`;
@@ -654,12 +654,18 @@ rentalsEl?.addEventListener('click', event => {
   const requestOfferSms = event.target.closest('[data-request-offer-sms]');
   if (requestOfferSms) {
     if (!requestOfferSms.closest('form')?.elements.offerConsent?.checked) return message('Сначала отметьте согласие с условиями оферты.', 'error');
+    const offerSms = requestOfferSms.closest('.cabinet-offer-sms');
+    const status = offerSms?.querySelector('[data-offer-sms-status]');
+    const originalText = requestOfferSms.textContent;
     requestOfferSms.disabled = true;
+    requestOfferSms.textContent = 'Отправляем код…';
+    if (status) status.textContent = 'Отправляем SMS на подтверждённый номер…';
     request('POST', { action:'accept_offer', orderId:requestOfferSms.dataset.requestOfferSms })
       .then(() => request('POST', { action:'request_offer_sms_consent', orderId:requestOfferSms.dataset.requestOfferSms }))
       .then(() => {
         const verify = requestOfferSms.closest('.cabinet-offer-flow')?.querySelector('[data-offer-sms-verify]');
         if (verify) verify.hidden = false;
+        if (status) status.textContent = 'SMS отправлено. Введите код из сообщения.';
         let secondsLeft = 60;
         requestOfferSms.textContent = `Повторить через ${secondsLeft} сек.`;
         const retryTimer = window.setInterval(() => {
@@ -674,14 +680,18 @@ rentalsEl?.addEventListener('click', event => {
         }, 1000);
         message('Код согласия отправлен.', 'success');
       })
-      .catch(error => { requestOfferSms.disabled = false; message(error.message, 'error'); });
+      .catch(error => { requestOfferSms.disabled = false; requestOfferSms.textContent = originalText || 'Отправить код повторно'; if (status) status.textContent = `Не удалось отправить код: ${error.message}`; message(error.message, 'error'); });
     return;
   }
   const verifyOfferSms = event.target.closest('[data-verify-offer-sms]');
   if (verifyOfferSms) {
     const code = verifyOfferSms.closest('.cabinet-offer-flow')?.querySelector('[data-offer-sms-verify] input')?.value?.replace(/\D/g, '');
     if (!/^\d{6}$/.test(code || '')) return message('Введите 6 цифр из сообщения.', 'error');
+    const originalText = verifyOfferSms.textContent;
+    const status = verifyOfferSms.closest('.cabinet-offer-sms')?.querySelector('[data-offer-sms-status]');
     verifyOfferSms.disabled = true;
+    verifyOfferSms.textContent = 'Проверяем код…';
+    if (status) status.textContent = 'Проверяем код…';
     request('POST', { action:'verify_offer_sms_consent', orderId:verifyOfferSms.dataset.verifyOfferSms, code })
       .then(() => {
         // Do not redraw the whole rental card here. Browsers deliberately do
@@ -693,7 +703,7 @@ rentalsEl?.addEventListener('click', event => {
         if (box) box.innerHTML = '<p class="cabinet-offer-confirmed">✓ Оферта подтверждена по SMS. Выбранные документы остались в форме — теперь отправьте их на проверку.</p>';
         message('Согласие с офертой подтверждено и зафиксировано.', 'success');
       })
-      .catch(error => { verifyOfferSms.disabled = false; message(error.message, 'error'); });
+      .catch(error => { verifyOfferSms.disabled = false; verifyOfferSms.textContent = originalText || 'Подтвердить код'; if (status) status.textContent = error.message.includes('истёк') ? 'Срок действия кода закончился. Нажмите «Отправить код повторно».' : error.message; message(error.message, 'error'); });
     return;
   }
   const fileTrigger = event.target.closest('[data-file-trigger]');

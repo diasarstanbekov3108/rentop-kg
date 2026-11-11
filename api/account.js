@@ -190,7 +190,11 @@ export default async function handler(request, response) {
         if (!order.offer_accepted_at) return json(response, 409, { error:'Сначала откройте оферту и подтвердите, что ознакомились с её условиями.' });
         if (order.offer_otp_verified_at) return json(response, 200, { ok:true, alreadyVerified:true });
         if (!config.offerOtpHmacSecret || !config.nikitaSms.enabled) return json(response, 503, { error:'Подтверждение оферты одноразовым кодом ещё настраивается. Менеджер не сможет перевести заявку к выдаче без этого шага после его включения.' });
-        if (order.offer_otp_expires_at && new Date(order.offer_otp_expires_at).getTime() > Date.now() - (OTP_TTL_MS - 60_000)) return json(response, 429, { error:'Код уже отправлен. Подождите минуту перед повторной отправкой.' });
+        // The former comparison used a time in the past, which kept the
+        // resend path blocked for almost ten minutes after the code expired.
+        // Only throttle the first minute after a send; a new code replaces an
+        // old or expired one safely.
+        if (order.offer_otp_expires_at && new Date(order.offer_otp_expires_at).getTime() > Date.now() + (OTP_TTL_MS - 60_000)) return json(response, 429, { error:'Код уже отправлен. Подождите минуту перед повторной отправкой.' });
         const otp = code();
         const expiresAt = new Date(Date.now() + OTP_TTL_MS).toISOString();
         await database.updateOrder(order.id, { offer_otp_hash:hash(config.offerOtpHmacSecret, `${order.id}:${otp}`), offer_otp_expires_at:expiresAt, offer_otp_attempts:0 });
