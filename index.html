@@ -203,36 +203,44 @@
   <section class="catalog-browser" id="catalog-browser" hidden aria-label="Полный каталог Rentop">
     <div class="catalog-browser-dialog" role="dialog" aria-modal="true" aria-labelledby="catalog-browser-title" tabindex="-1">
       <div class="catalog-browser-head">
-        <div><p>RENTOP.KG</p><h2 id="catalog-browser-title">Все модели</h2></div>
+        <p>RENTOP.KG</p>
         <div class="catalog-browser-head-actions">
           <button type="button" id="close-full-catalog" aria-label="Закрыть каталог">×</button>
         </div>
       </div>
-      <div class="catalog-taskbar" aria-label="Подбор по задаче">
-        <span class="catalog-taskbar-label">Для чего нужен:</span>
-        <button class="filter-btn use-filter-btn active" data-use="all">Любая задача</button>
-        <button class="filter-btn use-filter-btn" data-use="study">Учёба</button>
-        <button class="filter-btn use-filter-btn" data-use="exam">Экзамены</button>
-        <button class="filter-btn use-filter-btn" data-use="budget">Бюджетные</button>
-        <button class="filter-btn use-filter-btn" data-use="office">Офис</button>
-        <button class="filter-btn use-filter-btn" data-use="code">Код</button>
-        <button class="filter-btn use-filter-btn" data-use="creative">Монтаж / 3D</button>
-        <button class="filter-btn use-filter-btn" data-use="gaming">Игры</button>
+      <div class="catalog-browser-hero">
+        <div class="catalog-browser-copy">
+          <h2 id="catalog-browser-title">Каталог ноутбуков</h2>
+          <p>Выберите задачу, найдите подходящую модель и забронируйте онлайн.</p>
+        </div>
+        <div class="catalog-browser-controls">
+          <div class="catalog-taskbar" aria-label="Подбор по задаче">
+            <span class="catalog-taskbar-label">Для чего нужен ноутбук?</span>
+            <button class="filter-btn use-filter-btn active" data-use="all"><span>⌘</span>Любая задача</button>
+            <button class="filter-btn use-filter-btn" data-use="study"><span>⌑</span>Учёба</button>
+            <button class="filter-btn use-filter-btn" data-use="exam"><span>▧</span>Экзамены</button>
+            <button class="filter-btn use-filter-btn" data-use="budget"><span>◉</span>Бюджетные</button>
+            <button class="filter-btn use-filter-btn" data-use="office"><span>▣</span>Офис</button>
+            <button class="filter-btn use-filter-btn" data-use="code"><span>⌘</span>Код</button>
+            <button class="filter-btn use-filter-btn" data-use="creative"><span>◇</span>Монтаж / 3D</button>
+            <button class="filter-btn use-filter-btn" data-use="gaming"><span>⌁</span>Игры</button>
+          </div>
+          <div class="filters catalog-typebar" aria-label="Тип устройства">
+            <span class="catalog-typebar-label">Тип устройства</span>
+            <button class="filter-btn" data-filter="all"><span>▱</span>Все устройства</button>
+            <button class="filter-btn active" data-filter="rent"><span>▣</span>Аренда</button>
+            <button class="filter-btn" data-filter="sale"><span>◇</span>Продажа</button>
+          </div>
+        </div>
       </div>
-      <div class="filters catalog-typebar" aria-label="Тип устройства">
-        <button class="filter-btn" data-filter="all">Все устройства</button>
-        <button class="filter-btn active" data-filter="rent">Аренда</button>
-        <button class="filter-btn" data-filter="sale">Продажа</button>
-      </div>
-      <p class="catalog-filter-hint">Задача и тип устройства выбираются независимо.</p>
-      <div class="catalog-utility-strip"><button type="button" class="catalog-utility-button" id="catalog-saved-only" aria-pressed="false">♡ Избранное <span id="catalog-saved-count">0</span></button><span>Сохраните модели, чтобы вернуться к ним позже.</span></div>
+      <div class="catalog-utility-strip"><button type="button" class="catalog-utility-button" id="catalog-saved-only" aria-pressed="false"><span class="catalog-utility-icon">♥</span>Избранное <b id="catalog-saved-count">0</b><i>›</i></button><button type="button" class="catalog-compare-dock" id="catalog-compare-dock"><span class="catalog-utility-label">Сравнение</span><b><span id="catalog-compare-count">0</span>/3</b><i>›</i></button></div>
+      <div class="catalog-results-meta"><span>Найдено <b id="catalog-results-count">0</b> моделей</span><span>Сначала рекомендуемые⌄</span></div>
       <section class="catalog-compare" id="catalog-compare" hidden aria-live="polite">
         <div class="catalog-compare-head"><div><span>СРАВНЕНИЕ</span><h3>Выберите до трёх ноутбуков</h3></div><button type="button" id="catalog-compare-clear">Очистить</button></div>
         <div id="catalog-compare-content"></div>
       </section>
       <div id="catalog-grid" class="cards-grid"></div>
       <button type="button" class="catalog-browser-close-bottom" id="close-full-catalog-bottom">Закрыть каталог</button>
-      <button type="button" class="catalog-compare-dock" id="catalog-compare-dock" hidden>Сравнить выбранные модели <span id="catalog-compare-count">0</span>/3</button>
     </div>
   </section>
 

@@ -58,6 +58,7 @@ const savedCount = document.getElementById('catalog-saved-count');
 const comparisonStatus = document.getElementById('catalog-compare-status');
 const comparisonCount = document.getElementById('catalog-compare-count');
 const comparisonDock = document.getElementById('catalog-compare-dock');
+const catalogResultsCount = document.getElementById('catalog-results-count');
 
 const modal = document.getElementById('order-modal');
 const closeModalBtn = document.getElementById('close-modal');
@@ -217,14 +218,14 @@ function updateCatalogUtilityButtons() {
   if (savedOnlyButton) {
     savedOnlyButton.classList.toggle('is-active', savedOnly);
     savedOnlyButton.setAttribute('aria-pressed', String(savedOnly));
-    savedOnlyButton.innerHTML = `${savedOnly ? '♥' : '♡'} Избранное <span id="catalog-saved-count">${savedLaptopIds.size}</span>`;
+    const savedIcon = savedOnlyButton.querySelector('.catalog-utility-icon');
+    if (savedIcon) savedIcon.textContent = savedOnly ? '♥' : '♡';
   }
   if (comparisonCount) comparisonCount.textContent = String(comparisonLaptopIds.size);
   if (comparisonDock) {
     const count = comparisonLaptopIds.size;
-    comparisonDock.hidden = count === 0;
     comparisonDock.classList.toggle('is-ready', count >= 2);
-    comparisonDock.firstChild.textContent = count >= 2 ? 'Открыть сравнение моделей ' : 'Выбрано для сравнения ';
+    comparisonDock.querySelector('.catalog-utility-label').textContent = count >= 2 ? 'Сравнить' : 'Сравнение';
   }
 }
 
@@ -461,6 +462,7 @@ function updateCatalogView(resetPagination = true) {
   if (catalogBrowser && !catalogBrowser.hidden) renderLaptops(filteredLaptops, false, catalogGrid);
   updateCatalogPager();
   updateCatalogUtilityButtons();
+  if (catalogResultsCount) catalogResultsCount.textContent = String(filteredLaptops.length);
 }
 
 function changeCatalogPage(direction) {
