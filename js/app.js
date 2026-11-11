@@ -184,7 +184,10 @@ function taskLabel(laptop) {
 }
 
 function laptopUseTags(laptop) {
-  const tags = String(laptop.use_cases || '').split(',').map(tag => tag.trim()).filter(Boolean).slice(0, 6);
+  const suppliedTags = String(laptop.use_cases || '').split(',').map(tag => tag.trim()).filter(Boolean);
+  const tasks = getLaptopTasks(laptop);
+  const automaticTags = tasks.includes('exam') ? ['Онлайн-экзамены', 'TOEFL / IELTS'] : tasks.includes('gaming') ? ['Игры', 'Монтаж / 3D'] : tasks.includes('creative') ? ['Монтаж', 'Дизайн'] : tasks.includes('study') ? ['Учёба', 'Офис'] : ['Офис', 'Работа'];
+  const tags = (suppliedTags.length ? suppliedTags : automaticTags).slice(0, 6);
   return tags.length ? `<div class="laptop-use-tags" aria-label="Подходит для">${tags.map(tag => `<span>${tag}</span>`).join('')}</div>` : '';
 }
 
