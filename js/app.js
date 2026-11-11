@@ -65,6 +65,7 @@ const daysSlider = document.getElementById('days-slider');
 const daysCount = document.getElementById('days-count');
 const totalPriceEl = document.getElementById('total-price');
 const calcDiscountEl = document.getElementById('calc-discount');
+const calcBreakdownEl = document.getElementById('calc-breakdown');
 const rentalStartInput = document.getElementById('rental-start-date');
 const rentalEndInput = document.getElementById('rental-end-date');
 const deliveryTypeInput = document.getElementById('delivery-type');
@@ -642,7 +643,7 @@ function openOrderModal(id, { deliveryType = 'delivery' } = {}) {
     if (rentalEndInput) rentalEndInput.value = addDays(today, 2);
     if (daysSlider) {
       daysSlider.min = '2';
-      daysSlider.max = '30';
+      daysSlider.max = '15';
       daysSlider.value = '2';
     }
     if (deliveryTypeInput) deliveryTypeInput.value = deliveryType;
@@ -686,8 +687,11 @@ function updateCalculator(forcedMessage) {
   if (daysCount) daysCount.textContent = String(draft.quote.days);
   if (totalPriceEl) totalPriceEl.textContent = draft.quote.total.toLocaleString('ru-RU');
   if (daysSlider && draft.quote.days >= 2) {
-    daysSlider.max = String(Math.max(30, draft.quote.days));
-    daysSlider.value = String(draft.quote.days);
+    // The slider is a quick picker, not an invitation to jump to a costly
+    // 30-day total. Longer rentals are still available through the return
+    // date field and retain the 30% tariff discount.
+    daysSlider.max = '15';
+    daysSlider.value = String(Math.min(15, draft.quote.days));
   }
   rentalDurationButtons.forEach((button) => {
     const threshold = Number(button.dataset.rentalDuration || 0);
@@ -699,6 +703,13 @@ function updateCalculator(forcedMessage) {
     else if (draft.quote.discountPercent === 15) calcDiscountEl.textContent = 'Ваша скидка: 15%';
     else if (draft.quote.discountPercent === 30) calcDiscountEl.textContent = 'Ваша скидка: 30%';
     else calcDiscountEl.textContent = 'Без скидки';
+  }
+  if (calcBreakdownEl) {
+    const perDay = draft.quote.days ? Math.round(draft.quote.total / draft.quote.days) : 0;
+    const saving = Math.max(0, (draft.quote.days * draft.quote.dailyRate) - draft.quote.total);
+    calcBreakdownEl.textContent = draft.quote.days
+      ? `≈ ${perDay.toLocaleString('ru-RU')} сом в день${saving ? ` · экономия ${saving.toLocaleString('ru-RU')} сом` : ''}`
+      : '';
   }
 
   if (forcedMessage) {

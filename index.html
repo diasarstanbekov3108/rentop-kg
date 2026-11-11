@@ -36,7 +36,7 @@
   
   <!-- Fonts & Styles -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261111-quick-booking">
+  <link rel="stylesheet" href="css/style.css?v=20261111-duration-tiers">
   <link rel="stylesheet" href="css/premium.css">
 
   <!-- Микроразметка Schema.org для Google -->
@@ -763,17 +763,19 @@
           <span>Срок аренды:</span>
           <span><strong id="days-count">2</strong> дн.</span>
         </div>
-        <input type="range" id="days-slider" class="calc-range" min="2" max="30" value="2" aria-label="Срок аренды в днях">
+        <input type="range" id="days-slider" class="calc-range" min="2" max="15" value="2" aria-label="Срок аренды в днях">
         <div class="rental-duration-presets" aria-label="Быстрый выбор срока аренды">
           <button type="button" data-rental-duration="2">2 дня</button>
           <button type="button" data-rental-duration="5">5 дней</button>
           <button type="button" data-rental-duration="7">7 дней <span>−15%</span></button>
           <button type="button" data-rental-duration="15">15 дней <span>−30%</span></button>
         </div>
+        <p class="calc-long-term">Нужен срок больше 15 дней? Выберите дату возврата вручную — максимальная скидка 30% уже применится.</p>
         <div class="calc-total">
-          <span class="calc-total-text">Итого:</span>
+          <span class="calc-total-text">За весь срок:</span>
           <span class="calc-total-price"><span id="total-price">0</span> сом</span>
         </div>
+        <p class="calc-breakdown" id="calc-breakdown"></p>
         <p class="calc-discount" id="calc-discount">Без скидки</p>
         <p class="availability-message" id="rental-availability-message" role="status"></p>
         <div class="form-group delivery-choice">
@@ -803,6 +805,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script type="module" src="js/app.js?v=20261111-quick-booking"></script>
+  <script type="module" src="js/app.js?v=20261111-duration-tiers"></script>
 </body>
 </html>

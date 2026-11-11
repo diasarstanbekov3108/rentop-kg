@@ -1072,6 +1072,13 @@ footer {
   margin: 0 0 14px;
 }
 
+.calc-long-term {
+  margin: -4px 0 14px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .rental-duration-presets button,
 .delivery-choice-options button {
   appearance: none;
@@ -1171,6 +1178,13 @@ footer {
 
 .calc-discount {
   margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.calc-breakdown {
+  margin-top: 7px;
   color: var(--text-muted);
   font-size: 12px;
   text-align: right;
