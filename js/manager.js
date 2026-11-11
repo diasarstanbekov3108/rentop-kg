@@ -99,6 +99,7 @@ function editCatalogLaptop(id) {
   catalogForm.elements.priceText.value = catalogField(laptop, 'price_text', 'priceText') || '';
   catalogForm.elements.sortOrder.value = laptop.sort_order || 0;
   catalogForm.elements.description.value = laptop.description || '';
+  catalogForm.elements.useCases.value = laptop.use_cases || '';
   catalogForm.elements.isVisible.checked = laptop.is_visible !== false;
   catalogForm.scrollIntoView({ behavior:'smooth', block:'start' });
 }
@@ -583,7 +584,7 @@ catalogForm?.addEventListener('submit', async event => {
       imageUrl = ticket.publicUrl;
     }
     const existing = catalogLaptops.find(item => String(item.id) === String(data.get('laptopId')));
-    const payload = { action:'save_catalog_laptop', laptopId:data.get('laptopId'), title:data.get('title'), category:data.get('category'), badge:data.get('badge'), cpu:data.get('cpu'), ram:data.get('ram'), storage:data.get('storage'), dailyRate:data.get('dailyRate'), priceText:data.get('priceText'), sortOrder:data.get('sortOrder'), description:data.get('description'), isVisible:data.get('isVisible') === 'on', imageUrl:imageUrl || catalogField(existing, 'image_url', 'image') || '' };
+    const payload = { action:'save_catalog_laptop', laptopId:data.get('laptopId'), title:data.get('title'), category:data.get('category'), badge:data.get('badge'), cpu:data.get('cpu'), ram:data.get('ram'), storage:data.get('storage'), dailyRate:data.get('dailyRate'), priceText:data.get('priceText'), sortOrder:data.get('sortOrder'), description:data.get('description'), useCases:data.get('useCases'), isVisible:data.get('isVisible') === 'on', imageUrl:imageUrl || catalogField(existing, 'image_url', 'image') || '' };
     const result = await catalogApi('POST', payload);
     const index = catalogLaptops.findIndex(item => String(item.id) === String(result.laptop.id));
     if (index >= 0) catalogLaptops[index] = result.laptop; else catalogLaptops.push(result.laptop);

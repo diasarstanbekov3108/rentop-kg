@@ -36,7 +36,7 @@ function catalogPayload(payload) {
     cpu:catalogText(payload.cpu, 160), ram:catalogText(payload.ram, 80), storage:catalogText(payload.storage, 160),
     daily_rate:category === 'rent' ? dailyRate : 0,
     price_text:catalogText(payload.priceText, 80), image_url:imageUrl || '/assets/catalog-placeholder.svg',
-    description:catalogText(payload.description, 500), is_visible:Boolean(payload.isVisible), sort_order:Number.isInteger(sortOrder) ? Math.max(-10000, Math.min(10000, sortOrder)) : 0
+    description:catalogText(payload.description, 500), use_cases:catalogText(payload.useCases, 400), is_visible:Boolean(payload.isVisible), sort_order:Number.isInteger(sortOrder) ? Math.max(-10000, Math.min(10000, sortOrder)) : 0
   };
   if (record.title.length < 3 || record.cpu.length < 2 || record.ram.length < 2 || record.storage.length < 2) throw new Error('Заполните модель, процессор, память и накопитель.');
   if (category === 'rent' && (!Number.isFinite(dailyRate) || dailyRate < 100 || dailyRate > 100000)) throw new Error('Укажите корректную ставку аренды от 100 до 100 000 сом в день.');

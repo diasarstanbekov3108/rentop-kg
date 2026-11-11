@@ -138,14 +138,14 @@ const modalDelivery = document.getElementById('modal-delivery');
 const modalLoyalty = document.getElementById('modal-loyalty');
 
 function getLaptopTasks(laptop) {
-  const details = `${laptop.title || ''} ${laptop.badge || ''} ${laptop.cpu || ''} ${laptop.ram || ''} ${laptop.storage || ''}`.toLowerCase();
+  const details = `${laptop.title || ''} ${laptop.badge || ''} ${laptop.cpu || ''} ${laptop.ram || ''} ${laptop.storage || ''} ${laptop.description || ''} ${laptop.use_cases || ''}`.toLowerCase();
   const gaming = /rog|razer|legion|tuf|gaming|игр|cyberpunk|gta|blender|3d|vfx|katana|gf\d|g15|rtx|gtx/.test(details);
+  const exam = /toefl|ielts|duolingo|csca|экзамен|тест/.test(details);
   const lightweight = /i3|8\s*gb|8gb|celeron|pentium/.test(details);
   const apple = /macbook|apple m/.test(details);
-  if (gaming) return ['gaming', 'creative', 'code'];
-  if (lightweight) return ['study', 'office'];
-  if (apple) return ['study', 'office', 'creative', 'code'];
-  return ['study', 'office', 'code'];
+  const tasks = gaming ? ['gaming', 'creative', 'code'] : lightweight ? ['study', 'office'] : apple ? ['study', 'office', 'creative', 'code'] : ['study', 'office', 'code'];
+  if (exam) tasks.push('exam');
+  return tasks;
 }
 
 function getLaptopUse(laptop) {
@@ -181,6 +181,11 @@ function taskLabel(laptop) {
   if (tasks.includes('code')) return 'Работа / разработка';
   if (tasks.includes('study')) return 'Учёба / офис';
   return 'Для повседневных задач';
+}
+
+function laptopUseTags(laptop) {
+  const tags = String(laptop.use_cases || '').split(',').map(tag => tag.trim()).filter(Boolean).slice(0, 6);
+  return tags.length ? `<div class="laptop-use-tags" aria-label="Подходит для">${tags.map(tag => `<span>${tag}</span>`).join('')}</div>` : '';
 }
 
 function formatLaptopTitle(title = '') {
@@ -311,6 +316,7 @@ function renderLaptops(items, append = false, target = catalogGrid) {
           <span class="laptop-fit-label">${taskLabel(laptop)}</span>
           <p>${laptop.description || profile.description}</p>
         </div>
+        ${laptopUseTags(laptop)}
         <ul class="specs-list">
           <li><span>Процессор</span>${laptop.cpu || '—'}</li>
           <li><span>Память</span>${laptop.ram || '—'}</li>
@@ -391,7 +397,7 @@ function renderCatalogPreview(items) {
     const isRent = laptop.category === 'rent';
     const availability = cardAvailability(blockingRentals, laptop.id, todayIso());
     const profile = getCatalogProfile(laptop);
-    return `<article class="catalog-preview-card"><img src="${laptop.image}" alt="${laptop.title}" class="catalog-preview-image" loading="lazy" data-title="${laptop.title}" role="button" tabindex="0" aria-label="Открыть фото: ${laptop.title}"><div class="catalog-preview-copy"><span>${availability.label}</span><h3>${formatLaptopTitle(laptop.title)}</h3><p><b>${taskLabel(laptop)}</b><small>${laptop.description || profile.description}</small></p><strong>${laptop.priceText || 'Цена уточняется'}</strong><div><button type="button" class="catalog-preview-reserve" data-id="${laptop.id}">${isRent ? 'Забронировать' : 'Купить / Предзаказ'}</button><button type="button" class="catalog-preview-more" data-open-full>Подробнее</button></div></div></article>`;
+    return `<article class="catalog-preview-card"><img src="${laptop.image}" alt="${laptop.title}" class="catalog-preview-image" loading="lazy" data-title="${laptop.title}" role="button" tabindex="0" aria-label="Открыть фото: ${laptop.title}"><div class="catalog-preview-copy"><span>${availability.label}</span><h3>${formatLaptopTitle(laptop.title)}</h3><p><b>${taskLabel(laptop)}</b><small>${laptop.description || profile.description}</small></p>${laptopUseTags(laptop)}<strong>${laptop.priceText || 'Цена уточняется'}</strong><div><button type="button" class="catalog-preview-reserve" data-id="${laptop.id}">${isRent ? 'Забронировать' : 'Купить / Предзаказ'}</button><button type="button" class="catalog-preview-more" data-open-full>Подробнее</button></div></div></article>`;
   }).join('');
   catalogPreviewGrid.querySelectorAll('[data-id]').forEach(button => {
     button.addEventListener('click', (event) => openOrderModal(Number(event.currentTarget.dataset.id), { deliveryType: archaSelectionMode ? 'arca_locker' : 'delivery' }));
@@ -1219,7 +1225,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function closeLightbox() {
     lightbox.classList.remove('active');
-    document.body.style.overflow = '';
+    // Фото может открываться поверх полного каталога. В таком случае
+    // закрываем только изображение и не «выбрасываем» человека из каталога.
+    document.body.style.overflow = catalogBrowser && !catalogBrowser.hidden ? 'hidden' : '';
   }
 
   // Интерактивные модальные окна (Условия + Программа лояльности)
