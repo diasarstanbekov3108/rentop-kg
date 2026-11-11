@@ -74,6 +74,7 @@ const archaLocationInput = document.getElementById('archa-location');
 const deliveryPreferencesField = document.getElementById('delivery-preferences-field');
 const deliveryAddressInput = document.getElementById('delivery-address');
 const deliveryPreferredTimeInput = document.getElementById('delivery-preferred-time');
+const deliveryProfileNote = document.getElementById('delivery-profile-note');
 const rentalAvailabilityMessage = document.getElementById('rental-availability-message');
 const submitBtn = document.getElementById('submitBtn');
 const cabinetOrderPhone = document.getElementById('cabinet-order-phone');
@@ -486,9 +487,16 @@ function resetOrderSubmit() {
 
 function updateDeliveryNote() {
   const isLocker = deliveryTypeInput?.value === 'arca_locker';
+  const profileName = String(cabinetSession?.profile?.full_name || '').trim();
+  const profileReady = Boolean(cabinetSession?.authenticated)
+    && profileName.split(/\s+/).filter(Boolean).length >= 3;
   if (archaLockerNote) archaLockerNote.hidden = !isLocker;
   if (archaLocationField) archaLocationField.hidden = !isLocker;
-  if (deliveryPreferencesField) deliveryPreferencesField.hidden = isLocker;
+  // A rental order is bound to the verified cabinet account. Do not invite a
+  // guest to type a private address that cannot be safely retained while they
+  // are sent to the sign-in/profile step.
+  if (deliveryPreferencesField) deliveryPreferencesField.hidden = isLocker || !profileReady;
+  if (deliveryProfileNote) deliveryProfileNote.hidden = isLocker || profileReady;
 }
 
 function selectedArchaLocation() {
@@ -596,6 +604,7 @@ function updateOrderAuthUi() {
   if (submitBtn && !submitInFlight) submitBtn.textContent = signedIn
     ? (verifiedName ? 'Продолжить оформление' : 'Заполнить профиль и продолжить')
     : 'Войти и продолжить';
+  updateDeliveryNote();
 }
 
 navAccountLogout?.addEventListener('click', async () => {

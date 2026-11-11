@@ -84,6 +84,29 @@ export function createRentopBot({ config, telegram, database }) {
   const isAdmin = (userId) => config.adminUserIds.has(String(userId));
   const otp = createOtpService({ provider: config.otpProvider, nikitaSms: config.nikitaSms, telegram });
 
+  // The web manager panel is the single workflow authority. It knows about
+  // delivery handovers, replacement devices, social discounts and the return
+  // inspection gates. Older Telegram admin buttons do not carry all of that
+  // context, so they must never be able to update an order on their own.
+  const managerPanelUrl = `${config.publicAppUrl.replace(/\/$/, '')}/manager`;
+  const managerPanelKeyboard = {
+    reply_markup: {
+      inline_keyboard: [[{ text: 'Открыть панель менеджера', url: managerPanelUrl }]]
+    }
+  };
+
+  async function directManagerToPanel(chatId, callbackId = null) {
+    if (callbackId) {
+      await telegram.answerCallback(callbackId, 'Для изменения заявки используйте панель менеджера.');
+    }
+    return telegram.sendMessage(
+      chatId,
+      'Эта кнопка относится к старому сценарию бота и больше не меняет заявку. ' +
+      'Откройте панель менеджера: там работают актуальные этапы оплаты, выдачи, продления, замены и возврата.',
+      managerPanelKeyboard
+    );
+  }
+
   const recordEvent = (event) => database.createEvent?.(event).catch((error) => {
     console.error('Could not write rental order audit event:', error.message);
   });
@@ -952,6 +975,19 @@ export function createRentopBot({ config, telegram, database }) {
     const [rawCommand, orderId, rawValue] = (message.text || '').trim().split(/\s+/, 3);
     const command = rawCommand?.toLowerCase().split('@')[0];
     const pendingAction = await database.getAdminActionByUser(message.from.id);
+
+    if (pendingAction && pendingAction.action !== 'customer_message') {
+      // A manager may have pressed one of the obsolete Telegram controls
+      // before the deploy. Clear it instead of accepting a PIN, deposit or
+      // return code through a path that skips the panel safeguards.
+      await database.clearAdminAction(pendingAction.order_id);
+      return directManagerToPanel(message.chat.id);
+    }
+
+    if (['/admin', '/orders', '/deposit', '/pin'].includes(command)) {
+      return directManagerToPanel(message.chat.id);
+    }
+
     if (pendingAction?.action === 'deposit' && /^\d+(?:[.,]\d{1,2})?$/.test((message.text || '').trim())) {
       const order = await database.getOrder(pendingAction.order_id);
       const session = order && await database.getSession(order.id);
@@ -989,9 +1025,6 @@ export function createRentopBot({ config, telegram, database }) {
       await telegram.sendMessage(session.telegram_chat_id, `💬 Сообщение от Rentop:\n\n${customerMessage}`);
       await recordEvent({ order_id: order.id, event_type: 'manager_message_sent_to_customer', actor_type: 'manager', actor_telegram_id: message.from.id, metadata: { text_length: customerMessage.length } });
       return telegram.sendMessage(message.chat.id, `Сообщение отправлено клиенту по заявке ${orderRef(order)}.`);
-    }
-    if (command === '/admin' || command === '/orders') {
-      return sendManagerDashboard(message.chat.id);
     }
     if (command === '/find') {
       const query = (message.text || '').replace(/^\/find(?:@\w+)?\s*/i, '').trim();
@@ -1063,6 +1096,14 @@ export function createRentopBot({ config, telegram, database }) {
       await telegram.sendMessage(callback.message.chat.id, '🔎 Напишите команду: /find <код, имя, телефон или модель>\nНапример: /find Dell G15 или /find 2E24A7CF');
       return telegram.answerCallback(callback.id, 'Введите запрос командой /find.');
     }
+
+    // Support replies may still be handled in Telegram. Every other manager
+    // action is intentionally routed to the panel so an old inline keyboard
+    // cannot bypass the current order workflow.
+    if (isAdmin(callback.from.id) && !clientActions.has(action) && !['case_resolve', 'message_client'].includes(action)) {
+      return directManagerToPanel(callback.message.chat.id, callback.id);
+    }
+
     const order = action === 'document_type'
       ? await database.getSessionByUser(callback.from.id).then(async (session) => session ? database.getOrder(session.order_id) : null)
       : await database.getOrder(orderId);
