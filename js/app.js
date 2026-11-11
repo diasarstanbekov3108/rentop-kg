@@ -35,7 +35,9 @@ const CABINET_BOOKING_KEY = 'rentop-pending-booking-v1';
 
 // Каталог показывает небольшой набор за раз: это избавляет мобильный экран
 // от бесконечной ленты, но сохраняет доступ ко всем моделям.
-const MOBILE_ITEMS_PER_PAGE = 1;
+// On phones the storefront is a swipeable three-model carousel: the central
+// card is prominent while the next choices remain visible at the edges.
+const MOBILE_ITEMS_PER_PAGE = 3;
 let currentPage = 1;
 
 // DOM Элементы
@@ -266,8 +268,11 @@ function catalogPageCount() {
 function updateCatalogPager() {
   const count = catalogPageCount();
   if (currentPage > count) currentPage = count;
+  const perPage = catalogItemsPerPage();
+  const first = (currentPage - 1) * perPage + 1;
+  const last = Math.min(currentPage * perPage, filteredLaptops.length);
   if (catalogPageStatus) catalogPageStatus.textContent = filteredLaptops.length
-    ? `Модель ${currentPage} из ${count}`
+    ? (window.matchMedia('(max-width: 768px)').matches ? `Модели ${first}–${last} из ${filteredLaptops.length}` : `Модели ${first}–${last} из ${filteredLaptops.length}`)
     : 'Нет подходящих моделей';
   if (catalogPagePrev) catalogPagePrev.disabled = currentPage <= 1;
   if (catalogPageNext) catalogPageNext.disabled = currentPage >= count;
