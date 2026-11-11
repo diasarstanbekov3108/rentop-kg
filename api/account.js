@@ -448,13 +448,13 @@ export default async function handler(request, response) {
         await notifyManager(`↩️ Досрочный возврат с сайта\n\nЗаявка ${orderRef(order)} · ${laptop?.title || 'Ноутбук'}\nКлиент: ${order.customer_name || '—'}\nСпособ: ${methodLabel}\n${returnLockerAddress ? `Постамат: ${returnLockerAddress}\n` : ''}${requestData.return_collection_address ? `Адрес забора: ${requestData.return_collection_address}\n` : ''}${returnContactName ? `Контакт: ${returnContactName} · ${returnContactPhone}\n` : ''}${returnPreferredTime ? `Время: ${returnPreferredTime}\n` : ''}${destinationTask ? `${destinationTask}\n` : ''}Причина: ${note || 'не указана'}\n\nВидео — только предварительная проверка. Аренду завершайте после физического получения устройства.`);
         return json(response, 201, { ok:true, request:customerRequest, message:'Запрос принят. Менеджер подготовит дальнейшие инструкции по возврату.' });
       }
-      const supportKinds = new Set(['rentop','archa','archa_code_missing','archa_locker_issue','rental_issue']);
+      const supportKinds = new Set(['rentop','archa','archa_code_missing','archa_locker_issue','rental_issue','delivery_status','delivery_change','address_change','order_cancel']);
       const kind = supportKinds.has(payload.kind) ? payload.kind : 'rentop';
       const note = String(payload.message || '').trim().slice(0, 1000);
       if (note.length < 3) return json(response, 400, { error:'Опишите вопрос хотя бы несколькими словами.' });
       await database.openSupportCase({ order_id:order.id, kind, status:'open', customer_message:note });
       await database.createEvent({ order_id:order.id, event_type:'customer_opened_support_case_from_cabinet', actor_type:'customer', metadata:{ kind } });
-      const kindLabel = ({ rentop:'Вопрос к Rentop', archa:'Проблема с ARCHA POINT', archa_code_missing:'Не пришёл код ARCHA POINT', archa_locker_issue:'Постамат не выдаёт / не открывается', rental_issue:'Проблема с ноутбуком или комплектностью' })[kind];
+      const kindLabel = ({ rentop:'Вопрос к Rentop', archa:'Проблема с ARCHA POINT', archa_code_missing:'Не пришёл код ARCHA POINT', archa_locker_issue:'Постамат не выдаёт / не открывается', rental_issue:'Проблема с ноутбуком или комплектностью', delivery_status:'Статус доставки', delivery_change:'Перенос времени доставки', address_change:'Изменение адреса доставки', order_cancel:'Отмена заявки' })[kind];
       await notifyManager(`🆘 Обращение с сайта · ${kindLabel}\n\nЗаявка ${orderRef(order)} · ${laptop?.title || 'Ноутбук'}\nКлиент: ${order.customer_name || '—'}\n${note}`);
       return json(response, 201, { ok:true, message:'Обращение передано менеджеру. Ответ появится в кабинете и придёт в Telegram.' });
     }

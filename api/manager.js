@@ -162,7 +162,7 @@ export default async function handler(request, response) {
       const kind = String(payload.kind || '');
       const message = String(payload.message || '').trim().slice(0, 1500);
       if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
-      if (!['rentop','archa','archa_code_missing','archa_locker_issue','rental_issue'].includes(kind) || message.length < 3) return reply(response, 400, { error:'Напишите клиенту ответ хотя бы несколькими словами.' });
+      if (!['rentop','archa','archa_code_missing','archa_locker_issue','rental_issue','delivery_status','delivery_change','address_change','order_cancel'].includes(kind) || message.length < 3) return reply(response, 400, { error:'Напишите клиенту ответ хотя бы несколькими словами.' });
       const supportCase = await database.replyToSupportCase(order.id, kind, message, session.phone);
       if (!supportCase) return reply(response, 404, { error:'Обращение не найдено.' });
       await database.createEvent({ order_id:order.id, event_type:'manager_replied_support_case_from_web', actor_type:'manager', metadata:{ kind, length:message.length } }).catch(error => console.error('Manager support reply audit event failed:', error.message));
@@ -172,7 +172,7 @@ export default async function handler(request, response) {
       const order = await database.getOrder(String(payload.orderId || ''));
       const kind = String(payload.kind || '');
       if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
-      if (!['rentop','archa','archa_code_missing','archa_locker_issue','rental_issue'].includes(kind)) return reply(response, 400, { error:'Некорректный тип обращения.' });
+      if (!['rentop','archa','archa_code_missing','archa_locker_issue','rental_issue','delivery_status','delivery_change','address_change','order_cancel'].includes(kind)) return reply(response, 400, { error:'Некорректный тип обращения.' });
       const resolved = await database.resolveSupportCase(order.id, kind, session.phone);
       if (!resolved) return reply(response, 404, { error:'Открытое обращение не найдено.' });
       await database.createEvent({ order_id:order.id, event_type:'manager_resolved_support_case_from_web', actor_type:'manager', metadata:{ kind } }).catch(error => console.error('Manager support audit event failed:', error.message));
@@ -356,6 +356,7 @@ export default async function handler(request, response) {
         for (const item of documents) if (!latest.has(item.kind)) latest.set(item.kind, item);
         const identityFrontAccepted = latest.get('identity_front')?.status === 'accepted' || latest.get('identity')?.status === 'accepted';
         if (!identityFrontAccepted || !['identity_back','selfie','supporting'].every(kind => latest.get(kind)?.status === 'accepted')) return reply(response, 409, { error:'Сначала примите все четыре обязательных документа клиента.' });
+        if (latest.get('benefit_proof')?.status === 'pending_review') return reply(response, 409, { error:'Клиент запросил социальную скидку. Сначала примите или отклоните льготный документ — сумма должна быть окончательно рассчитана до выставления счёта.' });
         if (String(order.residence_address || '').trim().length < 8 || String(order.supporting_document_type || '').trim().length < 3) return reply(response, 409, { error:'До оплаты клиент должен указать адрес проживания и загрузить обязательное подтверждение адреса, работы или учёбы.' });
         if (String(order.identity_document_number || '').trim().length < 3 || String(order.identity_document_issuer || '').trim().length < 3 || !order.identity_verified_at) return reply(response, 409, { error:'Сначала сверьте паспорт/ID по файлам и сохраните в реестре номер документа и кем он выдан.' });
       }
