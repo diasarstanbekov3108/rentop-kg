@@ -68,13 +68,8 @@ const calcDiscountEl = document.getElementById('calc-discount');
 const rentalStartInput = document.getElementById('rental-start-date');
 const rentalEndInput = document.getElementById('rental-end-date');
 const deliveryTypeInput = document.getElementById('delivery-type');
-const archaLockerNote = document.getElementById('archa-locker-note');
-const archaLocationField = document.getElementById('archa-location-field');
-const archaLocationInput = document.getElementById('archa-location');
-const deliveryPreferencesField = document.getElementById('delivery-preferences-field');
-const deliveryAddressInput = document.getElementById('delivery-address');
-const deliveryPreferredTimeInput = document.getElementById('delivery-preferred-time');
-const deliveryProfileNote = document.getElementById('delivery-profile-note');
+const deliveryChoiceButtons = [...document.querySelectorAll('[data-delivery-option]')];
+const rentalDurationButtons = [...document.querySelectorAll('[data-rental-duration]')];
 const rentalAvailabilityMessage = document.getElementById('rental-availability-message');
 const submitBtn = document.getElementById('submitBtn');
 const cabinetOrderPhone = document.getElementById('cabinet-order-phone');
@@ -476,9 +471,6 @@ function createOrderId() {
 function resetOrderSubmit() {
   submitInFlight = false;
   if (deliveryTypeInput) deliveryTypeInput.value = 'delivery';
-  if (archaLocationInput) archaLocationInput.value = '';
-  if (deliveryAddressInput) deliveryAddressInput.value = '';
-  if (deliveryPreferredTimeInput) deliveryPreferredTimeInput.value = '';
   updateDeliveryNote();
   if (!submitBtn) return;
   submitBtn.disabled = false;
@@ -486,22 +478,18 @@ function resetOrderSubmit() {
 }
 
 function updateDeliveryNote() {
-  const isLocker = deliveryTypeInput?.value === 'arca_locker';
-  const profileName = String(cabinetSession?.profile?.full_name || '').trim();
-  const profileReady = Boolean(cabinetSession?.authenticated)
-    && profileName.split(/\s+/).filter(Boolean).length >= 3;
-  if (archaLockerNote) archaLockerNote.hidden = !isLocker;
-  if (archaLocationField) archaLocationField.hidden = !isLocker;
-  // A rental order is bound to the verified cabinet account. Do not invite a
-  // guest to type a private address that cannot be safely retained while they
-  // are sent to the sign-in/profile step.
-  if (deliveryPreferencesField) deliveryPreferencesField.hidden = isLocker || !profileReady;
-  if (deliveryProfileNote) deliveryProfileNote.hidden = isLocker || profileReady;
+  const selected = deliveryTypeInput?.value || 'delivery';
+  deliveryChoiceButtons.forEach((button) => {
+    const active = button.dataset.deliveryOption === selected;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-checked', String(active));
+  });
 }
 
 function selectedArchaLocation() {
-  const location = archaLocationInput?.value || '';
-  return ARCHA_LOCATIONS.includes(location) ? location : '';
+  // The exact point is selected in the protected cabinet together with the
+  // rest of the handover details, not in the quick booking popup.
+  return '';
 }
 
 function showRentalMessage(text, tone = 'neutral') {
@@ -658,8 +646,6 @@ function openOrderModal(id, { deliveryType = 'delivery' } = {}) {
       daysSlider.value = '2';
     }
     if (deliveryTypeInput) deliveryTypeInput.value = deliveryType;
-    if (deliveryAddressInput) deliveryAddressInput.value = '';
-    if (deliveryPreferredTimeInput) deliveryPreferredTimeInput.value = '';
     updateDeliveryNote();
     updateCalculator();
   } else {
@@ -703,6 +689,11 @@ function updateCalculator(forcedMessage) {
     daysSlider.max = String(Math.max(30, draft.quote.days));
     daysSlider.value = String(draft.quote.days);
   }
+  rentalDurationButtons.forEach((button) => {
+    const threshold = Number(button.dataset.rentalDuration || 0);
+    button.classList.toggle('active', threshold > 0 && draft.quote.days >= threshold
+      && !rentalDurationButtons.some((other) => Number(other.dataset.rentalDuration || 0) > threshold && draft.quote.days >= Number(other.dataset.rentalDuration || 0)));
+  });
   if (calcDiscountEl) {
     if (!draft.quote.days) calcDiscountEl.textContent = 'Укажите корректные даты';
     else if (draft.quote.discountPercent === 15) calcDiscountEl.textContent = 'Ваша скидка: 15%';
@@ -1085,7 +1076,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         openOrderModal(Number(saved.laptopId), { deliveryType: saved.deliveryType });
         if (rentalStartInput && saved.startDate) rentalStartInput.value = saved.startDate;
         if (rentalEndInput && saved.endDate) rentalEndInput.value = saved.endDate;
-        if (archaLocationInput && saved.lockerAddress) archaLocationInput.value = saved.lockerAddress;
         updateDeliveryNote();
         updateCalculator();
       }
@@ -1158,11 +1148,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Калькулятор и даты аренды
   daysSlider?.addEventListener('input', syncEndDateFromSlider);
+  rentalDurationButtons.forEach((button) => button.addEventListener('click', () => {
+    if (daysSlider) daysSlider.value = button.dataset.rentalDuration || '2';
+    syncEndDateFromSlider();
+  }));
   rentalStartInput?.addEventListener('input', () => updateCalculator());
   rentalStartInput?.addEventListener('change', () => updateCalculator());
   rentalEndInput?.addEventListener('input', () => updateCalculator());
   rentalEndInput?.addEventListener('change', () => updateCalculator());
-  deliveryTypeInput?.addEventListener('change', updateDeliveryNote);
+  deliveryChoiceButtons.forEach((button) => button.addEventListener('click', () => {
+    if (deliveryTypeInput) deliveryTypeInput.value = button.dataset.deliveryOption || 'delivery';
+    updateDeliveryNote();
+  }));
   updateDeliveryNote();
 
   // Закрытие модалки заказа
@@ -1255,21 +1252,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       const selectedDelivery = deliveryTypeInput?.value;
       const deliveryType = selectedDelivery === 'arca_locker' ? 'arca_locker' : 'delivery';
-      const archaLocation = deliveryType === 'arca_locker' ? selectedArchaLocation() : '';
-      const deliveryAddress = String(deliveryAddressInput?.value || '').trim().replace(/\s+/g, ' ');
-      const deliveryPreferredTime = String(deliveryPreferredTimeInput?.value || '').trim().replace(/\s+/g, ' ');
-      if (deliveryType === 'arca_locker' && !archaLocation) {
-        showRentalMessage('Выберите локацию ARCHA POINT.', 'error');
-        return;
-      }
-      if (deliveryType === 'delivery' && deliveryAddress.length < 8) {
-        showRentalMessage('Укажите полный адрес доставки.', 'error');
-        return;
-      }
-      if (deliveryType === 'delivery' && deliveryPreferredTime.length < 3) {
-        showRentalMessage('Укажите удобное время доставки.', 'error');
-        return;
-      }
       submitInFlight = true;
       if (submitBtn) {
         submitBtn.disabled = true;
@@ -1302,9 +1284,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             startDate: draft.startDate,
             endDate: draft.endDate,
             deliveryType,
-            lockerAddress: archaLocation,
-            deliveryAddress: deliveryType === 'delivery' ? deliveryAddress : '',
-            deliveryPreferredTime: deliveryType === 'delivery' ? deliveryPreferredTime : ''
+            lockerAddress: ''
           })
         });
         const result = await response.json().catch(() => ({}));

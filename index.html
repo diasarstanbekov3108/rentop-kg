@@ -36,7 +36,7 @@
   
   <!-- Fonts & Styles -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261108-benefits-note">
+  <link rel="stylesheet" href="css/style.css?v=20261111-quick-booking">
   <link rel="stylesheet" href="css/premium.css">
 
   <!-- Микроразметка Schema.org для Google -->
@@ -764,37 +764,26 @@
           <span><strong id="days-count">2</strong> дн.</span>
         </div>
         <input type="range" id="days-slider" class="calc-range" min="2" max="30" value="2" aria-label="Срок аренды в днях">
+        <div class="rental-duration-presets" aria-label="Быстрый выбор срока аренды">
+          <button type="button" data-rental-duration="2">2 дня</button>
+          <button type="button" data-rental-duration="5">5 дней</button>
+          <button type="button" data-rental-duration="7">7 дней <span>−15%</span></button>
+          <button type="button" data-rental-duration="15">15 дней <span>−30%</span></button>
+        </div>
         <div class="calc-total">
           <span class="calc-total-text">Итого:</span>
           <span class="calc-total-price"><span id="total-price">0</span> сом</span>
         </div>
         <p class="calc-discount" id="calc-discount">Без скидки</p>
         <p class="availability-message" id="rental-availability-message" role="status"></p>
-        <div class="form-group">
-          <label for="delivery-type">Способ получения</label>
-          <select id="delivery-type" name="delivery-type">
-            <option value="delivery">Доставка</option>
-            <option value="arca_locker">ARCHA POINT — включено в тариф</option>
-          </select>
-          <div class="form-group" id="archa-location-field" hidden>
-            <label for="archa-location">Локация ARCHA POINT</label>
-            <select id="archa-location" name="archa-location">
-              <option value="">Выберите локацию</option>
-              <option value="Bishkek Park — Киевская улица, 148, этаж B2">Bishkek Park — Киевская улица, 148, этаж B2</option>
-              <option value="Гипермаркет «Азия» — ул. Максима Горького, 1/2а">Гипермаркет «Азия» — ул. Максима Горького, 1/2а</option>
-              <option value="ТЦ DK — ул. Нуркамала Жетикашкаевой, 29">ТЦ DK — ул. Нуркамала Жетикашкаевой, 29</option>
-              <option value="ТРЦ Tommi Mall — ул. Аалы Токомбаева, 17/2">ТРЦ Tommi Mall — ул. Аалы Токомбаева, 17/2</option>
-            </select>
+        <div class="form-group delivery-choice">
+          <span class="delivery-choice-label">Как получить ноутбук?</span>
+          <input type="hidden" id="delivery-type" name="delivery-type" value="delivery">
+          <div class="delivery-choice-options" role="radiogroup" aria-label="Способ получения">
+            <button type="button" class="active" data-delivery-option="delivery" role="radio" aria-checked="true"><strong>Доставка</strong><small>Адрес и время — в кабинете</small></button>
+            <button type="button" data-delivery-option="arca_locker" role="radio" aria-checked="false"><strong>ARCHA POINT 24/7</strong><small>Выбор точки — в кабинете</small></button>
           </div>
-          <div class="form-group" id="delivery-preferences-field">
-            <label for="delivery-address">Адрес доставки</label>
-            <textarea id="delivery-address" maxlength="500" placeholder="Город, район, улица, дом, квартира (если есть)"></textarea>
-            <label for="delivery-preferred-time">Удобное время доставки</label>
-            <input id="delivery-preferred-time" maxlength="300" placeholder="Например: после 20:00, по согласованию">
-            <p class="delivery-note">Доставка платная. Точную стоимость и время менеджер подтвердит до передачи ноутбука курьеру.</p>
-          </div>
-          <p class="delivery-note" id="delivery-profile-note" hidden>Адрес и удобное время доставки указываются после входа и заполнения ФИО в личном кабинете.</p>
-          <p class="delivery-note" id="archa-locker-note" hidden>После проверки заявки и оплаты менеджер Rentop подтвердит выдачу, подготовит ноутбук и отправит PIN-код или QR-код для получения.</p>
+          <p class="delivery-note">Детали выдачи заполним следующим коротким шагом в личном кабинете.</p>
         </div>
       </div>
 
@@ -808,16 +797,12 @@
           <input type="tel" id="user-phone" inputmode="numeric" autocomplete="tel" maxlength="19" value="+996 " placeholder="+996 (___) __-__-__" required>
           <p class="cabinet-order-phone" id="cabinet-order-phone" hidden></p>
         </div>
-        <div class="form-group">
-          <label for="user-promo">Промокод (если есть)</label>
-          <input type="text" id="user-promo" placeholder="Например: REN10">
-        </div>
         <button type="submit" class="btn-submit" id="submitBtn">Войти и продолжить</button>
       </form>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script type="module" src="js/app.js?v=20261111-delivery-profile"></script>
+  <script type="module" src="js/app.js?v=20261111-quick-booking"></script>
 </body>
 </html>

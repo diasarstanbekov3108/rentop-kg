@@ -55,9 +55,6 @@ async function createBooking(request, response) {
   if (!Number.isFinite(laptopId) || !allowedDelivery.includes(payload.deliveryType)) {
     return sendJson(response, 400, { error: 'Некорректные данные заявки.' });
   }
-  if (payload.deliveryType === 'arca_locker' && !payload.lockerAddress) {
-    return sendJson(response, 400, { error: 'Выберите локацию ARCHA POINT.' });
-  }
 
   const laptop = await database.getLaptop(laptopId);
   if (!laptop || laptop.category !== 'rent') return sendJson(response, 404, { error: 'Ноутбук для аренды не найден.' });
@@ -75,7 +72,8 @@ async function createBooking(request, response) {
     total_amount: quote.total,
     status: 'draft',
     delivery_type: payload.deliveryType,
-    locker_address: payload.lockerAddress || null,
+    // Exact delivery details are collected safely in the customer cabinet.
+    locker_address: null,
     client_token: token
   });
   const botInfo = await telegram.getMe();

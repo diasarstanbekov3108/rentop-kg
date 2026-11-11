@@ -153,6 +153,13 @@ export default async function handler(request, response) {
       }
       if (payload.action === 'save_delivery_preferences') {
         if (order.status !== 'draft') return json(response, 409, { error:'Данные доставки уже переданы менеджеру. Для изменения обратитесь в поддержку.' });
+        if (order.delivery_type === 'arca_locker') {
+          const lockerAddress = String(payload.lockerAddress || '').trim().replace(/\s+/g, ' ').slice(0, 300);
+          if (lockerAddress.length < 8) return json(response, 400, { error:'Выберите удобную точку ARCHA POINT.' });
+          const updated = await database.updateOrder(order.id, { locker_address:lockerAddress });
+          await database.createEvent({ order_id:order.id, event_type:'customer_selected_archa_location_from_cabinet', actor_type:'customer', metadata:{ locker_address:lockerAddress } });
+          return json(response, 200, { ok:true, order:updated });
+        }
         if (order.delivery_type !== 'delivery') return json(response, 200, { ok:true, order });
         const deliveryAddress = String(payload.deliveryAddress || '').trim().replace(/\s+/g, ' ').slice(0, 500);
         const deliveryPreferredTime = String(payload.deliveryPreferredTime || '').trim().replace(/\s+/g, ' ').slice(0, 300);

@@ -66,11 +66,6 @@ export default async function handler(request, response) {
     const fullName = normalizeFullName(profile?.full_name, true);
     const laptopId = Number(payload.laptopId);
     if (!Number.isFinite(laptopId) || !['delivery', 'arca_locker'].includes(payload.deliveryType)) throw new Error('Некорректные данные заявки.');
-    if (payload.deliveryType === 'arca_locker' && !payload.lockerAddress) throw new Error('Выберите локацию ARCHA POINT.');
-    const deliveryAddress = String(payload.deliveryAddress || '').trim().replace(/\s+/g, ' ').slice(0, 500);
-    const deliveryPreferredTime = String(payload.deliveryPreferredTime || '').trim().replace(/\s+/g, ' ').slice(0, 300);
-    if (payload.deliveryType === 'delivery' && deliveryAddress.length < 8) throw new Error('Укажите полный адрес доставки.');
-    if (payload.deliveryType === 'delivery' && deliveryPreferredTime.length < 3) throw new Error('Укажите удобное время доставки.');
     const laptop = await database.getLaptop(laptopId);
     if (!laptop || laptop.category !== 'rent') throw new Error('Ноутбук для аренды не найден.');
     const benefits = await database.listBenefitVerifications(session.phone).catch(() => []);
@@ -88,18 +83,21 @@ export default async function handler(request, response) {
       total_amount: rental.total,
       status: 'draft',
       delivery_type: payload.deliveryType,
-      locker_address: payload.lockerAddress || null,
-      delivery_address: payload.deliveryType === 'delivery' ? deliveryAddress : null,
-      delivery_contact_name: payload.deliveryType === 'delivery' ? fullName : null,
-      delivery_contact_phone: payload.deliveryType === 'delivery' ? session.phone : null,
-      delivery_preferred_time: payload.deliveryType === 'delivery' ? deliveryPreferredTime : null,
+      // The first popup intentionally collects only the delivery method.
+      // Address, time and exact ARCHA location are entered in the protected
+      // cabinet together with the documents.
+      locker_address: null,
+      delivery_address: null,
+      delivery_contact_name: null,
+      delivery_contact_phone: null,
+      delivery_preferred_time: null,
       client_token: token
     });
     const bot = createTelegramApi(config.telegramBotToken);
     await bot.sendMessage(config.adminChatId,
       `🆕 Новая заявка с сайта\n\nЗаявка ${order.id.slice(0, 8).toUpperCase()}\n` +
       `${laptop.title}\nКлиент: ${fullName || 'ФИО заполняется в кабинете'}\nТелефон: ${session.phone}\n` +
-      `Срок: ${payload.startDate} — ${payload.endDate}\nСумма: ${rental.total} сом\nПолучение: ${payload.deliveryType}${payload.deliveryType === 'delivery' ? `\nАдрес: ${deliveryAddress}\nВремя: ${deliveryPreferredTime}` : ''}`
+      `Срок: ${payload.startDate} — ${payload.endDate}\nСумма: ${rental.total} сом\nПолучение: ${payload.deliveryType === 'arca_locker' ? 'ARCHA POINT (точка будет выбрана в кабинете)' : 'доставка (адрес будет указан в кабинете)'}`
     ).catch((error) => console.error('Manager notification failed:', error.message));
     return response.status(201).json({ orderId: order.id, accountUrl: `/account?created=${encodeURIComponent(order.id)}` });
   } catch (error) {
