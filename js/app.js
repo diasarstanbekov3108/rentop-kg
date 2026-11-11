@@ -57,6 +57,7 @@ const savedOnlyButton = document.getElementById('catalog-saved-only');
 const savedCount = document.getElementById('catalog-saved-count');
 const comparisonStatus = document.getElementById('catalog-compare-status');
 const comparisonCount = document.getElementById('catalog-compare-count');
+const comparisonDock = document.getElementById('catalog-compare-dock');
 
 const modal = document.getElementById('order-modal');
 const closeModalBtn = document.getElementById('close-modal');
@@ -145,6 +146,7 @@ function getLaptopTasks(laptop) {
   const apple = /macbook|apple m/.test(details);
   const tasks = gaming ? ['gaming', 'creative', 'code'] : lightweight ? ['study', 'office'] : apple ? ['study', 'office', 'creative', 'code'] : ['study', 'office', 'code'];
   if (exam) tasks.push('exam');
+  if (laptop.category === 'rent' && Number(laptop.daily_rate ?? laptop.dailyRate ?? 0) <= 650) tasks.push('budget');
   return tasks;
 }
 
@@ -218,6 +220,12 @@ function updateCatalogUtilityButtons() {
     savedOnlyButton.innerHTML = `${savedOnly ? '♥' : '♡'} Избранное <span id="catalog-saved-count">${savedLaptopIds.size}</span>`;
   }
   if (comparisonCount) comparisonCount.textContent = String(comparisonLaptopIds.size);
+  if (comparisonDock) {
+    const count = comparisonLaptopIds.size;
+    comparisonDock.hidden = count === 0;
+    comparisonDock.classList.toggle('is-ready', count >= 2);
+    comparisonDock.firstChild.textContent = count >= 2 ? 'Открыть сравнение моделей ' : 'Выбрано для сравнения ';
+  }
 }
 
 function renderComparison() {
@@ -448,7 +456,9 @@ function updateCatalogView(resetPagination = true) {
   const visibleItems = filteredLaptops.slice(startIndex, endIndex);
 
   renderCatalogPreview(visibleItems);
-  renderLaptops(filteredLaptops, false, catalogGrid);
+  // The full catalog is expensive on a phone. Do not rebuild dozens of cards
+  // and image nodes while its dialog is closed; render it only on demand.
+  if (catalogBrowser && !catalogBrowser.hidden) renderLaptops(filteredLaptops, false, catalogGrid);
   updateCatalogPager();
   updateCatalogUtilityButtons();
 }
@@ -1183,6 +1193,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     comparisonLaptopIds.clear();
     renderComparison();
     updateCatalogView(false);
+  });
+  comparisonDock?.addEventListener('click', () => {
+    comparisonPanel?.scrollIntoView({ behavior:'smooth', block:'start' });
   });
 
   // Калькулятор и даты аренды
