@@ -1465,3 +1465,20 @@ button.condition-card:focus-visible,
   .hero-visual{top:168px!important;right:-132px!important;width:390px!important}
   .hero-product-image{top:30px!important}
 }
+
+/* Final mobile alignment: visible modern screen and a single-layer carousel. */
+@media(max-width:768px){
+  .hero-visual{right:-64px!important;opacity:.76!important}
+  .hero-product-image{left:-7%!important;width:132%!important}
+  .catalog-command-center .catalog-taskbar .filter-btn[data-use="exam"],.catalog-command-center .catalog-taskbar .filter-btn[data-use="code"],.catalog-command-center .catalog-taskbar .filter-btn[data-use="creative"]{display:none!important}
+  .catalog-command-center .catalog-taskbar .filter-btn[data-use="office"],.catalog-command-center .catalog-taskbar .filter-btn[data-use="gaming"]{display:flex!important}
+  .catalog-showcase{border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;padding:10px 0 24px!important}
+  .catalog-preview-grid{border:0!important;background:transparent!important}
+  .catalog-preview-card{min-height:342px!important;padding:14px!important;border-color:rgba(56,128,161,.74)!important;background:radial-gradient(circle at 50% 2%,rgba(42,155,209,.17),transparent 38%),linear-gradient(160deg,#0b2639,#081523)!important;box-shadow:0 15px 32px rgba(0,0,0,.23)!important}
+  .catalog-preview-card>img{height:162px!important;margin-bottom:10px!important}
+  .catalog-preview-copy h3{display:-webkit-box!important;min-height:0!important;margin:0 0 9px!important;overflow:hidden!important;color:#f2fbff!important;font-size:20px!important;line-height:1.12!important;-webkit-box-orient:vertical!important;-webkit-line-clamp:2!important}
+  .catalog-preview-copy p,.catalog-preview-copy .laptop-use-tags{display:none!important}
+  .catalog-preview-copy>strong{margin:7px 0 11px!important;color:#63dcfb!important;font-size:18px!important}
+  .catalog-preview-copy>div{margin-top:auto!important}
+}
+@media(max-width:390px){.hero-visual{right:-73px!important}.catalog-preview-card{flex-basis:82vw!important}}
