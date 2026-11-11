@@ -203,7 +203,7 @@
   <section class="catalog-browser" id="catalog-browser" hidden aria-label="Полный каталог Rentop">
     <div class="catalog-browser-dialog" role="dialog" aria-modal="true" aria-labelledby="catalog-browser-title" tabindex="-1">
       <div class="catalog-browser-head">
-        <p>RENTOP.KG</p>
+        <p><span>RENTOP</span><b>.KG</b></p>
         <div class="catalog-browser-head-actions">
           <button type="button" id="close-full-catalog" aria-label="Закрыть каталог">×</button>
         </div>
@@ -646,23 +646,8 @@
     </button>
     <div class="rentop-mascot-panel" id="rentop-mascot-panel" hidden>
       <button class="rentop-mascot-close" type="button" aria-label="Закрыть помощника">×</button>
-      <strong>Привет! Я помощник Rentop</strong>
-      <span id="rentop-mascot-answer" role="status">Расскажите задачу — подберу модели из каталога и объясню, как работает аренда.</span>
-      <div class="rentop-mascot-quick" aria-label="Быстрый подбор">
-        <button type="button" data-mascot-intent="games">Игры</button>
-        <button type="button" data-mascot-intent="work">Работа и офис</button>
-        <button type="button" data-mascot-intent="study">Учёба</button>
-        <button type="button" data-mascot-intent="creative">Монтаж / 3D</button>
-        <button type="button" data-mascot-intent="service">Как работает сервис?</button>
-      </div>
-      <form class="rentop-mascot-form" id="rentop-mascot-form">
-        <label class="visually-hidden" for="rentop-mascot-question">Вопрос помощнику Rentop</label>
-        <input id="rentop-mascot-question" name="question" maxlength="160" autocomplete="off" placeholder="Например: ноутбук для Blender">
-        <button type="submit">Спросить</button>
-      </form>
-      <a href="#catalog" id="rentop-mascot-catalog-link" data-mascot-catalog>Открыть каталог</a>
-      <a href="#faq">Посмотреть ответы</a>
-      <a href="https://wa.me/996707880857" target="_blank" rel="noopener noreferrer">Написать в WhatsApp</a>
+      <strong>Помощник Rentop</strong>
+      <span id="rentop-mascot-answer" role="status">Нажмите на описание модели — коротко подскажу, для каких задач она подходит.</span>
     </div>
   </div>
 

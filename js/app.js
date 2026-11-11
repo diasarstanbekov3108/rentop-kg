@@ -809,48 +809,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     : 'rentop_mascot_position_v2_desktop';
   const mascotMoodClasses = ['is-looking', 'is-waving', 'is-thinking', 'is-happy'];
   const mascotAnswer = document.getElementById('rentop-mascot-answer');
-  const mascotForm = document.getElementById('rentop-mascot-form');
-  const mascotQuestion = document.getElementById('rentop-mascot-question');
-  const mascotCatalogLink = document.getElementById('rentop-mascot-catalog-link');
-
-  const scrollToMascotCatalog = () => document.getElementById('catalog')?.scrollIntoView({ behavior:'smooth', block:'start' });
-  const mascotModels = (kind) => {
-    const source = laptops.filter((laptop) => laptop.category === 'rent');
-    const task = ({ games:'gaming', creative:'creative', study:'study', work:'office', code:'code' })[kind] || 'office';
-    const matched = source.filter((laptop) => matchesTask(laptop, task));
-    return (matched.length ? matched : source).slice(0, 3).map((laptop) => laptop.title).filter(Boolean);
-  };
-  const showMascotAdvice = (intent = '', question = '') => {
-    const directIntent = String(intent).toLowerCase();
-    const text = `${intent} ${question}`.toLowerCase();
-    const needsGames = ['games', 'creative'].includes(directIntent) || /игр|game|cs2|cyberpunk|gta|blender|3d|vfx|монтаж|premiere|after effects|дизайн/.test(text);
-    const needsStudy = ['study', 'work'].includes(directIntent) || /уч[её]б|zoom|word|excel|офис|браузер|созвон|лекци/.test(text);
-    const needsService = directIntent === 'service' || /сервис|аренд|оплат|получ|постамат|archa|возврат|договор/.test(text);
-    let answer;
-    if (needsService) {
-      answer = 'Выберите ноутбук и даты, загрузите документы, дождитесь проверки и оплаты. Для ARCHA POINT код доступа приходит после закладки устройства. Возврат и продление оформляются в личном кабинете.';
-    } else if (needsGames) {
-      const models = mascotModels('games');
-      answer = `Для игр, Blender, 3D и монтажа подойдут более мощные модели: ${models.join(', ') || 'игровые модели из каталога'}. Перед бронированием откройте карточку и проверьте процессор, видеокарту и объём памяти.`;
-      activeUseFilter = directIntent === 'creative' ? 'creative' : 'gaming';
-    } else if (needsStudy) {
-      const models = mascotModels('work');
-      answer = `Для учёбы, Word, Excel, браузера и созвонов достаточно рабочих моделей: ${models.join(', ') || 'рабочие модели из каталога'}. Это обычно самый разумный вариант по цене и автономности.`;
-      activeUseFilter = directIntent === 'study' ? 'study' : 'office';
-    } else {
-      const models = mascotModels('work');
-      answer = `Для офиса, программирования и обычной работы начните с: ${models.join(', ') || 'рабочих моделей каталога'}. Если нужны игры, монтаж или 3D — выберите «Игры» или «Монтаж / 3D».`;
-      activeUseFilter = /программир|code|разработ/.test(text) ? 'code' : 'office';
-    }
-    if (mascotAnswer) mascotAnswer.textContent = answer;
-    if (!needsService) {
-      useFilterButtons.forEach((button) => button.classList.toggle('active', button.dataset.use === activeUseFilter));
-      currentPage = 1;
-      filterAndSearch();
-      scrollToMascotCatalog();
-    }
-    setMascotMood(needsService ? 'waving' : 'thinking', 1600);
-  };
 
   const setMascotOpen = (open) => {
     if (!rentopMascot || !rentopMascotButton || !rentopMascotPanel) return;
@@ -859,43 +817,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     rentopMascotButton.setAttribute('aria-expanded', String(open));
   };
 
-  const showMascotSelectionRecommendation = (use) => {
-    if (use === 'all' || !mascotAnswer) return;
-
-    const taskNames = {
-      study: 'учёбы',
-      office: 'офисной работы',
-      code: 'программирования',
-      creative: 'монтажа и 3D',
-      gaming: 'игр',
-    };
-    const matching = laptops.filter((laptop) => matchesTask(laptop, use)
-      && (activeCategoryFilter === 'all' || laptop.category === activeCategoryFilter));
-    const candidates = matching.length
-      ? matching
-      : laptops.filter((laptop) => activeCategoryFilter === 'all' || laptop.category === activeCategoryFilter);
-    const recommended = [...candidates].sort((left, right) => {
-      const leftAvailable = cardAvailability(blockingRentals, left.id, todayIso()).label === 'Доступен сейчас';
-      const rightAvailable = cardAvailability(blockingRentals, right.id, todayIso()).label === 'Доступен сейчас';
-      if (leftAvailable !== rightAvailable) return leftAvailable ? -1 : 1;
-      return Number(right.category === 'rent') - Number(left.category === 'rent');
-    })[0];
-
-    if (!recommended) {
-      mascotAnswer.textContent = `Для ${taskNames[use] || 'вашей задачи'} пока нет модели в выбранной категории. Попробуйте «Все устройства» — я покажу больше вариантов.`;
-      if (mascotCatalogLink) mascotCatalogLink.textContent = 'Открыть каталог';
-      setMascotOpen(true);
-      setMascotMood('thinking', 1800);
-      return;
-    }
-
-    const profile = getCatalogProfile(recommended);
-    const availability = cardAvailability(blockingRentals, recommended.id, todayIso()).label;
-    const action = recommended.category === 'rent' ? 'Его можно забронировать' : 'Он доступен к покупке';
-    mascotAnswer.textContent = `Для ${taskNames[use] || 'вашей задачи'} рекомендую ${(recommended.title || 'эту модель').trim()}: ${profile.description} ${action}; ${availability.toLowerCase()}.`;
-    if (mascotCatalogLink) mascotCatalogLink.textContent = 'Показать рекомендованный вариант';
+  const showMascotLaptopAdvice = (laptop) => {
+    if (!laptop || !mascotAnswer) return;
+    const tasks = getLaptopTasks(laptop);
+    const title = String(laptop.title || 'Эта модель');
+    let advice = 'Подойдёт для Word, Excel, браузера, документов и обычной работы.';
+    if (tasks.includes('exam')) advice = 'Подготовлен для онлайн-экзаменов: TOEFL, IELTS, Duolingo, CSCA и видеосвязи.';
+    else if (tasks.includes('gaming')) advice = 'Хороший выбор для игр, 3D, Blender, монтажа и других тяжёлых задач.';
+    else if (tasks.includes('creative')) advice = 'Подойдёт для монтажа, графики, дизайна и творческих проектов.';
+    else if (tasks.includes('code')) advice = 'Подходит для программирования, браузера, рабочих программ и многозадачности.';
+    else if (tasks.includes('budget')) advice = 'Бюджетный вариант для документов, Word, Excel, учёбы и интернета.';
+    mascotAnswer.textContent = `${title}: ${advice}`;
     setMascotOpen(true);
-    setMascotMood('happy', 2400);
+    setMascotMood('happy', 1600);
   };
 
   rentopMascotButton?.addEventListener('click', (event) => {
@@ -908,14 +842,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     setMascotOpen(!rentopMascot.classList.contains('is-open'));
   });
   rentopMascotClose?.addEventListener('click', () => setMascotOpen(false));
-  rentopMascotPanel?.querySelectorAll('a').forEach((link) => link.addEventListener('click', () => setMascotOpen(false)));
-  rentopMascotPanel?.querySelectorAll('[data-mascot-intent]').forEach((button) => button.addEventListener('click', () => showMascotAdvice(button.dataset.mascotIntent || '')));
-  rentopMascotPanel?.querySelector('[data-mascot-catalog]')?.addEventListener('click', () => scrollToMascotCatalog());
-  mascotForm?.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const question = mascotQuestion?.value.trim() || '';
-    if (!question) { if (mascotAnswer) mascotAnswer.textContent = 'Напишите задачу: игры, учёба, офис, программирование, монтаж или 3D.'; return; }
-    showMascotAdvice('', question);
+  catalogGrid?.addEventListener('click', (event) => {
+    if (event.target.closest('button, a, .card-img')) return;
+    const card = event.target.closest('.card');
+    const laptopId = Number(card?.querySelector('[data-id]')?.dataset.id);
+    const laptop = laptops.find((item) => Number(item.id) === laptopId);
+    showMascotLaptopAdvice(laptop);
   });
 
   const mascotSize = () => window.matchMedia('(max-width: 760px)').matches
@@ -1187,7 +1119,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       useFilterButtons.forEach(b => b.classList.toggle('active', b.dataset.use === use));
       activeUseFilter = use;
       filterAndSearch();
-      showMascotSelectionRecommendation(use);
     });
   });
 

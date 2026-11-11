@@ -1131,8 +1131,8 @@ body {
   position: absolute;
   top: 8px;
   left: calc(100% - 10px);
-  width: 252px;
-  padding: 16px;
+  width: 228px;
+  padding: 13px 14px;
   border: 1px solid rgba(143, 223, 255, .46);
   border-radius: 16px;
   background: rgba(7, 20, 33, .97);
@@ -1146,8 +1146,8 @@ body {
 .rentop-mascot-panel strong,
 .rentop-mascot-panel span,
 .rentop-mascot-panel a { display: block; }
-.rentop-mascot-panel strong { padding-right: 22px; margin-bottom: 5px; font-size: 13px; }
-.rentop-mascot-panel span { margin-bottom: 8px; color: #b5d9e8; font-size: 12px; line-height: 1.4; }
+.rentop-mascot-panel strong { padding-right: 22px; margin-bottom: 4px; color:#dff8ff; font-size: 12px; letter-spacing:.03em; }
+.rentop-mascot-panel span { margin:0; color: #b5d9e8; font-size: 12px; line-height: 1.45; }
 .rentop-mascot-panel a { padding: 5px 0; color: var(--accent); font-size: 12px; font-weight: 700; text-decoration: none; }
 .rentop-mascot-panel a:hover { color: #fff; }
 .rentop-mascot-close { position: absolute; top: 7px; right: 8px; border: 0; background: transparent; color: #b5d9e8; cursor: pointer; font-size: 22px; line-height: 1; }
