@@ -256,7 +256,8 @@ function renderComparison() {
 }
 
 function catalogItemsPerPage() {
-  if (window.matchMedia('(min-width: 1200px)').matches) return 6;
+  // The homepage is a three-model showroom on every desktop size.
+  // The full catalog remains available through its own button.
   if (window.matchMedia('(min-width: 769px)').matches) return 3;
   return MOBILE_ITEMS_PER_PAGE;
 }

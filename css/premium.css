@@ -1482,3 +1482,25 @@ button.condition-card:focus-visible,
   .catalog-preview-copy>div{margin-top:auto!important}
 }
 @media(max-width:390px){.hero-visual{right:-73px!important}.catalog-preview-card{flex-basis:82vw!important}}
+
+/* Match the approved showroom scale: three concise cards, no artificial gap. */
+@media(max-width:768px){
+  .hero-layout{min-height:0!important}
+  .hero{padding-bottom:18px!important}
+  #catalog{padding-top:14px!important}
+}
+@media(min-width:769px){
+  .catalog-command-center .catalog-taskbar .filter-btn[data-use="exam"]{display:none!important}
+  .catalog-command-center{padding-top:20px!important;padding-bottom:12px!important}
+  .catalog-command-center .catalog-taskbar{flex-wrap:nowrap!important}
+  .catalog-command-center .catalog-taskbar .filter-btn{padding-inline:15px!important;font-size:13px!important}
+  .catalog-showcase{padding-top:0!important}
+  .catalog-preview-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+  .catalog-preview-card{min-height:348px!important;padding:15px!important}
+  .catalog-preview-card>img{height:160px!important;margin-bottom:10px!important;object-fit:contain!important}
+  .catalog-preview-copy h3{display:-webkit-box!important;min-height:0!important;max-height:49px!important;margin:0 0 8px!important;overflow:hidden!important;font-size:20px!important;line-height:1.18!important;-webkit-box-orient:vertical!important;-webkit-line-clamp:2!important}
+  .catalog-preview-copy p,.catalog-preview-copy .laptop-use-tags{display:none!important}
+  .catalog-preview-copy>strong{margin:6px 0 11px!important;font-size:18px!important}
+  .catalog-preview-reserve{min-height:42px!important;padding:8px 12px!important}
+  .catalog-preview-more{width:42px!important;height:42px!important}
+}
