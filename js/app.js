@@ -71,6 +71,9 @@ const deliveryTypeInput = document.getElementById('delivery-type');
 const archaLockerNote = document.getElementById('archa-locker-note');
 const archaLocationField = document.getElementById('archa-location-field');
 const archaLocationInput = document.getElementById('archa-location');
+const deliveryPreferencesField = document.getElementById('delivery-preferences-field');
+const deliveryAddressInput = document.getElementById('delivery-address');
+const deliveryPreferredTimeInput = document.getElementById('delivery-preferred-time');
 const rentalAvailabilityMessage = document.getElementById('rental-availability-message');
 const submitBtn = document.getElementById('submitBtn');
 const cabinetOrderPhone = document.getElementById('cabinet-order-phone');
@@ -473,6 +476,8 @@ function resetOrderSubmit() {
   submitInFlight = false;
   if (deliveryTypeInput) deliveryTypeInput.value = 'delivery';
   if (archaLocationInput) archaLocationInput.value = '';
+  if (deliveryAddressInput) deliveryAddressInput.value = '';
+  if (deliveryPreferredTimeInput) deliveryPreferredTimeInput.value = '';
   updateDeliveryNote();
   if (!submitBtn) return;
   submitBtn.disabled = false;
@@ -483,6 +488,7 @@ function updateDeliveryNote() {
   const isLocker = deliveryTypeInput?.value === 'arca_locker';
   if (archaLockerNote) archaLockerNote.hidden = !isLocker;
   if (archaLocationField) archaLocationField.hidden = !isLocker;
+  if (deliveryPreferencesField) deliveryPreferencesField.hidden = isLocker;
 }
 
 function selectedArchaLocation() {
@@ -643,6 +649,8 @@ function openOrderModal(id, { deliveryType = 'delivery' } = {}) {
       daysSlider.value = '2';
     }
     if (deliveryTypeInput) deliveryTypeInput.value = deliveryType;
+    if (deliveryAddressInput) deliveryAddressInput.value = '';
+    if (deliveryPreferredTimeInput) deliveryPreferredTimeInput.value = '';
     updateDeliveryNote();
     updateCalculator();
   } else {
@@ -1239,8 +1247,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       const selectedDelivery = deliveryTypeInput?.value;
       const deliveryType = selectedDelivery === 'arca_locker' ? 'arca_locker' : 'delivery';
       const archaLocation = deliveryType === 'arca_locker' ? selectedArchaLocation() : '';
+      const deliveryAddress = String(deliveryAddressInput?.value || '').trim().replace(/\s+/g, ' ');
+      const deliveryPreferredTime = String(deliveryPreferredTimeInput?.value || '').trim().replace(/\s+/g, ' ');
       if (deliveryType === 'arca_locker' && !archaLocation) {
         showRentalMessage('Выберите локацию ARCHA POINT.', 'error');
+        return;
+      }
+      if (deliveryType === 'delivery' && deliveryAddress.length < 8) {
+        showRentalMessage('Укажите полный адрес доставки.', 'error');
+        return;
+      }
+      if (deliveryType === 'delivery' && deliveryPreferredTime.length < 3) {
+        showRentalMessage('Укажите удобное время доставки.', 'error');
         return;
       }
       submitInFlight = true;
@@ -1275,7 +1293,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             startDate: draft.startDate,
             endDate: draft.endDate,
             deliveryType,
-            lockerAddress: archaLocation
+            lockerAddress: archaLocation,
+            deliveryAddress: deliveryType === 'delivery' ? deliveryAddress : '',
+            deliveryPreferredTime: deliveryType === 'delivery' ? deliveryPreferredTime : ''
           })
         });
         const result = await response.json().catch(() => ({}));
