@@ -52,6 +52,8 @@ const useFilterButtons = document.querySelectorAll('.use-filter-btn');
 const catalogPagePrev = document.getElementById('catalog-page-prev');
 const catalogPageNext = document.getElementById('catalog-page-next');
 const catalogPageStatus = document.getElementById('catalog-page-status');
+const catalogShowcasePrev = document.getElementById('catalog-showcase-prev');
+const catalogShowcaseNext = document.getElementById('catalog-showcase-next');
 const comparisonPanel = document.getElementById('catalog-compare');
 const comparisonContent = document.getElementById('catalog-compare-content');
 const comparisonClear = document.getElementById('catalog-compare-clear');
@@ -90,6 +92,8 @@ const rentopMascot = document.getElementById('rentop-mascot');
 const rentopMascotButton = document.querySelector('.rentop-mascot-button');
 const rentopMascotPanel = document.getElementById('rentop-mascot-panel');
 const rentopMascotClose = document.querySelector('.rentop-mascot-close');
+const rentopMascotHide = document.getElementById('rentop-mascot-hide');
+const rentopMascotRestore = document.getElementById('rentop-mascot-restore');
 
 // Burger
 const burger = document.getElementById('burger');
@@ -277,6 +281,8 @@ function updateCatalogPager() {
     : 'Нет подходящих моделей';
   if (catalogPagePrev) catalogPagePrev.disabled = currentPage <= 1;
   if (catalogPageNext) catalogPageNext.disabled = currentPage >= count;
+  if (catalogShowcasePrev) catalogShowcasePrev.disabled = currentPage <= 1;
+  if (catalogShowcaseNext) catalogShowcaseNext.disabled = currentPage >= count;
 }
 
 // ========== RENDER CATALOG ==========
@@ -420,7 +426,6 @@ function renderCatalogPreview(items) {
         <strong>${laptop.priceText || 'Цена уточняется'}</strong>
         <div class="catalog-preview-actions">
           <button type="button" class="catalog-preview-reserve" data-id="${laptop.id}">${isRent ? 'Забронировать' : 'Купить / Предзаказ'}</button>
-          <button type="button" class="catalog-preview-more" data-open-full aria-label="Подробнее о ${laptop.title}">→</button>
         </div>
       </div>
     </article>`;
@@ -855,6 +860,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     setMascotOpen(!rentopMascot.classList.contains('is-open'));
   });
   rentopMascotClose?.addEventListener('click', () => setMascotOpen(false));
+  const mascotHiddenStorageKey = 'rentop_mascot_hidden_v1';
+  const setMascotHidden = (hidden) => {
+    rentopMascot?.toggleAttribute('hidden', hidden);
+    if (rentopMascotRestore) rentopMascotRestore.hidden = !hidden;
+    localStorage.setItem(mascotHiddenStorageKey, hidden ? '1' : '0');
+  };
+  if (localStorage.getItem(mascotHiddenStorageKey) === '1') setMascotHidden(true);
+  rentopMascotHide?.addEventListener('click', () => setMascotHidden(true));
+  rentopMascotRestore?.addEventListener('click', () => {
+    setMascotHidden(false);
+    setMascotOpen(true);
+  });
+  rentopMascotPanel?.querySelectorAll('[data-mascot-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const target = button.dataset.mascotAction === 'catalog' ? '#catalog' : '#faq';
+      setMascotOpen(false);
+      document.querySelector(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
   catalogGrid?.addEventListener('click', (event) => {
     if (event.target.closest('button, a, .card-img')) return;
     const card = event.target.closest('.card');
@@ -1083,6 +1107,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   catalogPagePrev?.addEventListener('click', () => changeCatalogPage(-1));
   catalogPageNext?.addEventListener('click', () => changeCatalogPage(1));
+  catalogShowcasePrev?.addEventListener('click', () => changeCatalogPage(-1));
+  catalogShowcaseNext?.addEventListener('click', () => changeCatalogPage(1));
   openFullCatalog?.addEventListener('click', () => setCatalogBrowser(true));
   // Preview cards are rendered repeatedly after every filter change. Delegation
   // keeps the “Подробнее” action reliable for every current and future card.

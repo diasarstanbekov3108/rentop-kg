@@ -37,7 +37,7 @@
   <!-- Fonts & Styles -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css?v=20261112-catalog-structure">
-    <link rel="stylesheet" href="css/premium.css?v=20261112-catalog-showroom">
+    <link rel="stylesheet" href="css/premium.css?v=20261112-carousel-controls">
 
   <!-- Микроразметка Schema.org для Google -->
   <script type="application/ld+json">
@@ -182,11 +182,12 @@
       </div>
       <section class="catalog-showcase" aria-label="Быстрый просмотр каталога">
         <p class="catalog-showcase-label">РЕКОМЕНДУЕМАЯ МОДЕЛЬ</p>
-        <div class="catalog-pager" aria-label="Навигация по моделям">
+        <div class="catalog-pager visually-hidden" aria-label="Навигация по моделям">
         <button type="button" id="catalog-page-prev" aria-label="Предыдущие модели">←</button>
           <span id="catalog-page-status" aria-live="polite">Модель загружается</span>
         <button type="button" id="catalog-page-next" aria-label="Следующие модели">→</button>
         </div>
+        <button type="button" class="catalog-showcase-arrow catalog-showcase-arrow-prev" id="catalog-showcase-prev" aria-label="Показать предыдущие модели">←</button>
 
         <div id="catalog-preview-grid" class="catalog-preview-grid">
         <!-- Скелетоны загрузки -->
@@ -209,6 +210,7 @@
           <div class="skeleton-line"></div>
         </div>
         </div>
+        <button type="button" class="catalog-showcase-arrow catalog-showcase-arrow-next" id="catalog-showcase-next" aria-label="Показать следующие модели">→</button>
         <div class="catalog-carousel-dots" aria-hidden="true"><i class="is-active"></i><i></i><i></i></div>
         <button type="button" class="catalog-open-all catalog-open-all-prominent" id="open-full-catalog">Смотреть весь каталог <span>→</span></button>
       </section>
@@ -663,8 +665,15 @@
       <button class="rentop-mascot-close" type="button" aria-label="Закрыть помощника">×</button>
       <strong>Помощник Rentop</strong>
       <span id="rentop-mascot-answer" role="status">Нажмите на описание модели — коротко подскажу, для каких задач она подходит.</span>
+      <div class="rentop-mascot-actions" aria-label="Быстрые действия помощника">
+        <button type="button" data-mascot-action="catalog">Подобрать ноутбук</button>
+        <button type="button" data-mascot-action="help">Помощь с заказом</button>
+        <a href="https://wa.me/996707880857" target="_blank" rel="noopener">Написать в WhatsApp</a>
+      </div>
+      <button class="rentop-mascot-hide" id="rentop-mascot-hide" type="button">Скрыть помощника</button>
     </div>
   </div>
+  <button class="rentop-mascot-restore" id="rentop-mascot-restore" type="button" hidden>Показать помощника</button>
 
   <!-- Плавающая кнопка WhatsApp -->
   <a href="https://wa.me/996707880857" class="floating-whatsapp" target="_blank" aria-label="Написать в WhatsApp">
