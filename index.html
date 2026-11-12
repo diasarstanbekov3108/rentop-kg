@@ -37,7 +37,7 @@
   <!-- Fonts & Styles -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css?v=20261112-catalog-structure">
-    <link rel="stylesheet" href="css/premium.css?v=20261112-mobile-readable">
+    <link rel="stylesheet" href="css/premium.css?v=20261112-catalog-showroom">
 
   <!-- Микроразметка Schema.org для Google -->
   <script type="application/ld+json">
@@ -156,6 +156,7 @@
           <p class="catalog-main-kicker">КАТАЛОГ УСТРОЙСТВ</p>
           <h2 class="section-title">Выберите ноутбук <span>для аренды</span></h2>
           <p class="catalog-intro">Подберите модель под ваши задачи. Гибкие сроки, быстрая выдача 24/7.</p>
+          <p class="catalog-hint">Нажмите на карточку ноутбука для просмотра или откройте весь каталог.</p>
         </div>
       <div class="archa-selection-notice" id="archa-selection-notice" hidden role="status">
         <div><strong>Получение через ARCHA POINT 24/7</strong><span>Шаг 1 из 2: выберите ноутбук — в заявке уже будет выбран постамат.</span></div>
@@ -177,7 +178,6 @@
           <button class="filter-btn active" data-filter="rent"><span>▣</span>Аренда</button>
           <button class="filter-btn" data-filter="sale"><span>◇</span>Продажа</button>
         </div>
-        <button type="button" class="catalog-open-all catalog-open-all-prominent" id="open-full-catalog">Смотреть весь каталог <span>→</span></button>
       </div>
       </div>
       <section class="catalog-showcase" aria-label="Быстрый просмотр каталога">
@@ -209,6 +209,8 @@
           <div class="skeleton-line"></div>
         </div>
         </div>
+        <div class="catalog-carousel-dots" aria-hidden="true"><i class="is-active"></i><i></i><i></i></div>
+        <button type="button" class="catalog-open-all catalog-open-all-prominent" id="open-full-catalog">Смотреть весь каталог <span>→</span></button>
       </section>
     </div>
   </section>

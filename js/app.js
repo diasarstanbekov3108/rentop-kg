@@ -413,14 +413,21 @@ function renderCatalogPreview(items) {
   }
   catalogPreviewGrid.innerHTML = items.map(laptop => {
     const isRent = laptop.category === 'rent';
-    const availability = cardAvailability(blockingRentals, laptop.id, todayIso());
-    const profile = getCatalogProfile(laptop);
-    return `<article class="catalog-preview-card"><img src="${laptop.image}" alt="${laptop.title}" class="catalog-preview-image" loading="lazy" data-title="${laptop.title}" role="button" tabindex="0" aria-label="Открыть фото: ${laptop.title}"><div class="catalog-preview-copy"><span>${availability.label}</span><h3>${formatLaptopTitle(laptop.title)}</h3><p><b>${taskLabel(laptop)}</b><small>${laptop.description || profile.description}</small></p>${laptopUseTags(laptop)}<strong>${laptop.priceText || 'Цена уточняется'}</strong><div><button type="button" class="catalog-preview-reserve" data-id="${laptop.id}">${isRent ? 'Забронировать' : 'Купить / Предзаказ'}</button><button type="button" class="catalog-preview-more" data-open-full>Подробнее</button></div></div></article>`;
+    return `<article class="catalog-preview-card">
+      <img src="${laptop.image}" alt="${laptop.title}" class="catalog-preview-image" loading="lazy" data-title="${laptop.title}" role="button" tabindex="0" aria-label="Открыть фото: ${laptop.title}">
+      <div class="catalog-preview-copy">
+        <h3>${formatLaptopTitle(laptop.title)}</h3>
+        <strong>${laptop.priceText || 'Цена уточняется'}</strong>
+        <div class="catalog-preview-actions">
+          <button type="button" class="catalog-preview-reserve" data-id="${laptop.id}">${isRent ? 'Забронировать' : 'Купить / Предзаказ'}</button>
+          <button type="button" class="catalog-preview-more" data-open-full aria-label="Подробнее о ${laptop.title}">→</button>
+        </div>
+      </div>
+    </article>`;
   }).join('');
   catalogPreviewGrid.querySelectorAll('[data-id]').forEach(button => {
     button.addEventListener('click', (event) => openOrderModal(Number(event.currentTarget.dataset.id), { deliveryType: archaSelectionMode ? 'arca_locker' : 'delivery' }));
   });
-  catalogPreviewGrid.querySelectorAll('[data-open-full]').forEach(button => button.addEventListener('click', () => setCatalogBrowser(true)));
   catalogPreviewGrid.querySelectorAll('.catalog-preview-image').forEach(image => {
     const openPreviewImage = () => {
       if (!lightbox || !lightboxImg || !lightboxCaption) return;
@@ -1077,6 +1084,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   catalogPagePrev?.addEventListener('click', () => changeCatalogPage(-1));
   catalogPageNext?.addEventListener('click', () => changeCatalogPage(1));
   openFullCatalog?.addEventListener('click', () => setCatalogBrowser(true));
+  // Preview cards are rendered repeatedly after every filter change. Delegation
+  // keeps the “Подробнее” action reliable for every current and future card.
+  catalogPreviewGrid?.addEventListener('click', (event) => {
+    if (event.target.closest('[data-open-full]')) setCatalogBrowser(true);
+  });
   closeFullCatalog?.addEventListener('click', () => setCatalogBrowser(false));
   closeFullCatalogBottom?.addEventListener('click', () => setCatalogBrowser(false));
   savedOnlyButton?.addEventListener('click', () => {
