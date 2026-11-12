@@ -435,7 +435,7 @@ export default async function handler(request, response) {
     }
     if (payload.action === 'mark_archa_access_sent' || payload.action === 'send_manual_pickup_code') {
       const order = await database.getOrder(String(payload.orderId || ''));
-      if (!order || order.status !== 'awaiting_pickup') return reply(response, 409, { error:'Сначала ноутбук должен быть помещён в ячейку.' });
+      if (!order || order.delivery_type !== 'arca_locker' || order.status !== 'awaiting_pickup') return reply(response, 409, { error:'Код ARCHA POINT доступен только для выдачи через постамат после закладки ноутбука.' });
       const now = new Date().toISOString();
       let patch = { locker_status:'access_sent', customer_access_sent_at:now };
       if (payload.action === 'send_manual_pickup_code') {
