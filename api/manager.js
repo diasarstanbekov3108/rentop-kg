@@ -483,16 +483,32 @@ export default async function handler(request, response) {
     if (payload.action === 'mark_return_access_sent') {
       return reply(response, 409, { error:'Код возврата ARCHA POINT отправляет напрямую клиенту. Этап видео откроет сам клиент после получения SMS.' });
     }
+    if (payload.action === 'confirm_archa_courier_return_dropoff') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      if (!order || order.status !== 'awaiting_return_dropoff' || order.return_method !== 'arca_courier' || order.locker_status !== 'return_courier_code_sent') return reply(response, 409, { error:'Подтверждение доступно только после отправки кода назначенному курьеру.' });
+      const documents = await database.listOrderDocuments(order.id);
+      const returnVideo = documents.find(document => document.kind === 'return_video');
+      if (returnVideo?.status !== 'accepted') return reply(response, 409, { error:'Сначала примите видео состояния ноутбука от клиента.' });
+      const returnedAt = new Date().toISOString();
+      const updated = await database.updateOrder(order.id, { status:'returned', locker_status:'returned_by_courier', returned_at:returnedAt });
+      await database.createEvent({ order_id:order.id, event_type:'manager_confirmed_archa_courier_return_dropoff_from_web', actor_type:'manager', metadata:{ manager_phone:session.phone } });
+      return reply(response, 200, { ok:true, order:updated, message:'Помещение в ячейку отмечено. Заберите ноутбук из постамата и проведите итоговый осмотр перед актом.' });
+    }
     if (payload.action === 'send_manual_return_code') {
       const order = await database.getOrder(String(payload.orderId || ''));
       const code = String(payload.code || '').trim().slice(0, 120);
-      if (!order || order.status !== 'awaiting_return_reservation' || order.return_method !== 'arca_locker') return reply(response, 409, { error:'Резервный код доступен только для возврата через ARCHA POINT, ожидающего ячейку.' });
+      const courierPhone = String(payload.courierPhone || '').trim().slice(0, 40);
+      if (!order || order.status !== 'awaiting_return_reservation' || !['arca_locker','arca_courier'].includes(order.return_method)) return reply(response, 409, { error:'Резервный код доступен только для возврата через ARCHA POINT, ожидающего ячейку.' });
       if (code.length < 3) return reply(response, 400, { error:'Введите код возврата, подтверждённый у ARCHA POINT.' });
+      if (order.return_method === 'arca_courier' && courierPhone.replace(/\D/g, '').length < 10) return reply(response, 400, { error:'Укажите полный номер фактически назначенного курьера.' });
       if (!config.nikitaSms.enabled) return reply(response, 503, { error:'Nikita SMS не настроен: нельзя безопасно отправить резервный код клиенту.' });
-      await createNikitaSmsClient(config.nikitaSms).send({ phone:order.customer_phone, text:`RENTOP.KG: резервный код возврата в постамат ARCHA POINT: ${code}. Используйте его только для возврата по заявке ${String(order.id).slice(0, 8).toUpperCase()}. Не передавайте код третьим лицам.` });
+      const recipient = order.return_method === 'arca_courier' ? courierPhone : order.customer_phone;
+      await createNikitaSmsClient(config.nikitaSms).send({ phone:recipient, text:`RENTOP.KG: резервный код возврата в постамат ARCHA POINT: ${code}. Используйте его только для возврата по заявке ${String(order.id).slice(0, 8).toUpperCase()}. Не передавайте код третьим лицам.` });
       const now = new Date().toISOString();
-      const updated = await database.updateOrder(order.id, { locker_status:'return_access_sent', return_access_code:code, return_access_sent_at:now });
-      await database.createEvent({ order_id:order.id, event_type:'manager_sent_manual_archa_return_code_from_web', actor_type:'manager', metadata:{} });
+      const updated = await database.updateOrder(order.id, order.return_method === 'arca_courier'
+        ? { status:'awaiting_return_dropoff', locker_status:'return_courier_code_sent', return_access_code:code, return_access_sent_at:now, return_contact_phone:courierPhone }
+        : { locker_status:'return_access_sent', return_access_code:code, return_access_sent_at:now });
+      await database.createEvent({ order_id:order.id, event_type:'manager_sent_manual_archa_return_code_from_web', actor_type:'manager', metadata:{ recipient:'arca_courier' === order.return_method ? 'courier' : 'customer' } });
       return reply(response, 200, { ok:true, order:updated });
     }
     if (payload.action === 'create_bakai_payment') {
