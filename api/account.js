@@ -49,7 +49,9 @@ export default async function handler(request, response) {
   const database = createSupabaseApi(config);
   const now = new Date();
   const hydrate = async (phone) => {
-    const orders = await database.listOrdersByCustomerPhone(phone);
+    // The cabinet opens current work plus recent history. A bounded history
+    // avoids multiplying six data reads for every old test application.
+    const orders = await database.listOrdersByCustomerPhone(phone, 12);
     // Do not sign every historic image/video while opening the account. On a
     // phone that becomes dozens of Storage requests; a link is created only
     // after the customer explicitly opens one file.
@@ -68,6 +70,7 @@ export default async function handler(request, response) {
     return orders.map((order, index) => ({
       ...order,
       laptop_title:laptops[index]?.title || laptops[index]?.name || 'Ноутбук Rentop',
+      laptop_image:laptops[index]?.image_url || laptops[index]?.image || '',
       reference: orderRef(order),
       delivery_label:label(order.delivery_type),
       requests:requests[index],

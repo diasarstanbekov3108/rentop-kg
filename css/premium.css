@@ -9,6 +9,7 @@
   --line: rgba(255, 255, 255, 0.1);
 }
 
+
 body {
   background:
     radial-gradient(900px 420px at 80% -10%, rgba(61, 126, 255, 0.16), transparent 60%),
@@ -1539,3 +1540,7 @@ button.condition-card:focus-visible,
   .catalog-preview-reserve{min-height:42px!important;padding:8px 12px!important}
   .catalog-preview-more{width:42px!important;height:42px!important}
 }
+
+/* On phones the partner line and headline must introduce the locker, not
+   appear below its visual. This overrides the early mobile order:-1. */
+@media(max-width:768px){#archa-point .archa-locker-visual{order:0;margin:0;min-height:210px}}

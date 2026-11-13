@@ -60,3 +60,6 @@
 /* iOS zooms a page when a form control uses text smaller than 16px. Keep
    cabinet controls at that threshold on phones without disabling user zoom. */
 @media(max-width:600px){.cabinet-page input:not([type="checkbox"]):not([type="radio"]),.cabinet-page textarea,.cabinet-page select{font-size:16px!important}.cabinet-offer-flow{padding:14px}.cabinet-offer-sms .cabinet-inline-row{display:grid;grid-template-columns:1fr}.cabinet-offer-sms .cabinet-inline-row input{width:100%}}
+
+/* Compact rental identity: the client sees the device before the status. */
+.cabinet-rental-image{width:64px;height:54px;flex:0 0 auto;object-fit:contain;border:1px solid rgba(91,214,245,.25);border-radius:12px;background:#0c2b3d}.cabinet-rental-image-placeholder{display:grid;place-items:center;color:#66dffc;font-size:30px}.cabinet-rental-title{min-width:0;flex:1}

@@ -333,7 +333,7 @@ function paymentPanel(order) {
     const amount = Number(payment.amount || order.total_amount || 0).toLocaleString('ru-RU');
     const reference = payment.payment_reference || payment.provider_reference || payment.id || order.reference || String(order.id || '').slice(0, 8).toUpperCase();
     const paidAt = payment.paid_at || payment.updated_at || payment.created_at;
-    return `<section class="cabinet-payment success cabinet-receipt"><div><strong>${isExtension ? 'Продление оплачено' : 'Оплата получена'}</strong><span>${amount} сом · банк подтвердил платёж</span></div><p>${isExtension ? `Новый срок аренды: до ${date(order.rental_end_date)}.` : 'Мы готовим следующий шаг выдачи.'}</p><div class="cabinet-receipt-details"><b>Квитанция Rentop</b><span>Заявка: ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</span><span>Ноутбук: ${escape(order.laptop_title || '—')}</span><span>Период: ${escape(date(order.rental_start_date))} — ${escape(date(order.rental_end_date))}</span><span>Платёж: ${escape(reference)}</span><span>Подтверждён: ${escape(dateTime(paidAt, { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }))}</span></div><button class="cabinet-action secondary" type="button" data-print-receipt="${escape(order.id)}">Открыть квитанцию / сохранить PDF</button><small class="cabinet-receipt-note">Это подтверждение Rentop об успешно принятом платеже. Фирменные подпись и печать добавим после получения ваших файлов.</small></section>`;
+    return `<section class="cabinet-payment success cabinet-receipt"><div><strong>✓ ${isExtension ? 'Продление оплачено' : 'Оплата подтверждена'}</strong><span>${amount} сом · банк подтвердил платёж</span></div><p>${isExtension ? `Новый срок аренды: до ${date(order.rental_end_date)}.` : 'Мы готовим выбранный способ выдачи и сообщим о готовности.'}</p><div class="cabinet-receipt-details"><b>Квитанция Rentop</b><span>Заказчик: ${escape(order.customer_name || 'Клиент Rentop')}</span><span>Заявка: ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</span><span>Ноутбук: ${escape(order.laptop_title || '—')}</span><span>Период: ${escape(date(order.rental_start_date))} — ${escape(date(order.rental_end_date))}</span><span>Платёж: ${escape(reference)}</span><span>Подтверждён: ${escape(dateTime(paidAt, { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }))}</span></div><button class="cabinet-action secondary" type="button" data-print-receipt="${escape(order.id)}">Скачать квитанцию PDF</button><small class="cabinet-receipt-note">Квитанция оформлена с печатью ИП Rentop. Заказчик берётся из данных этой заявки.</small></section>`;
   }
   if (!isExtension && order.status !== 'awaiting_payment') return '';
   if (!payment) return `<div class="cabinet-payment waiting"><strong>Готовим способ оплаты</strong><p>Менеджер формирует защищённый QR-счёт. Обновите страницу через несколько минут — платить по реквизитам в переписке не нужно.</p>${documentNotice}</div>`;
@@ -573,7 +573,9 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
       ? { ...baseState, title:'Ноутбук в пути', text:order.delivery_dispatch_mode === 'third_party_courier' ? 'Ноутбук передан сторонней курьерской службе. Перед отправкой с вами свяжутся для уточнения, а примерно за 10 минут до приезда предупредят. Подтвердите получение только после фактической передачи ноутбука.' : 'Ноутбук передан курьеру Rentop. Перед отправкой с вами свяжутся для уточнения, а примерно за 10 минут до приезда предупредят. Подтвердите получение только после фактической передачи ноутбука.' }
       : baseState;
     const rentalTerm = order.rental_started_at && order.rental_ends_at ? `${moment(order.rental_started_at)} — ${moment(order.rental_ends_at)} (Бишкек)` : `${date(order.rental_start_date)} — ${date(order.rental_end_date)}`;
-    return `<article class="cabinet-rental" data-rental="${order.id}"><div class="cabinet-rental-top"><div><h3>${escape(order.laptop_title || 'Ноутбук Rentop')}</h3><p class="cabinet-rental-ref">Заявка ${escape(order.reference)}</p></div><span class="cabinet-badge">${escape(state.title)}</span></div><div class="cabinet-progress" aria-label="Этап ${state.step} из 5"><span class="is-done"></span><span class="${state.step >= 2 ? 'is-done' : ''}"></span><span class="${state.step >= 3 ? 'is-done' : ''}"></span><span class="${state.step >= 4 ? 'is-done' : ''}"></span><span class="${state.step >= 5 ? 'is-done' : ''}"></span></div><p class="cabinet-next-step">${escape(state.text)}</p>${documentSummary(order)}${supportUpdates(order)}<div class="cabinet-rental-grid"><div>Срок<strong>${rentalTerm}</strong></div><div>Получение<strong>${escape(order.delivery_label)}</strong></div><div>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div>Скидка<strong>${Number(order.discount_percent || 0)}%</strong></div></div>${pickupInstruction(order)}${paymentPanel(order)}${actionPanel(order)}${requestForm(order)}</article>`;
+    const laptopImage = String(order.laptop_image || '').trim();
+    const visual = laptopImage ? `<img class="cabinet-rental-image" src="${escape(laptopImage)}" alt="${escape(order.laptop_title || 'Ноутбук Rentop')}">` : '<span class="cabinet-rental-image cabinet-rental-image-placeholder" aria-hidden="true">▱</span>';
+    return `<article class="cabinet-rental" data-rental="${order.id}"><div class="cabinet-rental-top">${visual}<div class="cabinet-rental-title"><h3>${escape(order.laptop_title || 'Ноутбук Rentop')}</h3><p class="cabinet-rental-ref">Заявка ${escape(order.reference)}</p></div><span class="cabinet-badge">${escape(state.title)}</span></div><div class="cabinet-progress" aria-label="Этап ${state.step} из 5"><span class="is-done"></span><span class="${state.step >= 2 ? 'is-done' : ''}"></span><span class="${state.step >= 3 ? 'is-done' : ''}"></span><span class="${state.step >= 4 ? 'is-done' : ''}"></span><span class="${state.step >= 5 ? 'is-done' : ''}"></span></div><p class="cabinet-next-step">${escape(state.text)}</p>${documentSummary(order)}${supportUpdates(order)}<div class="cabinet-rental-grid"><div>Срок<strong>${rentalTerm}</strong></div><div>Получение<strong>${escape(order.delivery_label)}</strong></div><div>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div>Скидка<strong>${Number(order.discount_percent || 0)}%</strong></div></div>${pickupInstruction(order)}${paymentPanel(order)}${actionPanel(order)}${requestForm(order)}</article>`;
   }).join('');
   emptyEl.hidden = cabinetOrders.length !== 0;
   watchOrderUpdates(cabinetOrders);
@@ -835,11 +837,8 @@ rentalsEl?.addEventListener('click', event => {
     const sourceOrder = cabinetOrders.find(order => String(order.id) === String(button.dataset.order));
     panel.innerHTML = panel.hidden ? '' : `<button class="cabinet-workspace-close" type="button" data-close-workspace aria-label="Закрыть форму">× <span>К заявке</span></button>${panelMarkup(button.dataset.panel, button.dataset.order, { mode:button.dataset.documentMode, kinds:button.dataset.documentKinds, requestId:button.dataset.requestId, days:button.dataset.extensionDays, offerSmsVerified:Boolean(sourceOrder?.offer_otp_verified_at), benefitRequested:sourceOrder?.benefit_requested_type || '', deliveryType:sourceOrder?.delivery_type || '', deliveryAddress:sourceOrder?.delivery_address || '', deliveryPreferredTime:sourceOrder?.delivery_preferred_time || '', lockerAddress:sourceOrder?.locker_address || '', address:sourceOrder?.return_collection_address || sourceOrder?.residence_address || '', name:sourceOrder?.return_contact_name || sourceOrder?.customer_name || '', phone:sourceOrder?.return_contact_phone || sourceOrder?.customer_phone || '' })}`;
     setWorkspaceMode(panel.hidden ? null : panel);
-    if (!panel.hidden) {
-      window.requestAnimationFrame(() => {
-        panel.querySelector('input, select, textarea, button')?.focus({ preventScroll:true });
-      });
-    }
+    // Do not autofocus here: iOS Safari can scroll and zoom the page when a
+    // workspace opens even though the customer only tapped a button.
     return;
   }
   const correction = event.target.closest('[data-document-correction]');
@@ -943,7 +942,7 @@ rentalsEl?.addEventListener('submit', async event => {
       const output = documentForm.querySelector('.cabinet-form-error') || document.createElement('p');
       output.className = 'cabinet-form-error'; output.textContent = text;
       if (!output.parentElement) documentForm.append(output);
-      output.scrollIntoView({ behavior:'smooth', block:'nearest' });
+      output.scrollIntoView({ behavior:'auto', block:'nearest' });
     };
     const titles = { identity_front:'лицевую сторону паспорта / ID', identity_back:'обратную сторону паспорта / ID', selfie:'селфи с документом', supporting:'официальное подтверждение', benefit_proof:'подтверждение льготы', issue_video:'видео получения', return_video:'видео возврата' };
     const missingKinds = requiredKinds.filter(kind => !files.some(item => item.kind === kind));
@@ -979,20 +978,19 @@ rentalsEl?.addEventListener('submit', async event => {
       const orderComment = String(documentForm.elements.orderComment?.value || '').trim();
       if (!isEvidence && orderComment.length >= 3) await request('POST', { action:'save_order_comment', orderId:documentForm.dataset.order, message:orderComment });
       if (!isEvidence && !isReplacement) await request('POST', { action:'accept_offer', orderId:documentForm.dataset.order });
-      for (let index = 0; index < files.length; index += 1) {
-        const { kind, file } = files[index];
+      let completedUploads = 0;
+      const uploadOne = async ({ kind, file }) => {
         const input = documentForm.elements[kind];
         if (['issue_video', 'return_video'].includes(kind) && input?.dataset.videoTooLong === '1') throw new Error('Снимите видео короче 30 секунд и выберите его заново.');
         const selectedType = kind === 'supporting' ? documentForm.elements.supportingType.value : '';
         const fileName = selectedType ? `${selectedType} — ${file.name}` : file.name;
-        button.textContent = `Загружаем ${index + 1}/${files.length}…`;
         const contentType = contentTypeForFile(file);
         const isVideo = ['video/mp4', 'video/quicktime'].includes(contentType);
         if (file.size > (isVideo ? 50 : 8) * 1024 * 1024) throw new Error(`${isVideo ? 'Видео' : 'Фото или документ'} «${file.name}» больше ${isVideo ? 50 : 8} МБ. Уменьшите размер и выберите файл заново.`);
         const ticket = await request('POST', { action:'create_document_upload', orderId:documentForm.dataset.order, kind, fileName, contentType, byteSize:file.size });
         let upload = await fetch(ticket.uploadUrl, { method:'PUT', headers:{ Authorization:`Bearer ${ticket.token}`, 'x-upsert':'false', 'content-type':contentType }, body:file });
         if (!upload.ok) {
-          button.textContent = `Повторяем загрузку ${index + 1}/${files.length}…`;
+          button.textContent = `Повторяем загрузку файлов (${completedUploads}/${files.length})…`;
           upload = await fetch(ticket.uploadUrl, { method:'PUT', headers:{ Authorization:`Bearer ${ticket.token}`, 'x-upsert':'false', 'content-type':contentType }, body:file });
         }
         if (!upload.ok) throw new Error(`Не удалось загрузить «${file.name}». Файл остался выбранным в форме: проверьте соединение и нажмите «Загрузить документы» ещё раз.`);
@@ -1003,13 +1001,28 @@ rentalsEl?.addEventListener('submit', async event => {
           // Retry once with the same storage path. The API treats an exact
           // retry as success, so an interrupted response cannot duplicate or
           // lose a document that has already reached the protected storage.
-          button.textContent = `Проверяем сохранение ${index + 1}/${files.length}…`;
+          button.textContent = `Проверяем сохранение файлов (${completedUploads}/${files.length})…`;
           await request('POST', registerPayload);
         }
+        completedUploads += 1;
+        button.textContent = completedUploads === files.length ? 'Файлы сохранены. Открываем заявку…' : `Загружено ${completedUploads}/${files.length}…`;
+      };
+      // Two parallel files shorten a five-document mobile upload without a
+      // burst of five signed-storage operations at once.
+      for (let index = 0; index < files.length; index += 2) await Promise.all(files.slice(index, index + 2).map(uploadOne));
+      const successText = documentForm.dataset.requiredKinds === 'benefit_proof' ? 'Льготный документ отправлен. Ожидайте проверки менеджером.' : isEvidence ? 'Видео загружено. Выполните следующий шаг в заявке.' : 'Документы отправлены. Заявка передана менеджеру на проверку.';
+      const order = cabinetOrders.find(item => String(item.id) === String(documentForm.dataset.order));
+      if (order && !isEvidence && !isReplacement) {
+        order.status = 'pending_review';
+        order.documents = [...(order.documents || []), ...files.map(({ kind, file }) => ({ kind, file_name:file.name, status:'pending_review' }))];
       }
-      message(documentForm.dataset.requiredKinds === 'benefit_proof' ? 'Льготный документ отправлен. Ожидайте проверки менеджером.' : isEvidence ? 'Видео загружено. Выполните следующий шаг в заявке.' : 'Документы загружены. Менеджер проверит их и сообщит следующий шаг.', 'success');
-      const fresh = await request('GET');
-      if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos, fresh.benefits);
+      // Do not make the customer wait for a full history refresh after the
+      // final file is safely registered. Refresh in the background instead.
+      showRentals(cabinetOrders, order?.customer_phone || '', customerProfile, supportWhatsappUrl, offerSmsConsentRequired, customerPromos, customerBenefits);
+      message(successText, 'success');
+      request('GET').then(fresh => {
+        if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos, fresh.benefits);
+      }).catch(() => {});
     } catch (error) {
       const output = documentForm.querySelector('.cabinet-form-error') || document.createElement('p');
       output.className = 'cabinet-form-error'; output.textContent = error.message; documentForm.append(output);
