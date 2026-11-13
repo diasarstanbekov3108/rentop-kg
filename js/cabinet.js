@@ -12,6 +12,7 @@ const profileEl = document.getElementById('cabinet-profile');
 const dashboardNotice = document.getElementById('cabinet-dashboard-notice');
 const loyaltyPanelEl = document.getElementById('cabinet-loyalty-panel');
 const loyaltyToggle = document.getElementById('cabinet-loyalty-toggle');
+const cabinetHero = document.getElementById('cabinet-hero');
 const documentViewer = document.getElementById('cabinet-document-viewer');
 const documentViewerContent = document.getElementById('cabinet-document-viewer-content');
 const paymentDialog = document.getElementById('cabinet-payment-dialog');
@@ -539,6 +540,7 @@ function videoControl(kind) {
 
 function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequired = false, promos = [], benefits = []) {
   setWorkspaceMode();
+  if (cabinetHero) cabinetHero.hidden = true;
   customerProfile = profile;
   offerSmsConsentRequired = Boolean(smsRequired);
   customerPromos = Array.isArray(promos) ? promos : [];
@@ -580,7 +582,10 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
     const rentalTerm = order.rental_started_at && order.rental_ends_at ? `${moment(order.rental_started_at)} — ${moment(order.rental_ends_at)} (Бишкек)` : `${date(order.rental_start_date)} — ${date(order.rental_end_date)}`;
     const laptopImage = String(order.laptop_image || '').trim();
     const visual = laptopImage ? `<img class="cabinet-rental-image" src="${escape(laptopImage)}" alt="${escape(order.laptop_title || 'Ноутбук Rentop')}">` : '<span class="cabinet-rental-image cabinet-rental-image-placeholder" aria-hidden="true">▱</span>';
-    return `<article class="cabinet-rental" data-rental="${order.id}"><div class="cabinet-rental-top">${visual}<div class="cabinet-rental-title"><h3>${escape(order.laptop_title || 'Ноутбук Rentop')}</h3><p class="cabinet-rental-ref">Заявка ${escape(order.reference)}</p></div><span class="cabinet-badge">${escape(state.title)}</span></div><div class="cabinet-progress" aria-label="Этап ${state.step} из 5"><span class="is-done"></span><span class="${state.step >= 2 ? 'is-done' : ''}"></span><span class="${state.step >= 3 ? 'is-done' : ''}"></span><span class="${state.step >= 4 ? 'is-done' : ''}"></span><span class="${state.step >= 5 ? 'is-done' : ''}"></span></div><p class="cabinet-next-step">${escape(state.text)}</p>${documentSummary(order)}${supportUpdates(order)}<div class="cabinet-rental-grid"><div>Срок<strong>${rentalTerm}</strong></div><div>Получение<strong>${escape(order.delivery_label)}</strong></div><div>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div>Скидка<strong>${Number(order.discount_percent || 0)}%</strong></div></div>${pickupInstruction(order)}${paymentPanel(order)}${actionPanel(order)}${requestForm(order)}</article>`;
+    const journey = ['Заявка', 'Оплата', 'Подготовка', order.delivery_type === 'arca_locker' ? 'Выдача' : 'Доставка'];
+    const activeJourneyStep = Math.max(1, Math.min(4, state.step || 1));
+    const journeyMarkup = `<div class="cabinet-stage-progress" aria-label="Текущий этап: ${escape(state.title)}">${journey.map((label, index) => `<div class="${index + 1 < activeJourneyStep ? 'is-done' : index + 1 === activeJourneyStep ? 'is-active' : ''}"><i>${index + 1 < activeJourneyStep ? '✓' : index + 1}</i><span>${label}</span></div>`).join('')}</div>`;
+    return `<article class="cabinet-rental" data-rental="${order.id}"><div class="cabinet-rental-top">${visual}<div class="cabinet-rental-title"><h3>${escape(order.laptop_title || 'Ноутбук Rentop')}</h3><p class="cabinet-rental-ref">Заявка ${escape(order.reference)}</p></div><span class="cabinet-badge">${escape(state.title)}</span></div>${journeyMarkup}<p class="cabinet-next-step">${escape(state.text)}</p>${documentSummary(order)}${supportUpdates(order)}<div class="cabinet-rental-grid"><div>Срок<strong>${rentalTerm}</strong></div><div>Получение<strong>${escape(order.delivery_label)}</strong></div><div>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div>Скидка<strong>${Number(order.discount_percent || 0)}%</strong></div></div>${pickupInstruction(order)}${paymentPanel(order)}${actionPanel(order)}${requestForm(order)}</article>`;
   }).join('');
   emptyEl.hidden = cabinetOrders.length !== 0;
   watchOrderUpdates(cabinetOrders);
@@ -594,6 +599,7 @@ function showLogin() {
   if (paymentPollingTimer) window.clearInterval(paymentPollingTimer);
   orderPollingTimer = null; paymentPollingTimer = null;
   dashboard.hidden = true;
+  if (cabinetHero) cabinetHero.hidden = false;
   loading.hidden = true;
   login.hidden = false;
 }
