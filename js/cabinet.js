@@ -552,6 +552,33 @@ function videoControl(kind) {
   return `<div class="cabinet-file-control"><input id="document-${kind}" name="${kind}" type="file" accept="video/*" hidden><div><button class="cabinet-file-choose" type="button" data-file-trigger="${kind}">Снять или выбрать видео</button><button class="cabinet-file-preview" type="button" data-file-preview="${kind}" disabled>Видео не выбрано</button><button class="cabinet-file-remove" type="button" data-file-remove="${kind}" hidden>Удалить</button></div><p class="cabinet-video-hint" data-video-hint="${kind}">Откроется камера или медиатека телефона: выберите качественную съёмку 720p или 1080p/30 fps.</p></div>`;
 }
 
+function orderDetailsMarkup(order) {
+  const baseState = statusInfo(order.status);
+  const state = order.delivery_type === 'delivery' && order.status === 'awaiting_pickup'
+    ? { ...baseState, title:'Ноутбук в пути', text:order.delivery_dispatch_mode === 'third_party_courier' ? 'Ноутбук передан сторонней курьерской службе. Перед отправкой с вами свяжутся для уточнения, а примерно за 10 минут до приезда предупредят. Подтвердите получение только после фактической передачи ноутбука.' : 'Ноутбук передан курьеру Rentop. Перед отправкой с вами свяжутся для уточнения, а примерно за 10 минут до приезда предупредят. Подтвердите получение только после фактической передачи ноутбука.' }
+    : baseState;
+  const rentalTerm = order.rental_started_at && order.rental_ends_at ? `${moment(order.rental_started_at)} — ${moment(order.rental_ends_at)} (Бишкек)` : `${date(order.rental_start_date)} — ${date(order.rental_end_date)}`;
+  const laptopImage = String(order.laptop_image || '').trim();
+  const visual = laptopImage ? `<img class="cabinet-rental-image" src="${escape(laptopImage)}" alt="${escape(order.laptop_title || 'Ноутбук Rentop')}">` : '<span class="cabinet-rental-image cabinet-rental-image-placeholder" aria-hidden="true">▱</span>';
+  const journey = ['Заявка', 'Оплата', 'Подготовка', order.delivery_type === 'arca_locker' ? 'Выдача' : 'Доставка'];
+  const activeJourneyStep = Math.max(1, Math.min(4, state.step || 1));
+  const journeyMarkup = `<div class="cabinet-stage-progress" aria-label="Текущий этап: ${escape(state.title)}">${journey.map((label, index) => `<div class="${index + 1 < activeJourneyStep ? 'is-done' : index + 1 === activeJourneyStep ? 'is-active' : ''}"><i>${index + 1 < activeJourneyStep ? '✓' : index + 1}</i><span>${label}</span></div>`).join('')}</div>`;
+  return `<div class="cabinet-order-workspace-head"><button class="cabinet-workspace-close" type="button" data-close-order-workspace aria-label="Вернуться к списку заявок">← <span>Все заявки</span></button><span class="cabinet-badge">${escape(state.title)}</span></div><div class="cabinet-order-hero"><div class="cabinet-order-visual">${visual}</div><div><p class="cabinet-eyebrow">ЗАЯВКА ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</p><h2>${escape(order.laptop_title || 'Ноутбук Rentop')}</h2><p>${escape(state.text)}</p></div></div>${journeyMarkup}<section class="cabinet-order-summary"><div><span>Срок аренды</span><strong>${rentalTerm}</strong></div><div><span>Получение</span><strong>${escape(order.delivery_label)}</strong></div><div><span>Сумма</span><strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div><span>Скидка</span><strong>${Number(order.discount_percent || 0)}%</strong></div></section>${documentSummary(order)}${supportUpdates(order)}${pickupInstruction(order)}${paymentPanel(order)}${actionPanel(order)}${requestForm(order)}`;
+}
+
+function openOrderWorkspace(orderId) {
+  const order = cabinetOrders.find(item => String(item.id) === String(orderId));
+  if (!order || !rentalsEl) return;
+  document.getElementById('cabinet-order-workspace')?.remove();
+  const workspace = document.createElement('section');
+  workspace.id = 'cabinet-order-workspace';
+  workspace.className = 'cabinet-request-panel cabinet-workspace cabinet-order-workspace';
+  workspace.dataset.orderWorkspace = String(order.id);
+  workspace.innerHTML = orderDetailsMarkup(order);
+  rentalsEl.append(workspace);
+  setWorkspaceMode(workspace);
+}
+
 function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequired = false, promos = [], benefits = []) {
   setWorkspaceMode();
   if (cabinetHero) cabinetHero.hidden = true;
@@ -599,7 +626,7 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
     const journey = ['Заявка', 'Оплата', 'Подготовка', order.delivery_type === 'arca_locker' ? 'Выдача' : 'Доставка'];
     const activeJourneyStep = Math.max(1, Math.min(4, state.step || 1));
     const journeyMarkup = `<div class="cabinet-stage-progress" aria-label="Текущий этап: ${escape(state.title)}">${journey.map((label, index) => `<div class="${index + 1 < activeJourneyStep ? 'is-done' : index + 1 === activeJourneyStep ? 'is-active' : ''}"><i>${index + 1 < activeJourneyStep ? '✓' : index + 1}</i><span>${label}</span></div>`).join('')}</div>`;
-    return `<article class="cabinet-rental" data-rental="${order.id}"><div class="cabinet-rental-top">${visual}<div class="cabinet-rental-title"><h3>${escape(order.laptop_title || 'Ноутбук Rentop')}</h3><p class="cabinet-rental-ref">Заявка ${escape(order.reference)}</p></div><span class="cabinet-badge">${escape(state.title)}</span></div>${journeyMarkup}<p class="cabinet-next-step">${escape(state.text)}</p>${documentSummary(order)}${supportUpdates(order)}<div class="cabinet-rental-grid"><div>Срок<strong>${rentalTerm}</strong></div><div>Получение<strong>${escape(order.delivery_label)}</strong></div><div>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div>Скидка<strong>${Number(order.discount_percent || 0)}%</strong></div></div>${pickupInstruction(order)}${paymentPanel(order)}${actionPanel(order)}${requestForm(order)}</article>`;
+    return `<article class="cabinet-rental cabinet-rental-summary" data-rental="${order.id}"><div class="cabinet-rental-top">${visual}<div class="cabinet-rental-title"><h3>${escape(order.laptop_title || 'Ноутбук Rentop')}</h3><p class="cabinet-rental-ref">Заявка ${escape(order.reference)}</p></div><span class="cabinet-badge">${escape(state.title)}</span></div>${journeyMarkup}<p class="cabinet-next-step">${escape(state.text)}</p><div class="cabinet-rental-grid"><div>Срок<strong>${rentalTerm}</strong></div><div>Получение<strong>${escape(order.delivery_label)}</strong></div><div>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div>Скидка<strong>${Number(order.discount_percent || 0)}%</strong></div></div><button class="cabinet-action cabinet-order-open" type="button" data-open-order="${escape(order.id)}">Открыть заявку <span aria-hidden="true">→</span></button></article>`;
   }).join('');
   emptyEl.hidden = cabinetOrders.length !== 0;
   watchOrderUpdates(cabinetOrders);
@@ -683,6 +710,19 @@ codeForm?.addEventListener('submit', async event => { event.preventDefault(); co
 document.getElementById('change-phone')?.addEventListener('click', () => { codeForm.hidden = true; phoneForm.hidden = false; codeInput.value = ''; message(''); phoneInput.focus(); });
 document.getElementById('cabinet-logout')?.addEventListener('click', async () => { await request('POST', { action:'logout' }).catch(() => {}); showLogin(); phoneForm.hidden = false; codeForm.hidden = true; phoneInput.value = ''; codeInput.value = ''; pendingPhone = ''; message('Вы вышли из кабинета.'); });
 rentalsEl?.addEventListener('click', event => {
+  const openOrder = event.target.closest('[data-open-order]');
+  if (openOrder) {
+    openOrderWorkspace(openOrder.dataset.openOrder);
+    return;
+  }
+  const closeOrderWorkspace = event.target.closest('[data-close-order-workspace]');
+  if (closeOrderWorkspace) {
+    const workspace = closeOrderWorkspace.closest('#cabinet-order-workspace');
+    if (hasUnsavedDocumentDraft() && !window.confirm('Выбранные фото, видео и заполненные данные будут удалены. Вернуться к списку заявок?')) return;
+    workspace?.remove();
+    setWorkspaceMode();
+    return;
+  }
   const closeCompletion = event.target.closest('[data-close-completion]');
   if (closeCompletion) {
     hiddenCompletionOrders.add(String(closeCompletion.dataset.closeCompletion));
@@ -880,13 +920,13 @@ rentalsEl?.addEventListener('click', event => {
   if (event.target.closest('.cabinet-cancel-panel')) {
     const panel = event.target.closest('.cabinet-request-panel');
     if (hasUnsavedDocumentDraft() && !window.confirm('Выбранные фото, видео и заполненные данные будут удалены. Закрыть форму?')) return;
-    panel.hidden = true; panel.innerHTML = ''; setWorkspaceMode();
+    panel.hidden = true; panel.innerHTML = ''; setWorkspaceMode(panel.closest('#cabinet-order-workspace'));
     return;
   }
   if (event.target.closest('[data-close-workspace]')) {
     const panel = event.target.closest('.cabinet-request-panel');
     if (hasUnsavedDocumentDraft() && !window.confirm('Выбранные фото, видео и заполненные данные будут удалены. Закрыть форму?')) return;
-    panel.hidden = true; panel.innerHTML = ''; setWorkspaceMode();
+    panel.hidden = true; panel.innerHTML = ''; setWorkspaceMode(panel.closest('#cabinet-order-workspace'));
   }
 });
 document.getElementById('cabinet-document-viewer-close')?.addEventListener('click', closeDocumentViewer);
