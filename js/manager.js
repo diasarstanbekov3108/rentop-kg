@@ -30,6 +30,7 @@ let isChiefAdmin = false;
 let activeLoad = null;
 const transientOrderMessages = new Map();
 let openOrderDetails = new Set();
+let selectedOrderId = '';
 
 const escape = value => String(value || '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' }[char]));
 const date = value => value ? new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }).format(new Date(value)) : '—';
@@ -172,6 +173,7 @@ function archaIssueHandoffPanel(order) {
 function render() {
   openOrderDetails = new Set([...ordersEl.querySelectorAll('.manager-order-details[open]')].map(item => item.closest('[data-manager-order]')?.dataset.managerOrder).filter(Boolean));
   const list = visibleOrders();
+  if (!list.some(order => String(order.id) === String(selectedOrderId))) selectedOrderId = list[0]?.id || '';
   const pendingDocs = orders.reduce((total, order) => total + order.documents.filter(document => document.status === 'pending_review').length, 0);
   const active = orders.filter(order => ['in_use','incident'].includes(order.status)).length;
   const returns = orders.filter(order => ['return_requested','awaiting_return_reservation','awaiting_return_dropoff','awaiting_return_collection','returned'].includes(order.status));
@@ -240,7 +242,12 @@ function render() {
       : '';
     const workflowActions = `${pending ? `<button class="secondary" data-reject-all="${order.id}">Отклонить все с причиной</button>` : ''}${extensionAction}${exchangeAction}${paymentAction}${manualPaymentAction}${archaControls(order)}${deliveryControls(order)}${paymentReadiness}${action ? `<button data-order-action="advance" data-order="${order.id}" data-next-status="${action.next}">${action.label}</button>` : ''}`;
     const deliveryDetails = order.delivery_type === 'delivery' && (order.delivery_address || order.delivery_preferred_time) ? `<br><small>${escape(order.delivery_address || 'Адрес уточняется')} · ${escape(order.delivery_preferred_time || 'время уточняется')}</small>` : order.locker_address ? `<br><small>${escape(order.locker_address)}</small>` : '';
-    return `<article class="manager-order" data-manager-order="${order.id}" data-manager-return-method="${escape(order.return_method || '')}"><div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p></div><span class="manager-status-pill ${escape(order.status)}">${escape(statusLabel(order.status))}</span></div><div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда</span><strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(deliveryLabel(order))}${deliveryDetails}</strong></div><div><span>Сумма аренды</span><strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div><span>Залог / скидка</span><strong>${Number(order.deposit_amount || 0).toLocaleString('ru-RU')} сом · ${Number(order.discount_percent || 0)}%</strong></div></div>${directDocuments}${supportPanel}${returnAcceptance}${handoffPanel}<div class="manager-actions manager-workflow-actions">${workflowActions || '<span class="manager-action-note">Следующее действие появится после обновления статуса.</span>'}</div><p class="manager-order-feedback" data-order-feedback="${order.id}" hidden></p><details class="manager-order-details" ${openOrderDetails.has(String(order.id)) || (order.status === 'pending_review' && documentsReadyForPayment) ? 'open' : ''}><summary>Детали заявки, реестр и служебные данные</summary>${details}</details></article>`;
+    const orderIndex = list.findIndex(item => String(item.id) === String(order.id));
+    const isSelected = String(order.id) === String(selectedOrderId);
+    const previous = list[orderIndex - 1];
+    const next = list[orderIndex + 1];
+    const queueNavigation = isSelected && list.length > 1 ? `<div class="manager-order-queue-nav" aria-label="Навигация по рабочей очереди"><span>В очереди: ${orderIndex + 1} из ${list.length}</span><div><button type="button" data-select-order="${escape(previous?.id || '')}" ${previous ? '' : 'disabled'} aria-label="Предыдущая заявка">←</button><button type="button" data-select-order="${escape(next?.id || '')}" ${next ? '' : 'disabled'} aria-label="Следующая заявка">→</button></div></div>` : '';
+    return `<article class="manager-order ${isSelected ? 'is-selected' : 'is-queued'}" data-manager-order="${order.id}" data-manager-return-method="${escape(order.return_method || '')}"><div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p></div><span class="manager-status-pill ${escape(order.status)}">${escape(statusLabel(order.status))}</span></div>${queueNavigation}<div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда</span><strong>${date(order.rental_start_date)} — ${date(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(deliveryLabel(order))}${deliveryDetails}</strong></div><div><span>Сумма аренды</span><strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div><span>Залог / скидка</span><strong>${Number(order.deposit_amount || 0).toLocaleString('ru-RU')} сом · ${Number(order.discount_percent || 0)}%</strong></div></div>${directDocuments}${supportPanel}${returnAcceptance}${handoffPanel}<div class="manager-actions manager-workflow-actions">${workflowActions || '<span class="manager-action-note">Следующее действие появится после обновления статуса.</span>'}</div><p class="manager-order-feedback" data-order-feedback="${order.id}" hidden></p><details class="manager-order-details" ${isSelected || openOrderDetails.has(String(order.id)) || (order.status === 'pending_review' && documentsReadyForPayment) ? 'open' : ''}><summary>Детали заявки, реестр и служебные данные</summary>${details}</details></article>`;
   }).join('') : '<div class="manager-empty">По этому фильтру заявок нет.</div>';
 }
 
@@ -275,6 +282,21 @@ statsEl.addEventListener('click', event => { const button = event.target.closest
 returnAlert?.addEventListener('click', () => { setFilter('returns'); document.querySelector('.manager-toolbar')?.scrollIntoView({ behavior:'smooth', block:'start' }); });
 searchInput?.addEventListener('input', render);
 ordersEl.addEventListener('click', async event => {
+  const queueSelection = event.target.closest('[data-select-order]');
+  if (queueSelection && !queueSelection.disabled && queueSelection.dataset.selectOrder) {
+    selectedOrderId = queueSelection.dataset.selectOrder;
+    render();
+    ordersEl.querySelector('.manager-order.is-selected')?.scrollIntoView({ behavior:'smooth', block:'start' });
+    return;
+  }
+  const orderCard = event.target.closest('.manager-order');
+  const isControl = event.target.closest('button, a, input, textarea, select, summary, label');
+  if (orderCard && !isControl) {
+    selectedOrderId = orderCard.dataset.managerOrder;
+    render();
+    ordersEl.querySelector('.manager-order.is-selected')?.scrollIntoView({ behavior:'smooth', block:'nearest' });
+    return;
+  }
   const preview = event.target.closest('[data-document-view]');
   if (preview) {
     const original = preview.textContent;
