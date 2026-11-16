@@ -253,7 +253,7 @@ function render() {
 }
 
 async function load(silent = false) { if (activeLoad) return activeLoad; if (!silent) statusEl.textContent = 'Загружаем заявки…'; activeLoad = (async () => { try { const data = await api(); orders = data.orders || []; rentableLaptops = data.rentableLaptops || []; isChiefAdmin = Boolean(data.isChiefAdmin); if (catalogOpenButton) catalogOpenButton.hidden = !isChiefAdmin; if (sidebarCatalogButton) sidebarCatalogButton.hidden = !isChiefAdmin; gate.hidden = true; dashboard.hidden = false; if (!silent) statusEl.textContent = `Обновлено: ${new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit'}).format(new Date())}`; render(); } catch (error) { dashboard.hidden = true; if (catalogOpenButton) catalogOpenButton.hidden = true; if (sidebarCatalogButton) sidebarCatalogButton.hidden = true; gate.hidden = error.status !== 401; statusEl.textContent = error.status === 401 ? '' : error.message; } finally { activeLoad = null; } })(); return activeLoad; }
-function setFilter(nextFilter) { filter = nextFilter; document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item.dataset.filter === filter)); render(); }
+function setFilter(nextFilter) { if (!catalogPanel.hidden) { catalogPanel.hidden = true; dashboard.hidden = false; } filter = nextFilter; document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item.dataset.filter === filter)); render(); }
 
 document.getElementById('manager-refresh').addEventListener('click', load);
 window.setInterval(() => {
@@ -279,7 +279,7 @@ testBakaiButton?.addEventListener('click', async () => {
 });
 if (clearTestsButton) clearTestsButton.hidden = true;
 document.querySelector('.manager-filters').addEventListener('click', event => { const button = event.target.closest('[data-filter]'); if (button) setFilter(button.dataset.filter); });
-document.querySelector('.manager-sidebar-nav')?.addEventListener('click', event => { const button = event.target.closest('[data-filter]'); if (button) setFilter(button.dataset.filter); });
+document.querySelector('.manager-sidebar-nav')?.addEventListener('click', event => { const button = event.target.closest('[data-filter]'); if (button) setFilter(button.dataset.filter); const dashboardButton = event.target.closest('[data-open-dashboard]'); if (dashboardButton) setFilter('all'); });
 statsEl.addEventListener('click', event => { const button = event.target.closest('[data-filter]'); if (button) setFilter(button.dataset.filter); });
 returnAlert?.addEventListener('click', () => { setFilter('returns'); document.querySelector('.manager-toolbar')?.scrollIntoView({ behavior:'smooth', block:'start' }); });
 searchInput?.addEventListener('input', render);
