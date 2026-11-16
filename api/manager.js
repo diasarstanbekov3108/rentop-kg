@@ -519,7 +519,11 @@ export default async function handler(request, response) {
       if (existing?.status === 'paid') return reply(response, 409, { error:'Эта заявка уже оплачена.' });
       if (existing?.status === 'awaiting_payment' && new Date(existing.expires_at) > new Date()) return reply(response, 409, { error:'Для этой заявки уже создан активный QR. Сначала отзовите его, если нужен новый счёт.' });
       const defaultAmount = Number(order.total_amount || 0) + Number(order.deposit_amount || 0);
-      const amount = Number(payload.amount || defaultAmount);
+      const rentalAndDepositAmount = Number(payload.amount || defaultAmount);
+      const deliveryChargeMode = order.delivery_type === 'delivery' && payload.deliveryChargeMode === 'rentop' ? 'rentop' : 'external';
+      const deliveryFee = deliveryChargeMode === 'rentop' ? Number(payload.deliveryFee || 0) : 0;
+      if (!Number.isFinite(deliveryFee) || deliveryFee < 0 || deliveryFee > 100_000) return reply(response, 400, { error:'Укажите корректную стоимость доставки.' });
+      const amount = rentalAndDepositAmount + deliveryFee;
       if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) return reply(response, 400, { error:'Укажите корректную сумму оплаты.' });
       const operationId = makePaymentOperationId(order.id);
       const reference = String(order.id).slice(0, 8).toUpperCase();
@@ -535,10 +539,11 @@ export default async function handler(request, response) {
         qr_image:qr.qrImage || null,
         qr_image_with_frame:qr.qrImageWithFrame || null,
         qr_link:qr.qrLink || null,
+        bank_payload:{ source:'manager_invoice', breakdown:{ rental_and_deposit_amount:rentalAndDepositAmount, delivery_fee:deliveryFee, delivery_charge_mode:deliveryChargeMode } },
         status:'awaiting_payment',
         expires_at:new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
       });
-      await database.createEvent({ order_id:order.id, event_type:'bakai_qr_created_from_web', actor_type:'manager', metadata:{ operation_id:operationId, amount } }).catch(error => console.error('Bakai payment audit event failed:', error.message));
+      await database.createEvent({ order_id:order.id, event_type:'bakai_qr_created_from_web', actor_type:'manager', metadata:{ operation_id:operationId, amount, rental_and_deposit_amount:rentalAndDepositAmount, delivery_fee:deliveryFee, delivery_charge_mode:deliveryChargeMode } }).catch(error => console.error('Bakai payment audit event failed:', error.message));
       return reply(response, 201, { ok:true, payment });
     }
     if (payload.action === 'create_extension_bakai_payment') {
@@ -651,7 +656,7 @@ export default async function handler(request, response) {
       const updatedPayment = await database.updateOrderPayment(payment.id, {
         status:'paid',
         bank_transaction_id:reference,
-        bank_payload:{ source:'manager_manual_confirmation', reference },
+        bank_payload:{ ...(payment.bank_payload || {}), manual_confirmation:{ source:'manager_manual_confirmation', reference } },
         paid_at:now
       });
       let updatedOrder = order;

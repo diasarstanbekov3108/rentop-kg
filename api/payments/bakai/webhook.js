@@ -78,7 +78,10 @@ export default async function handler(request, response) {
       status:'paid',
       bank_elqr_id:bankElqrId,
       bank_transaction_id:String(payload.qrTransactionID || payload.transactionID || '').trim() || null,
-      bank_payload:payload,
+      // Preserve the invoice breakdown created by the manager. The bank
+      // response is attached under its own key instead of replacing it, so
+      // the customer receipt can still show delivery separately.
+      bank_payload:{ ...(payment.bank_payload || {}), bank_webhook:payload },
       paid_at:now
     });
     const order = await database.getOrder(payment.order_id);
