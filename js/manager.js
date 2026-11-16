@@ -16,6 +16,7 @@ const testBakaiButton = document.getElementById('manager-test-bakai');
 const bakaiCheck = document.getElementById('manager-bakai-check');
 const returnAlert = document.getElementById('manager-return-alert');
 const catalogOpenButton = document.getElementById('manager-catalog-open');
+const sidebarCatalogButton = document.getElementById('manager-sidebar-catalog');
 const catalogPanel = document.getElementById('manager-catalog-panel');
 const catalogCloseButton = document.getElementById('manager-catalog-close');
 const catalogForm = document.getElementById('manager-catalog-form');
@@ -181,7 +182,7 @@ function render() {
   const paidOrders = orders.filter(order => order.payment?.status === 'paid');
   const revenue = paidOrders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
   const deposits = paidOrders.reduce((sum, order) => sum + Number(order.deposit_amount || 0), 0);
-  statsEl.innerHTML = [[orders.length,'Всего заявок','all'],[fresh,'В работе','new'],[pendingDocs,'Документы на проверке','documents'],[active,'Активные аренды','active'],[returns.length,'Возвраты требуют действий','returns'],[`${revenue.toLocaleString('ru-RU')} сом`,'Выручка в реестре','all'],[`${deposits.toLocaleString('ru-RU')} сом`,'Залоги в учёте','all']].map(([value,label,key]) => `<button class="manager-stat ${filter === key ? 'is-active' : ''}" type="button" data-filter="${key}"><span>${label}</span><strong>${value}</strong></button>`).join('');
+  statsEl.innerHTML = [[orders.length,'Всего заявок','all'],[fresh,'В работе','new'],[pendingDocs,'Документы на проверке','documents'],[active,'Активные аренды','active'],[`${revenue.toLocaleString('ru-RU')} сом`,'Выручка (месяц)','all']].map(([value,label,key]) => `<button class="manager-stat ${filter === key ? 'is-active' : ''}" type="button" data-filter="${key}"><span>${label}</span><strong>${value}</strong></button>`).join('');
   if (returnAlert) {
     const newest = returns[0];
     returnAlert.hidden = !newest;
@@ -251,7 +252,7 @@ function render() {
   }).join('') : '<div class="manager-empty">По этому фильтру заявок нет.</div>';
 }
 
-async function load(silent = false) { if (activeLoad) return activeLoad; if (!silent) statusEl.textContent = 'Загружаем заявки…'; activeLoad = (async () => { try { const data = await api(); orders = data.orders || []; rentableLaptops = data.rentableLaptops || []; isChiefAdmin = Boolean(data.isChiefAdmin); if (catalogOpenButton) catalogOpenButton.hidden = !isChiefAdmin; gate.hidden = true; dashboard.hidden = false; if (!silent) statusEl.textContent = `Обновлено: ${new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit'}).format(new Date())}`; render(); } catch (error) { dashboard.hidden = true; if (catalogOpenButton) catalogOpenButton.hidden = true; gate.hidden = error.status !== 401; statusEl.textContent = error.status === 401 ? '' : error.message; } finally { activeLoad = null; } })(); return activeLoad; }
+async function load(silent = false) { if (activeLoad) return activeLoad; if (!silent) statusEl.textContent = 'Загружаем заявки…'; activeLoad = (async () => { try { const data = await api(); orders = data.orders || []; rentableLaptops = data.rentableLaptops || []; isChiefAdmin = Boolean(data.isChiefAdmin); if (catalogOpenButton) catalogOpenButton.hidden = !isChiefAdmin; if (sidebarCatalogButton) sidebarCatalogButton.hidden = !isChiefAdmin; gate.hidden = true; dashboard.hidden = false; if (!silent) statusEl.textContent = `Обновлено: ${new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit'}).format(new Date())}`; render(); } catch (error) { dashboard.hidden = true; if (catalogOpenButton) catalogOpenButton.hidden = true; if (sidebarCatalogButton) sidebarCatalogButton.hidden = true; gate.hidden = error.status !== 401; statusEl.textContent = error.status === 401 ? '' : error.message; } finally { activeLoad = null; } })(); return activeLoad; }
 function setFilter(nextFilter) { filter = nextFilter; document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item.dataset.filter === filter)); render(); }
 
 document.getElementById('manager-refresh').addEventListener('click', load);
@@ -278,6 +279,7 @@ testBakaiButton?.addEventListener('click', async () => {
 });
 if (clearTestsButton) clearTestsButton.hidden = true;
 document.querySelector('.manager-filters').addEventListener('click', event => { const button = event.target.closest('[data-filter]'); if (button) setFilter(button.dataset.filter); });
+document.querySelector('.manager-sidebar-nav')?.addEventListener('click', event => { const button = event.target.closest('[data-filter]'); if (button) setFilter(button.dataset.filter); });
 statsEl.addEventListener('click', event => { const button = event.target.closest('[data-filter]'); if (button) setFilter(button.dataset.filter); });
 returnAlert?.addEventListener('click', () => { setFilter('returns'); document.querySelector('.manager-toolbar')?.scrollIntoView({ behavior:'smooth', block:'start' }); });
 searchInput?.addEventListener('input', render);
@@ -286,7 +288,6 @@ ordersEl.addEventListener('click', async event => {
   if (queueSelection && !queueSelection.disabled && queueSelection.dataset.selectOrder) {
     selectedOrderId = queueSelection.dataset.selectOrder;
     render();
-    ordersEl.querySelector('.manager-order.is-selected')?.scrollIntoView({ behavior:'smooth', block:'start' });
     return;
   }
   const orderCard = event.target.closest('.manager-order');
@@ -294,7 +295,6 @@ ordersEl.addEventListener('click', async event => {
   if (orderCard && !isControl) {
     selectedOrderId = orderCard.dataset.managerOrder;
     render();
-    ordersEl.querySelector('.manager-order.is-selected')?.scrollIntoView({ behavior:'smooth', block:'nearest' });
     return;
   }
   const preview = event.target.closest('[data-document-view]');
@@ -589,6 +589,7 @@ catalogOpenButton?.addEventListener('click', async () => {
   statusEl.textContent = 'Загружаем каталог…';
   try { await loadCatalogManager(); statusEl.textContent = 'Каталог загружен.'; } catch (error) { statusEl.textContent = error.message; }
 });
+sidebarCatalogButton?.addEventListener('click', () => catalogOpenButton?.click());
 catalogCloseButton?.addEventListener('click', () => { catalogPanel.hidden = true; dashboard.hidden = false; });
 catalogResetButton?.addEventListener('click', resetCatalogForm);
 catalogList?.addEventListener('click', async event => {
