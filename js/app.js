@@ -422,6 +422,7 @@ function renderCatalogPreview(items) {
       <img src="${laptop.image}" alt="${laptop.title}" class="catalog-preview-image" loading="lazy">
       <div class="catalog-preview-copy">
         <h3>${formatLaptopTitle(laptop.title)}</h3>
+        <span class="catalog-preview-meta">${taskLabel(laptop)}</span>
         <strong>${laptop.priceText || 'Цена уточняется'}</strong>
         <div class="catalog-preview-actions">
           <button type="button" class="catalog-preview-open" data-open-full>Смотреть модель <span>→</span></button>
