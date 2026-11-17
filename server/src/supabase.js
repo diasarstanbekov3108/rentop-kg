@@ -187,6 +187,13 @@ export function createSupabaseApi(config) {
       method:'PATCH', body:JSON.stringify(patch)
     }).then((rows) => rows?.[0] || null),
     getOrderFeedback: (orderId) => getOne(`rental_order_feedback?order_id=eq.${encodeURIComponent(orderId)}&select=id,rating,review,suggestion,created_at&limit=1`),
+    listOrderFeedbackForOrders: (orderIds) => {
+      const values = inList(orderIds);
+      return values ? request(
+        `rental_order_feedback?order_id=in.(${values})` +
+        '&select=id,order_id,rating,review,suggestion,created_at&order=created_at.desc&limit=500'
+      ) : Promise.resolve([]);
+    },
     createOrderFeedback: (feedback) => request('rental_order_feedback', {
       method:'POST', body:JSON.stringify(feedback)
     }).then((rows) => rows?.[0] || null),

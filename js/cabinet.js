@@ -70,7 +70,7 @@ const request = async (method, payload, timeoutMs = 20000) => {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch('/api/account', { method, credentials: 'same-origin', cache: 'no-store', signal:controller.signal, headers: payload ? { 'content-type': 'application/json' } : {}, body: payload ? JSON.stringify(payload) : undefined });
+    const response = await fetch('/api/account', { method, credentials: 'include', cache: 'no-store', signal:controller.signal, headers: payload ? { 'content-type': 'application/json' } : {}, body: payload ? JSON.stringify(payload) : undefined });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) { const error = new Error(body.error || 'Не удалось выполнить запрос.'); error.data = body; throw error; }
     return body;
@@ -692,15 +692,15 @@ async function loadSession() {
   login.hidden = true;
   loading.hidden = false;
   try {
-    // Do not throw a customer back to the phone form because of a single
-    // transient mobile/cold-start failure. The second read is intentionally
-    // small and still uses the same secure session cookie.
+    // Do not leave the person under a permanent "checking" indicator. Two
+    // short attempts cover a cold start, then the visible login screen gives
+    // a clear retry path instead of looking like an unexplained logout.
     let data;
     try {
-      data = await request('GET');
+      data = await request('GET', undefined, 8000);
     } catch (firstError) {
-      await new Promise(resolve => window.setTimeout(resolve, 500));
-      data = await request('GET');
+      await new Promise(resolve => window.setTimeout(resolve, 350));
+      data = await request('GET', undefined, 8000);
     }
     if (epoch !== sessionViewEpoch) return;
     if (data.authenticated) { showRentals(data.orders || [], data.phone, data.profile, data.whatsappUrl, data.offerSmsConsentRequired, data.promos, data.benefits); return; }

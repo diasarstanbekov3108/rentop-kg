@@ -59,27 +59,48 @@ export default async function handler(request, response) {
     // one after another, so a customer with test/history orders could wait long
     // enough for a mobile request to time out. One missing old asset must not
     // make the entire cabinet unavailable either.
-    const [laptops, requests, documents, payments, feedback, supportCases] = await Promise.all([
-      Promise.all(orders.map(order => database.getLaptop(order.laptop_id).catch(() => null))),
-      Promise.all(orders.map(order => database.listCustomerRequests(order.id).catch(() => []))),
-      Promise.all(orders.map(order => database.listOrderDocuments(order.id).catch(() => []))),
-      Promise.all(orders.map(order => database.listOrderPayments(order.id).catch(() => []))),
-      Promise.all(orders.map(order => database.getOrderFeedback(order.id).catch(() => null))),
-      Promise.all(orders.map(order => database.listOrderSupportCases(order.id).catch(() => [])))
+    const orderIds = orders.map(order => order.id);
+    // Keep account opening bounded even when the customer has a long testing
+    // history. The former per-order reads could turn twelve old applications
+    // into more than seventy database requests and make a valid session look
+    // like it had been lost on a slow mobile connection.
+    const [laptops, allRequests, allDocuments, allPayments, allFeedback, allSupportCases] = await Promise.all([
+      database.listLaptopsByIds(orders.map(order => order.laptop_id)).catch(() => []),
+      database.listCustomerRequestsForOrders(orderIds).catch(() => []),
+      database.listOrderDocumentsForOrders(orderIds).catch(() => []),
+      database.listOrderPaymentsForOrders(orderIds).catch(() => []),
+      database.listOrderFeedbackForOrders(orderIds).catch(() => []),
+      database.listOrderSupportCasesForOrders(orderIds).catch(() => [])
     ]);
-    return orders.map((order, index) => ({
+    const by = (items, key) => (items || []).reduce((map, item) => {
+      const value = String(item?.[key] || '');
+      if (!map.has(value)) map.set(value, []);
+      map.get(value).push(item);
+      return map;
+    }, new Map());
+    const laptopById = new Map((laptops || []).map(laptop => [String(laptop.id), laptop]));
+    const requestsByOrder = by(allRequests, 'order_id');
+    const documentsByOrder = by(allDocuments, 'order_id');
+    const paymentsByOrder = by(allPayments, 'order_id');
+    const feedbackByOrder = by(allFeedback, 'order_id');
+    const supportCasesByOrder = by(allSupportCases, 'order_id');
+    return orders.map(order => {
+      const laptop = laptopById.get(String(order.laptop_id));
+      const payments = paymentsByOrder.get(String(order.id)) || [];
+      return {
       ...order,
-      laptop_title:laptops[index]?.title || laptops[index]?.name || 'Ноутбук Rentop',
-      laptop_image:laptops[index]?.image_url || laptops[index]?.image || '',
+      laptop_title:laptop?.title || laptop?.name || 'Ноутбук Rentop',
+      laptop_image:laptop?.image_url || laptop?.image || '',
       reference: orderRef(order),
       delivery_label:label(order.delivery_type),
-      requests:requests[index],
-      documents:documents[index],
-      feedback:feedback[index],
-      supportCases:supportCases[index],
-      payment:(payments[index] || []).find(payment => payment.purpose !== 'extension') || null,
-      extensionPayment:(payments[index] || []).find(payment => payment.purpose === 'extension' && ['awaiting_payment', 'paid'].includes(payment.status)) || null
-    }));
+      requests:requestsByOrder.get(String(order.id)) || [],
+      documents:documentsByOrder.get(String(order.id)) || [],
+      feedback:(feedbackByOrder.get(String(order.id)) || [])[0] || null,
+      supportCases:supportCasesByOrder.get(String(order.id)) || [],
+      payment:payments.find(payment => payment.purpose !== 'extension') || null,
+      extensionPayment:payments.find(payment => payment.purpose === 'extension' && ['awaiting_payment', 'paid'].includes(payment.status)) || null
+    };
+    });
   };
   const accountData = async (phone) => {
     const [profile, promos, benefits, orders] = await Promise.all([
@@ -91,11 +112,14 @@ export default async function handler(request, response) {
     return { phone, whatsappUrl: config.rentopWhatsappPhone ? `https://wa.me/${config.rentopWhatsappPhone}` : '', offerSmsConsentRequired:config.offerSmsConsentRequired, profile, promos, benefits, orders };
   };
   const verifySession = async () => {
-    const raw = readCookie(request, COOKIE) || readCookie(request, COMPAT_COOKIE); if (!raw) return null;
-    const session = await database.getCabinetSession(hash(secret, raw));
-    if (!session || session.revoked_at || new Date(session.expires_at) <= now) return null;
-    database.touchCabinetSession(session.id).catch(() => {});
-    return session;
+    const tokens = [readCookie(request, COOKIE), readCookie(request, COMPAT_COOKIE)].filter(Boolean);
+    for (const raw of tokens) {
+      const session = await database.getCabinetSession(hash(secret, raw));
+      if (!session || session.revoked_at || new Date(session.expires_at) <= now) continue;
+      database.touchCabinetSession(session.id).catch(() => {});
+      return session;
+    }
+    return null;
   };
   const notifyDocumentManager = async (order, document) => {
     try {
