@@ -423,7 +423,7 @@ function actionPanel(order) {
     if (order.delivery_type === 'delivery') {
       const issueVideo = (order.documents || []).find(document => document.kind === 'issue_video' && document.status !== 'rejected');
       const primary = issueVideo
-        ? `<button class="cabinet-action" data-confirm-pickup="${order.id}">Ноутбук получил(а) — начать аренду</button>`
+        ? `<span class="cabinet-request-state is-success">✓ Видео получения отправлено. Проверьте ноутбук и комплект, затем подтвердите получение.</span><button class="cabinet-action" data-confirm-pickup="${order.id}">Видео отправлено — подтвердить получение</button>`
         : `<button class="cabinet-action" data-panel="issue-video" data-order="${order.id}">Прикрепить видео получения</button>`;
       const deliveryActor = order.delivery_dispatch_mode === 'third_party_courier' ? 'Ноутбук передан сторонней курьерской службе.' : 'Ноутбук передан курьеру Rentop.';
       return `${documents}<section class="cabinet-pickup-flow is-ready"><div><strong>Ноутбук в пути</strong><span>Срок аренды начнётся только после вашего подтверждения</span></div><p>${deliveryActor} Перед отправкой с вами свяжутся для уточнения, а примерно за 10 минут до приезда предупредят. Подтвердите получение только когда ноутбук действительно передан вам. Сначала снимите короткое видео ноутбука, экрана, зарядки и комплекта.</p><ol><li>Примите ноутбук.</li><li>Снимите видео комплекта и состояния устройства.</li><li>Прикрепите видео и нажмите «Ноутбук получил(а)».</li></ol><div class="cabinet-actions">${primary}<button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Уточнить доставку</button>${whatsapp}</div></section>`;
@@ -442,7 +442,7 @@ function actionPanel(order) {
     const primary = !accessSent
       ? `<button class="cabinet-action" data-pickup-access-received="${order.id}">Код из SMS получен</button>`
       : issueVideo
-        ? `<button class="cabinet-action" data-confirm-pickup="${order.id}">Подтвердить получение</button>`
+        ? `<span class="cabinet-request-state is-success">✓ Видео получения отправлено. Проверьте ноутбук и комплект, затем подтвердите получение.</span><button class="cabinet-action" data-confirm-pickup="${order.id}">Видео отправлено — подтвердить получение</button>`
         : `<button class="cabinet-action" data-panel="issue-video" data-order="${order.id}">Прикрепить видео получения</button>`;
     return `<section class="cabinet-pickup-flow ${accessSent ? 'is-ready' : ''}"><div><strong>${accessSent ? '✓ ' : ''}${title}</strong><span>${escape(location)}${point ? ` · ${escape(point.hours)}` : ''}</span></div>${point ? `<a class="cabinet-map-link" href="${escape(point.map)}" target="_blank" rel="noopener">Маршрут в 2ГИС ↗</a>` : ''}<p>${lead}${issueVideo ? ' Видео получено — подтвердите получение.' : ''}</p>${steps}<div class="cabinet-actions">${primary}<button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Помощь</button></div></section>`;
   }
@@ -454,16 +454,13 @@ function actionPanel(order) {
     return `${documents}<section class="cabinet-pickup-flow"><strong>Резервируем ячейку для возврата</strong><p>ARCHA POINT готовит ячейку в точке ${escape(order.return_locker_address || order.locker_address || 'из вашей заявки')}. ${courierToLocker ? 'Вы выбрали передачу через стороннего курьера: менеджер согласует с вами его номер и безопасно направит код возврата только этому курьеру. До этого не передавайте ноутбук.' : 'Код придёт отдельным SMS напрямую на номер из заявки — не в личный кабинет. Как только SMS с кодом действительно пришла, нажмите кнопку ниже: откроется загрузка видео возврата.'}</p><div class="cabinet-actions">${courierToLocker ? '<span class="cabinet-request-state is-info">Ожидаем код ARCHA POINT и данные курьера.</span>' : `<button class="cabinet-action" data-return-access-received="${order.id}">Код из SMS получен</button>`}<button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Код не приходит / помощь</button>${whatsapp}</div></section>`;
   }
   if (order.status === 'awaiting_return_dropoff') {
-    const returnVideoAccepted = returnVideo?.status === 'accepted';
-    const returnVideoPending = returnVideo && !returnVideoAccepted;
-    const returnAction = returnVideoAccepted
-      ? `<span class="cabinet-request-state is-info">Видео проверено. Теперь поместите ноутбук в ячейку и подтвердите это ниже.</span><button class="cabinet-action" data-confirm-return-dropoff="${order.id}">Ноутбук помещён в ячейку</button>`
-      : returnVideoPending
-        ? `<span class="cabinet-request-state is-warning">Видео отправлено. Ожидаем визуальной проверки менеджера. Не помещайте ноутбук в ячейку до подтверждения.</span>`
+    const returnVideoReady = Boolean(returnVideo && returnVideo.status !== 'rejected');
+    const returnAction = returnVideoReady
+      ? `<span class="cabinet-request-state is-success">✓ Видео возврата отправлено. Поместите ноутбук в ячейку и подтвердите закрытие. Менеджер проверит видео и технику после получения.</span><button class="cabinet-action" data-confirm-return-dropoff="${order.id}">Ноутбук помещён в ячейку</button>`
         : `<button class="cabinet-action secondary" data-panel="return-video" data-order="${order.id}">Прикрепить видео возврата</button>`;
     const courierToLocker = returnMethod === 'arca_courier';
     const courierNotice = courierToLocker ? 'Код направлен согласованному курьеру, а не отображается в кабинете. Сначала передайте ноутбук курьеру и дождитесь его подтверждения о помещении в ячейку.' : 'Только затем поместите устройство в ячейку по коду ARCHA POINT.';
-    return `${documents}<section class="cabinet-pickup-flow is-ready"><strong>${courierToLocker ? 'Курьер везёт возврат в постамат' : 'Код возврата отправлен'}</strong><p>До помещения в ячейку снимите короткое видео ноутбука, корпуса, экрана, зарядки и комплекта. Затем дождитесь, пока менеджер проверит видео.</p><ol><li>Снимите видео состояния и комплекта.</li><li>Прикрепите видео ниже.</li><li>Дождитесь статуса «Видео проверено».</li><li>${courierNotice}</li></ol><div class="cabinet-actions">${courierToLocker ? (returnVideoAccepted ? '<span class="cabinet-request-state is-info">Видео проверено. Ожидаем подтверждение помещения от курьера и менеджера.</span>' : returnAction) : returnAction}<button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Проблема с возвратом</button></div></section>`;
+    return `${documents}<section class="cabinet-pickup-flow is-ready"><strong>${courierToLocker ? 'Курьер везёт возврат в постамат' : 'Код возврата отправлен'}</strong><p>До помещения в ячейку снимите короткое видео ноутбука, корпуса, экрана, зарядки и комплекта. После отправки видео не нужно ждать ручной проверки: возвращайте устройство по коду.</p><ol><li>Снимите видео состояния и комплекта.</li><li>Прикрепите видео ниже.</li><li>${courierToLocker ? 'Передайте ноутбук назначенному курьеру.' : 'Поместите ноутбук в ячейку и закройте её.'}</li><li>Менеджер проверит видео и технику после фактического получения.</li></ol><div class="cabinet-actions">${courierToLocker ? (returnVideoReady ? '<span class="cabinet-request-state is-success">✓ Видео возврата отправлено. Ожидаем подтверждение помещения от курьера.</span>' : returnAction) : returnAction}<button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Проблема с возвратом</button></div></section>`;
   }
   if (order.status === 'returned') { const returnedText = returnMethod === 'arca_locker' ? 'Мы получили вашу отметку о помещении ноутбука. Менеджер заберёт устройство из ячейки, проверит видео и проведёт итоговый осмотр.' : 'Rentop отметил физическое получение ноутбука. Менеджер проверит видео и проведёт итоговый осмотр.'; return `${documents}<section class="cabinet-pickup-flow"><strong>Возврат подтверждён</strong><p>${returnedText} Аренда будет завершена только после этой проверки.</p><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Проблема с возвратом</button>${whatsapp}</div></section>`; }
   if (order.status === 'completed') {
@@ -584,7 +581,7 @@ function orderDetailsMarkup(order) {
       ? '<div class="cabinet-request-state is-success">✓ Спасибо — ваш отзыв уже получен.</div>'
       : `<div class="cabinet-actions"><button class="cabinet-action" data-panel="feedback" data-order="${order.id}">Оставить отзыв</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Связаться с Rentop</button></div>`;
     const receipt = lastPayment ? `<section class="cabinet-terminal-receipt"><div><span>Последний подтверждённый платёж</span><strong>${paidAmount} сом</strong></div><button class="cabinet-action secondary" type="button" data-print-receipt="${escape(order.id)}">Квитанция PDF</button></section>` : '';
-    return `<div class="cabinet-order-workspace-head"><button class="cabinet-workspace-close" type="button" data-close-order-workspace aria-label="Вернуться к списку заявок">← <span>Все заявки</span></button><span class="cabinet-badge">${escape(state.title)}</span></div><div class="cabinet-order-hero"><div class="cabinet-order-visual">${visual}</div><div><p class="cabinet-eyebrow">ЗАЯВКА ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</p><h2>${escape(order.laptop_title || 'Ноутбук Rentop')}</h2><p>Спасибо, что выбрали Rentop. Аренда и возврат завершены.</p></div></div>${journeyMarkup}<section class="cabinet-terminal-summary"><span aria-hidden="true">✓</span><div><strong>Аренда завершена</strong><p>Ноутбук принят Rentop. Все действия по заявке сохранены в истории.</p></div></section>${receipt}<section class="cabinet-completion"><strong>Спасибо, что выбрали Rentop!</strong><p>Будем рады помочь снова. Персональный промокод на следующую аренду появится в разделе «Скидки и промокоды».</p>${feedbackActions}<div class="cabinet-actions"><button class="cabinet-action ghost" type="button" data-archive-order="${escape(order.id)}">Скрыть в архив</button></div></section><details class="cabinet-order-history"><summary>История заявки, документы и платежи</summary><div>${documentSummary(order)}${supportUpdates(order)}${paymentPanel(order)}</div></details>${requestForm(order)}`;
+    return `<div class="cabinet-order-workspace-head"><button class="cabinet-workspace-close" type="button" data-close-order-workspace aria-label="Вернуться к списку заявок">← <span>Все заявки</span></button><div class="cabinet-order-workspace-head-actions"><span class="cabinet-badge">${escape(state.title)}</span><button class="cabinet-order-archive" type="button" data-archive-order="${escape(order.id)}">В архив</button></div></div><div class="cabinet-order-hero"><div class="cabinet-order-visual">${visual}</div><div><p class="cabinet-eyebrow">ЗАЯВКА ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</p><h2>${escape(order.laptop_title || 'Ноутбук Rentop')}</h2><p>Спасибо, что выбрали Rentop. Аренда и возврат завершены.</p></div></div>${journeyMarkup}<section class="cabinet-terminal-summary"><span aria-hidden="true">✓</span><div><strong>Аренда завершена</strong><p>Ноутбук принят Rentop. Все действия по заявке сохранены в истории.</p></div></section>${receipt}<section class="cabinet-completion"><strong>Спасибо, что выбрали Rentop!</strong><p>Будем рады помочь снова. Персональный промокод на следующую аренду появится в разделе «Скидки и промокоды».</p>${feedbackActions}</section><details class="cabinet-order-history"><summary>История заявки, документы и платежи</summary><div>${documentSummary(order)}${supportUpdates(order)}${paymentPanel(order)}</div></details>${requestForm(order)}`;
   }
   return `<div class="cabinet-order-workspace-head"><button class="cabinet-workspace-close" type="button" data-close-order-workspace aria-label="Вернуться к списку заявок">← <span>Все заявки</span></button><span class="cabinet-badge">${escape(state.title)}</span></div><div class="cabinet-order-hero"><div class="cabinet-order-visual">${visual}</div><div><p class="cabinet-eyebrow">ЗАЯВКА ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</p><h2>${escape(order.laptop_title || 'Ноутбук Rentop')}</h2><p>${escape(state.text)}</p></div></div>${journeyMarkup}<section class="cabinet-order-summary"><div><span>Срок аренды</span><strong>${rentalTerm}</strong></div><div><span>Получение</span><strong>${escape(order.delivery_label)}</strong></div><div><span>Сумма</span><strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div><span>Скидка</span><strong>${Number(order.discount_percent || 0)}%</strong></div></section>${documentSummary(order)}${supportUpdates(order)}${pickupInstruction(order)}${paymentPanel(order)}${actionPanel(order)}${requestForm(order)}`;
 }
@@ -607,6 +604,7 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   // order they are currently working in. Native mobile file pickers can
   // briefly change page visibility, so this is especially important for video.
   const workspaceOrderId = activeWorkspaceOrderId();
+  const pageScrollTop = window.scrollY;
   setWorkspaceMode();
   if (cabinetHero) cabinetHero.hidden = true;
   customerProfile = profile;
@@ -669,6 +667,10 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   else if (!showingArchivedOrders) emptyEl.innerHTML = '<h3>Аренд пока нет</h3><p>Когда вы оформите заявку с этим номером, она появится здесь.</p><a class="cabinet-primary cabinet-link" href="/#catalog">Выбрать ноутбук</a>';
   watchOrderUpdates(cabinetOrders);
   if (workspaceOrderId && displayedOrders.some(order => String(order.id) === workspaceOrderId)) openOrderWorkspace(workspaceOrderId);
+  // A live update may replace the workspace markup. Restore the exact page
+  // position so a customer recording or uploading evidence is never thrown
+  // back to the beginning of the application.
+  window.requestAnimationFrame(() => window.scrollTo({ top:pageScrollTop, behavior:'auto' }));
   if (returningToBooking && hasValidProfileName) {
     window.setTimeout(() => window.location.assign('/?resume_booking=1'), 250);
   }
@@ -1134,6 +1136,12 @@ rentalsEl?.addEventListener('submit', async event => {
       for (let index = 0; index < files.length; index += 2) await Promise.all(files.slice(index, index + 2).map(uploadOne));
       const successText = documentForm.dataset.requiredKinds === 'benefit_proof' ? 'Льготный документ отправлен. Ожидайте проверки менеджером.' : isEvidence ? 'Видео загружено. Выполните следующий шаг в заявке.' : 'Документы отправлены. Заявка передана менеджеру на проверку.';
       const order = cabinetOrders.find(item => String(item.id) === String(documentForm.dataset.order));
+      if (order && isEvidence) {
+        // The upload is already registered safely. Mirror it locally before
+        // the background read completes, so the next action is immediately
+        // clear even on a slow mobile connection.
+        order.documents = [...(order.documents || []).filter(document => document.kind !== files[0]?.kind), ...files.map(({ kind, file }) => ({ kind, file_name:file.name, status:'pending_review' }))];
+      }
       if (order && !isEvidence && !isReplacement) {
         order.status = 'pending_review';
         order.documents = [...(order.documents || []), ...files.map(({ kind, file }) => ({ kind, file_name:file.name, status:'pending_review' }))];

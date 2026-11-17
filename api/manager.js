@@ -505,7 +505,7 @@ export default async function handler(request, response) {
       if (!order || order.status !== 'awaiting_return_dropoff' || order.return_method !== 'arca_courier' || order.locker_status !== 'return_courier_code_sent') return reply(response, 409, { error:'Подтверждение доступно только после отправки кода назначенному курьеру.' });
       const documents = await database.listOrderDocuments(order.id);
       const returnVideo = documents.find(document => document.kind === 'return_video');
-      if (returnVideo?.status !== 'accepted') return reply(response, 409, { error:'Сначала примите видео состояния ноутбука от клиента.' });
+      if (!returnVideo || returnVideo.status === 'rejected') return reply(response, 409, { error:'Сначала дождитесь загруженного, не отклонённого видео состояния ноутбука от клиента.' });
       const returnedAt = new Date().toISOString();
       const updated = await database.updateOrder(order.id, { status:'returned', locker_status:'returned_by_courier', returned_at:returnedAt });
       await database.createEvent({ order_id:order.id, event_type:'manager_confirmed_archa_courier_return_dropoff_from_web', actor_type:'manager', metadata:{ manager_phone:session.phone } });
