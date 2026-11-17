@@ -1,5 +1,5 @@
 import { RENTOP_BACKEND_URL } from './config.js';
-import { fetchLaptops, fetchBlockingRentals, getFallbackLaptops } from './supabase.js';
+import { fetchLaptops, fetchBlockingRentals } from './supabase.js';
 import {
   todayIso,
   addDays,
@@ -414,7 +414,7 @@ function renderLaptops(items, append = false, target = catalogGrid) {
 function renderCatalogPreview(items) {
   if (!catalogPreviewGrid) return;
   if (!items.length) {
-    catalogPreviewGrid.innerHTML = '<p class="catalog-preview-empty">Сейчас нет подходящих моделей. Откройте полный каталог, чтобы посмотреть весь ассортимент.</p>';
+    catalogPreviewGrid.innerHTML = '<p class="catalog-preview-empty">Каталог пока недоступен. Проверьте подключение и обновите страницу.</p>';
     return;
   }
   catalogPreviewGrid.innerHTML = items.map(laptop => {
@@ -1081,27 +1081,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   loadSavedLaptops();
-  // Сразу выводим карточки из безопасного локального резерва. Пользователь
-  // никогда не остаётся на «скелетонах», даже если внешний запрос завис.
-  laptops = getFallbackLaptops();
+  // The storefront renders only real catalog records. Until Supabase responds,
+  // the static loading state stays visible instead of substituting demo items.
+  laptops = await fetchLaptops();
   filteredLaptops = [...laptops];
   catalogReady = true;
   renderComparison();
   filterAndSearch();
 
-  // Затем тихо подменяем их актуальными данными из базы. fetchLaptops
-  // сам вернёт резерв через короткий тайм-аут, если база недоступна.
-  laptops = await fetchLaptops();
-  filteredLaptops = [...laptops];
-  renderComparison();
-  filterAndSearch();
-
-  // После первого рендера уточняем занятость и обновляем карточки. Так
-  // кнопки бронирования остаются доступны даже при медленном запросе.
+  // Availability is used by the full catalog and booking flow. It must not
+  // rebuild the homepage showcase after its images have already rendered.
   const availability = await fetchBlockingRentals();
   blockingRentals = availability.rows;
   availabilityLoaded = availability.ok;
-  filterAndSearch();
   await getCabinetSession();
   updateOrderAuthUi();
   const returnToBooking = new URLSearchParams(window.location.search).get('resume_booking') === '1';

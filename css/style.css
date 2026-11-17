@@ -2238,3 +2238,15 @@ html.catalog-showcase-compact #catalog .catalog-showcase-featured .catalog-open-
   min-height: 47px !important;
   margin: 13px 0 0 !important;
 }
+
+.catalog-loading {
+  grid-column: 1 / -1;
+  margin: 8px 0;
+  padding: 24px 18px;
+  border: 1px solid rgba(91, 210, 249, 0.28);
+  border-radius: 14px;
+  background: rgba(8, 32, 49, 0.62);
+  color: #b9dce9;
+  font-size: 14px;
+  text-align: center;
+}
