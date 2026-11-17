@@ -451,7 +451,7 @@ export default async function handler(request, response) {
     }
     if (payload.action === 'prepare_archa_return_handoff') {
       const order = await database.getOrder(String(payload.orderId || ''));
-      if (!order || order.status !== 'awaiting_return_reservation' || order.return_method !== 'arca_locker') return reply(response, 409, { error:'Нет активного запроса на возврат через постамат.' });
+      if (!order || order.status !== 'awaiting_return_reservation' || !['arca_locker', 'arca_courier'].includes(order.return_method)) return reply(response, 409, { error:'Нет активного запроса на возврат через постамат.' });
       const laptop = await database.getLaptop(order.laptop_id);
       await database.createEvent({ order_id:order.id, event_type:'manager_prepared_archa_return_handoff_from_web', actor_type:'manager', metadata:{ locker:order.return_locker_address } });
       return reply(response, 200, { ok:true, message:archaMessage(order, laptop, 'return') });

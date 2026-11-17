@@ -12,6 +12,7 @@ const profileEl = document.getElementById('cabinet-profile');
 const dashboardNotice = document.getElementById('cabinet-dashboard-notice');
 const loyaltyPanelEl = document.getElementById('cabinet-loyalty-panel');
 const loyaltyToggle = document.getElementById('cabinet-loyalty-toggle');
+const archiveToggle = document.getElementById('cabinet-archive-toggle');
 const cabinetHero = document.getElementById('cabinet-hero');
 const documentViewer = document.getElementById('cabinet-document-viewer');
 const documentViewerContent = document.getElementById('cabinet-document-viewer-content');
@@ -36,6 +37,9 @@ let orderRefreshInFlight = false;
 const HIDDEN_COMPLETIONS_KEY = 'rentop_hidden_completions_v1';
 const hiddenCompletionOrders = new Set((() => { try { return JSON.parse(localStorage.getItem(HIDDEN_COMPLETIONS_KEY) || '[]'); } catch { return []; } })());
 function persistHiddenCompletions() { localStorage.setItem(HIDDEN_COMPLETIONS_KEY, JSON.stringify([...hiddenCompletionOrders].slice(-100))); }
+let showingArchivedOrders = false;
+const canArchiveOrder = order => ['completed', 'cancelled', 'rejected'].includes(String(order?.status || ''));
+const activeWorkspaceOrderId = () => String(rentalsEl?.querySelector('#cabinet-order-workspace')?.dataset.orderWorkspace || '');
 // Prevent an older "check session" response from replacing a newer SMS login.
 let sessionViewEpoch = 0;
 const ARCHA_LOCATIONS = [
@@ -579,7 +583,7 @@ function orderDetailsMarkup(order) {
       ? '<div class="cabinet-request-state is-success">✓ Спасибо — ваш отзыв уже получен.</div>'
       : `<div class="cabinet-actions"><button class="cabinet-action" data-panel="feedback" data-order="${order.id}">Оставить отзыв</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Связаться с Rentop</button></div>`;
     const receipt = lastPayment ? `<section class="cabinet-terminal-receipt"><div><span>Последний подтверждённый платёж</span><strong>${paidAmount} сом</strong></div><button class="cabinet-action secondary" type="button" data-print-receipt="${escape(order.id)}">Квитанция PDF</button></section>` : '';
-    return `<div class="cabinet-order-workspace-head"><button class="cabinet-workspace-close" type="button" data-close-order-workspace aria-label="Вернуться к списку заявок">← <span>Все заявки</span></button><span class="cabinet-badge">${escape(state.title)}</span></div><div class="cabinet-order-hero"><div class="cabinet-order-visual">${visual}</div><div><p class="cabinet-eyebrow">ЗАЯВКА ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</p><h2>${escape(order.laptop_title || 'Ноутбук Rentop')}</h2><p>Спасибо, что выбрали Rentop. Аренда и возврат завершены.</p></div></div>${journeyMarkup}<section class="cabinet-terminal-summary"><span aria-hidden="true">✓</span><div><strong>Аренда завершена</strong><p>Ноутбук принят Rentop. Все действия по заявке сохранены в истории.</p></div></section>${receipt}<section class="cabinet-completion"><strong>Спасибо, что выбрали Rentop!</strong><p>Будем рады помочь снова. Персональный промокод на следующую аренду появится в разделе «Скидки и промокоды».</p>${feedbackActions}</section><details class="cabinet-order-history"><summary>История заявки, документы и платежи</summary><div>${documentSummary(order)}${supportUpdates(order)}${paymentPanel(order)}</div></details>${requestForm(order)}`;
+    return `<div class="cabinet-order-workspace-head"><button class="cabinet-workspace-close" type="button" data-close-order-workspace aria-label="Вернуться к списку заявок">← <span>Все заявки</span></button><span class="cabinet-badge">${escape(state.title)}</span></div><div class="cabinet-order-hero"><div class="cabinet-order-visual">${visual}</div><div><p class="cabinet-eyebrow">ЗАЯВКА ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</p><h2>${escape(order.laptop_title || 'Ноутбук Rentop')}</h2><p>Спасибо, что выбрали Rentop. Аренда и возврат завершены.</p></div></div>${journeyMarkup}<section class="cabinet-terminal-summary"><span aria-hidden="true">✓</span><div><strong>Аренда завершена</strong><p>Ноутбук принят Rentop. Все действия по заявке сохранены в истории.</p></div></section>${receipt}<section class="cabinet-completion"><strong>Спасибо, что выбрали Rentop!</strong><p>Будем рады помочь снова. Персональный промокод на следующую аренду появится в разделе «Скидки и промокоды».</p>${feedbackActions}<div class="cabinet-actions"><button class="cabinet-action ghost" type="button" data-archive-order="${escape(order.id)}">Скрыть в архив</button></div></section><details class="cabinet-order-history"><summary>История заявки, документы и платежи</summary><div>${documentSummary(order)}${supportUpdates(order)}${paymentPanel(order)}</div></details>${requestForm(order)}`;
   }
   return `<div class="cabinet-order-workspace-head"><button class="cabinet-workspace-close" type="button" data-close-order-workspace aria-label="Вернуться к списку заявок">← <span>Все заявки</span></button><span class="cabinet-badge">${escape(state.title)}</span></div><div class="cabinet-order-hero"><div class="cabinet-order-visual">${visual}</div><div><p class="cabinet-eyebrow">ЗАЯВКА ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</p><h2>${escape(order.laptop_title || 'Ноутбук Rentop')}</h2><p>${escape(state.text)}</p></div></div>${journeyMarkup}<section class="cabinet-order-summary"><div><span>Срок аренды</span><strong>${rentalTerm}</strong></div><div><span>Получение</span><strong>${escape(order.delivery_label)}</strong></div><div><span>Сумма</span><strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div><span>Скидка</span><strong>${Number(order.discount_percent || 0)}%</strong></div></section>${documentSummary(order)}${supportUpdates(order)}${pickupInstruction(order)}${paymentPanel(order)}${actionPanel(order)}${requestForm(order)}`;
 }
@@ -598,6 +602,10 @@ function openOrderWorkspace(orderId) {
 }
 
 function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequired = false, promos = [], benefits = []) {
+  // Rendering from a background refresh must not eject a customer from the
+  // order they are currently working in. Native mobile file pickers can
+  // briefly change page visibility, so this is especially important for video.
+  const workspaceOrderId = activeWorkspaceOrderId();
   setWorkspaceMode();
   if (cabinetHero) cabinetHero.hidden = true;
   customerProfile = profile;
@@ -633,7 +641,16 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   const codeSent = cabinetOrders.find(order => order.status === 'awaiting_pickup' && order.locker_status === 'access_sent');
   if (codeSent) { dashboardNotice.hidden = false; dashboardNotice.textContent = 'Код доступа ARCHA POINT отмечен как отправленный. Откройте заявку и пройдите получение.'; }
   if (loyaltyPanelEl) loyaltyPanelEl.innerHTML = loyaltyPanel(customerPromos, customerBenefits, cabinetOrders[0]?.id || '');
-  rentalsEl.innerHTML = `<div class="cabinet-rentals-heading"><div><span>МОИ ЗАЯВКИ</span><strong>${cabinetOrders.length}</strong></div><small>Все действия и изменения статуса отображаются здесь.</small></div>` + cabinetOrders.map(order => {
+  const archivedOrders = cabinetOrders.filter(order => canArchiveOrder(order) && hiddenCompletionOrders.has(String(order.id)));
+  const displayedOrders = showingArchivedOrders
+    ? archivedOrders
+    : cabinetOrders.filter(order => !hiddenCompletionOrders.has(String(order.id)));
+  if (archiveToggle) {
+    archiveToggle.hidden = archivedOrders.length === 0 && !showingArchivedOrders;
+    archiveToggle.textContent = showingArchivedOrders ? '← К заявкам' : `Архив (${archivedOrders.length})`;
+    archiveToggle.setAttribute('aria-pressed', String(showingArchivedOrders));
+  }
+  rentalsEl.innerHTML = `<div class="cabinet-rentals-heading"><div><span>${showingArchivedOrders ? 'АРХИВ ЗАЯВОК' : 'МОИ ЗАЯВКИ'}</span><strong>${displayedOrders.length}</strong></div><small>${showingArchivedOrders ? 'Завершённые заявки скрыты только на этом устройстве. Их можно вернуть в общий список.' : 'Статус, оплата, доставка и возврат — откройте нужную заявку.'}</small></div>` + displayedOrders.map(order => {
     const baseState = statusInfo(order.status);
     const state = order.delivery_type === 'delivery' && order.status === 'awaiting_pickup'
       ? { ...baseState, title:'Ноутбук в пути', text:order.delivery_dispatch_mode === 'third_party_courier' ? 'Ноутбук передан сторонней курьерской службе. Перед отправкой с вами свяжутся для уточнения, а примерно за 10 минут до приезда предупредят. Подтвердите получение только после фактической передачи ноутбука.' : 'Ноутбук передан курьеру Rentop. Перед отправкой с вами свяжутся для уточнения, а примерно за 10 минут до приезда предупредят. Подтвердите получение только после фактической передачи ноутбука.' }
@@ -646,8 +663,11 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
     const journeyMarkup = `<div class="cabinet-stage-progress" aria-label="Текущий этап: ${escape(state.title)}">${journey.map((label, index) => `<div class="${index + 1 < activeJourneyStep ? 'is-done' : index + 1 === activeJourneyStep ? 'is-active' : ''}"><i>${index + 1 < activeJourneyStep ? '✓' : index + 1}</i><span>${label}</span></div>`).join('')}</div>`;
     return `<article class="cabinet-rental cabinet-rental-summary" data-rental="${order.id}"><div class="cabinet-rental-top">${visual}<div class="cabinet-rental-title"><h3>${escape(order.laptop_title || 'Ноутбук Rentop')}</h3><p class="cabinet-rental-ref">Заявка ${escape(order.reference)}</p></div><span class="cabinet-badge">${escape(state.title)}</span></div>${journeyMarkup}<p class="cabinet-next-step">${escape(state.text)}</p><div class="cabinet-rental-grid"><div>Срок<strong>${rentalTerm}</strong></div><div>Получение<strong>${escape(order.delivery_label)}</strong></div><div>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div>Скидка<strong>${Number(order.discount_percent || 0)}%</strong></div></div><button class="cabinet-action cabinet-order-open" type="button" data-open-order="${escape(order.id)}">Открыть заявку <span aria-hidden="true">→</span></button></article>`;
   }).join('');
-  emptyEl.hidden = cabinetOrders.length !== 0;
+  emptyEl.hidden = displayedOrders.length !== 0;
+  if (showingArchivedOrders && !displayedOrders.length) emptyEl.innerHTML = '<h3>Архив пока пуст</h3><p>Завершённую заявку можно скрыть из её экрана после окончания аренды.</p>';
+  else if (!showingArchivedOrders) emptyEl.innerHTML = '<h3>Аренд пока нет</h3><p>Когда вы оформите заявку с этим номером, она появится здесь.</p><a class="cabinet-primary cabinet-link" href="/#catalog">Выбрать ноутбук</a>';
   watchOrderUpdates(cabinetOrders);
+  if (workspaceOrderId && displayedOrders.some(order => String(order.id) === workspaceOrderId)) openOrderWorkspace(workspaceOrderId);
   if (returningToBooking && hasValidProfileName) {
     window.setTimeout(() => window.location.assign('/?resume_booking=1'), 250);
   }
@@ -746,6 +766,18 @@ rentalsEl?.addEventListener('click', event => {
     hiddenCompletionOrders.add(String(closeCompletion.dataset.closeCompletion));
     persistHiddenCompletions();
     closeCompletion.closest('.cabinet-completion')?.setAttribute('hidden', '');
+    return;
+  }
+  const archiveOrder = event.target.closest('[data-archive-order]');
+  if (archiveOrder) {
+    const order = cabinetOrders.find(item => String(item.id) === String(archiveOrder.dataset.archiveOrder));
+    if (!canArchiveOrder(order)) return;
+    hiddenCompletionOrders.add(String(order.id));
+    persistHiddenCompletions();
+    document.getElementById('cabinet-order-workspace')?.remove();
+    setWorkspaceMode();
+    showRentals(cabinetOrders, '', customerProfile, supportWhatsappUrl, offerSmsConsentRequired, customerPromos, customerBenefits);
+    message('Заявка перемещена в архив на этом устройстве.', 'success');
     return;
   }
   const paymentButton = event.target.closest('[data-open-payment]');
@@ -1024,10 +1056,13 @@ rentalsEl?.addEventListener('submit', async event => {
     const files = ['identity_front', 'identity_back', 'selfie', 'supporting', 'benefit_proof', 'issue_video', 'return_video'].map(kind => ({ kind, file:documentForm.elements[kind]?.files?.[0] })).filter(item => item.file);
     const isReplacement = documentForm.dataset.documentReplacement === '1';
     const isEvidence = documentForm.dataset.evidenceUpload === 'true';
-    const formError = (text) => {
+    const formError = (text, fieldName = '') => {
+      documentForm.querySelectorAll('[aria-invalid="true"]').forEach(field => { field.removeAttribute('aria-invalid'); field.classList.remove('is-invalid'); });
       const output = documentForm.querySelector('.cabinet-form-error') || document.createElement('p');
       output.className = 'cabinet-form-error'; output.textContent = text;
       if (!output.parentElement) documentForm.append(output);
+      const field = fieldName ? documentForm.elements[fieldName] : null;
+      if (field) { field.setAttribute('aria-invalid', 'true'); field.classList.add('is-invalid'); }
       output.scrollIntoView({ behavior:'auto', block:'nearest' });
     };
     const titles = { identity_front:'лицевую сторону паспорта / ID', identity_back:'обратную сторону паспорта / ID', selfie:'селфи с документом', supporting:'официальное подтверждение', benefit_proof:'подтверждение льготы', issue_video:'видео получения', return_video:'видео возврата' };
@@ -1043,11 +1078,11 @@ rentalsEl?.addEventListener('submit', async event => {
     const deliveryAddress = String(documentForm.elements.deliveryAddress?.value || '').trim();
     const deliveryPreferredTime = String(documentForm.elements.deliveryPreferredTime?.value || '').trim();
     const lockerAddress = String(documentForm.elements.lockerAddress?.value || '').trim();
-    if (!isEvidence && !isReplacement && documentForm.elements.deliveryAddress && deliveryAddress.length < 8) return formError('Укажите полный адрес доставки.');
-    if (!isEvidence && !isReplacement && documentForm.elements.deliveryPreferredTime && deliveryPreferredTime.length < 3) return formError('Укажите удобное время доставки.');
-    if (!isEvidence && !isReplacement && documentForm.elements.lockerAddress && lockerAddress.length < 8) return formError('Выберите точку ARCHA POINT.');
+    if (!isEvidence && !isReplacement && documentForm.elements.deliveryAddress && deliveryAddress.length < 8) return formError('Укажите полный адрес доставки: город, улицу и номер дома.', 'deliveryAddress');
+    if (!isEvidence && !isReplacement && documentForm.elements.deliveryPreferredTime && deliveryPreferredTime.length < 3) return formError('Укажите удобное время доставки.', 'deliveryPreferredTime');
+    if (!isEvidence && !isReplacement && documentForm.elements.lockerAddress && lockerAddress.length < 8) return formError('Выберите точку ARCHA POINT.', 'lockerAddress');
     const residenceAddress = String(documentForm.elements.residenceAddress?.value || '').trim();
-    if (!isEvidence && !isReplacement && (residenceAddress.length < 15 || !/\d/.test(residenceAddress))) return formError('Укажите полный адрес проживания: город, район, улицу, номер дома и квартиру.');
+    if (!isEvidence && !isReplacement && (residenceAddress.length < 15 || !/\d/.test(residenceAddress))) return formError('Укажите полный адрес проживания: город, район, улицу, номер дома и квартиру.', 'residenceAddress');
     const fullName = String(documentForm.elements.fullName?.value || '').trim();
     if (!isEvidence && !isReplacement && !isValidFullName(customerProfile?.full_name) && !isValidFullName(fullName)) return formError('Укажите фамилию, имя и отчество — как в документе.');
     const unsupported = files.find(({ file }) => !['image/jpeg', 'image/png', 'application/pdf', 'video/mp4', 'video/quicktime'].includes(contentTypeForFile(file)));
@@ -1162,6 +1197,12 @@ loyaltyToggle?.addEventListener('click', () => {
   loyaltyPanelEl.hidden = !loyaltyPanelEl.hidden;
   loyaltyToggle.setAttribute('aria-expanded', String(!loyaltyPanelEl.hidden));
   if (!loyaltyPanelEl.hidden) loyaltyPanelEl.scrollIntoView({ behavior:'smooth', block:'nearest' });
+});
+archiveToggle?.addEventListener('click', () => {
+  showingArchivedOrders = !showingArchivedOrders;
+  document.getElementById('cabinet-order-workspace')?.remove();
+  setWorkspaceMode();
+  showRentals(cabinetOrders, '', customerProfile, supportWhatsappUrl, offerSmsConsentRequired, customerPromos, customerBenefits);
 });
 bindPhoneMask(phoneInput);
 loadSession();
