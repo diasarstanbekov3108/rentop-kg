@@ -1072,6 +1072,25 @@ footer {
   margin: 0 0 14px;
 }
 
+.rental-duration-manual {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  margin: -3px 0 12px;
+  padding: 10px;
+  border: 1px solid rgba(82, 207, 241, .34);
+  border-radius: 11px;
+  background: rgba(11, 46, 66, .42);
+}
+
+.rental-duration-manual label { color: var(--text-main); font-size: 12px; font-weight: 800; }
+.rental-duration-manual input { min-width: 0; min-height: 38px; border: 1px solid var(--border); border-radius: 9px; padding: 0 10px; background: rgba(4, 16, 29, .78); color: var(--text-main); font: 700 13px Inter, system-ui, sans-serif; }
+.rental-duration-manual button { min-height: 38px; border: 1px solid #54d7fa; border-radius: 9px; padding: 0 12px; background: rgba(34, 122, 157, .34); color: #c9f5ff; font: 800 12px Inter, system-ui, sans-serif; cursor: pointer; }
+.rental-duration-manual button:hover { background: rgba(48, 151, 189, .5); }
+
+@media (max-width: 480px) { .rental-duration-manual { grid-template-columns: 1fr auto; } .rental-duration-manual label { grid-column: 1 / -1; } }
+
 .calc-long-term {
   margin: -4px 0 14px;
   color: var(--text-muted);

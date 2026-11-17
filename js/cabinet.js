@@ -287,7 +287,7 @@ function watchOrderUpdates(orders) {
   const epoch = sessionViewEpoch;
   orderPollingTimer = window.setInterval(async () => {
     if (epoch === sessionViewEpoch) await refreshAccountIfSafe();
-  }, 10000);
+  }, 30000);
 }
 
 function requestLabel(request) {
@@ -1168,6 +1168,11 @@ rentalsEl?.addEventListener('submit', async event => {
       // final file is safely registered. Refresh in the background instead.
       showRentals(cabinetOrders, order?.customer_phone || '', customerProfile, supportWhatsappUrl, offerSmsConsentRequired, customerPromos, customerBenefits);
       message(successText, 'success');
+      if (!isEvidence && !isReplacement) {
+        // Documents are safely registered. Take the customer to the updated
+        // application summary instead of leaving them below a now-closed form.
+        window.requestAnimationFrame(() => document.getElementById('cabinet-order-workspace')?.scrollIntoView({ behavior:'smooth', block:'start' }));
+      }
       request('GET').then(fresh => {
         if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos, fresh.benefits);
       }).catch(() => {});

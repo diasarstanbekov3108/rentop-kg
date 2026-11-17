@@ -71,6 +71,8 @@ const orderForm = document.getElementById('order-form');
 const calcBox = document.getElementById('calc-box');
 const daysSlider = document.getElementById('days-slider');
 const daysCount = document.getElementById('days-count');
+const manualDurationInput = document.getElementById('days-manual');
+const applyManualDurationButton = document.getElementById('apply-manual-duration');
 const totalPriceEl = document.getElementById('total-price');
 const calcDiscountEl = document.getElementById('calc-discount');
 const calcBreakdownEl = document.getElementById('calc-breakdown');
@@ -720,6 +722,7 @@ function openOrderModal(id, { deliveryType = 'delivery' } = {}) {
       daysSlider.max = '15';
       daysSlider.value = '2';
     }
+    if (manualDurationInput) manualDurationInput.value = '';
     if (deliveryTypeInput) deliveryTypeInput.value = deliveryType;
     updateDeliveryNote();
     updateCalculator();
@@ -767,6 +770,9 @@ function updateCalculator(forcedMessage) {
     daysSlider.max = '15';
     daysSlider.value = String(Math.min(15, draft.quote.days));
   }
+  if (manualDurationInput && draft.quote.days >= 2 && document.activeElement !== manualDurationInput) {
+    manualDurationInput.value = String(draft.quote.days);
+  }
   rentalDurationButtons.forEach((button) => {
     const threshold = Number(button.dataset.rentalDuration || 0);
     button.classList.toggle('active', threshold > 0 && draft.quote.days >= threshold
@@ -801,15 +807,20 @@ function updateCalculator(forcedMessage) {
   }
 }
 
-function syncEndDateFromSlider() {
+function syncEndDateFromDuration(rawDays) {
   const today = todayIso();
   const startDate = rentalStartInput?.value && rentalStartInput.value >= today
     ? rentalStartInput.value
     : today;
   if (rentalStartInput) rentalStartInput.value = startDate;
-  const days = Math.max(2, parseInt(daysSlider?.value, 10) || 2);
+  const days = Math.min(365, Math.max(2, parseInt(rawDays, 10) || 2));
   if (rentalEndInput) rentalEndInput.value = addDays(startDate, days);
+  if (manualDurationInput) manualDurationInput.value = String(days);
   updateCalculator();
+}
+
+function syncEndDateFromSlider() {
+  syncEndDateFromDuration(daysSlider?.value);
 }
 
 // Управление информационными модальными окнами
@@ -1187,6 +1198,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (daysSlider) daysSlider.value = button.dataset.rentalDuration || '2';
     syncEndDateFromSlider();
   }));
+  applyManualDurationButton?.addEventListener('click', () => syncEndDateFromDuration(manualDurationInput?.value));
+  manualDurationInput?.addEventListener('change', () => syncEndDateFromDuration(manualDurationInput.value));
+  manualDurationInput?.addEventListener('keydown', event => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    syncEndDateFromDuration(manualDurationInput.value);
+  });
   rentalStartInput?.addEventListener('input', () => updateCalculator());
   rentalStartInput?.addEventListener('change', () => updateCalculator());
   rentalEndInput?.addEventListener('input', () => updateCalculator());

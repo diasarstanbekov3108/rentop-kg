@@ -201,6 +201,8 @@ function render() {
   // Refreshing a queue must not throw the manager to the beginning of a long
   // card while they review a return or a document.
   const scrollPosition = window.scrollY;
+  const selectedOrderBeforeRender = String(selectedOrderId || '');
+  const selectedOrderScrollTop = ordersEl.querySelector('.manager-order.is-selected')?.scrollTop || 0;
   openOrderDetails = new Set([...ordersEl.querySelectorAll('.manager-order-details[open]')].map(item => item.closest('[data-manager-order]')?.dataset.managerOrder).filter(Boolean));
   const list = visibleOrders();
   if (!list.some(order => String(order.id) === String(selectedOrderId))) selectedOrderId = list[0]?.id || '';
@@ -282,7 +284,12 @@ function render() {
     const queueNavigation = isSelected && list.length > 1 ? `<div class="manager-order-queue-nav" aria-label="Навигация по рабочей очереди"><span>В очереди: ${orderIndex + 1} из ${list.length}</span><div><button type="button" data-select-order="${escape(previous?.id || '')}" ${previous ? '' : 'disabled'} aria-label="Предыдущая заявка">←</button><button type="button" data-select-order="${escape(next?.id || '')}" ${next ? '' : 'disabled'} aria-label="Следующая заявка">→</button></div></div>` : '';
     return `<article class="manager-order ${isSelected ? 'is-selected' : 'is-queued'}" data-manager-order="${order.id}" data-manager-return-method="${escape(order.return_method || '')}"><div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p></div><span class="manager-status-pill ${escape(order.status)}">${escape(statusLabel(order.status))}</span></div>${queueNavigation}<div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда / возврат</span><strong>${calendarDate(order.rental_start_date)} → ${calendarDate(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(deliveryLabel(order))}${deliveryDetails}</strong></div><div><span>Сумма аренды</span><strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div><span>Залог / скидка</span><strong>${Number(order.deposit_amount || 0).toLocaleString('ru-RU')} сом · ${Number(order.discount_percent || 0)}%</strong></div></div>${directDocuments}${supportPanel}${returnAcceptance}${handoffPanel}<div class="manager-actions manager-workflow-actions">${workflowActions || '<span class="manager-action-note">Следующее действие появится после обновления статуса.</span>'}</div><p class="manager-order-feedback" data-order-feedback="${order.id}" hidden></p><details class="manager-order-details" ${isSelected || openOrderDetails.has(String(order.id)) || (order.status === 'pending_review' && documentsReadyForPayment) ? 'open' : ''}><summary>Детали заявки, реестр и служебные данные</summary>${details}</details></article>`;
   }).join('') : '<div class="manager-empty">По этому фильтру заявок нет.</div>';
-  window.requestAnimationFrame(() => window.scrollTo({ top:scrollPosition, behavior:'auto' }));
+  window.requestAnimationFrame(() => {
+    window.scrollTo({ top:scrollPosition, behavior:'auto' });
+    if (String(selectedOrderId || '') !== selectedOrderBeforeRender) return;
+    const selectedOrder = ordersEl.querySelector('.manager-order.is-selected');
+    if (selectedOrder) selectedOrder.scrollTop = selectedOrderScrollTop;
+  });
 }
 
 function hasManagerDraft() {
@@ -295,10 +302,11 @@ function setFilter(nextFilter) { if (!catalogPanel.hidden) catalogPanel.hidden =
 
 refreshButton?.addEventListener('click', () => load(false));
 window.setInterval(() => {
-  // Never overwrite data the manager is entering, but keep the queue live.
+  // The manual refresh remains instant. Background refresh is deliberately
+  // slow, and is entirely skipped while a manager edits a selected order.
   if (dashboard.hidden || hasManagerDraft()) return;
   load(true);
-}, 5000);
+}, 60000);
 testBakaiButton?.addEventListener('click', async () => {
   testBakaiButton.disabled = true;
   const original = testBakaiButton.textContent;
