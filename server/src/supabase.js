@@ -5,6 +5,7 @@ export function createSupabaseApi(config) {
     daily_rate: Number(laptop.daily_rate ?? laptop.dailyRate ?? laptop.dailyrate ?? 0)
   }) : null;
   const phoneDigits = (value) => String(value || '').replace(/\D/g, '').replace(/^0+/, '');
+  const inList = (values) => [...new Set((values || []).map(value => String(value || '').trim()).filter(Boolean))].map(encodeURIComponent).join(',');
   async function request(path, options = {}) {
     const isLegacyJwtKey = config.supabaseServerKey.startsWith('eyJ');
     let lastError;
@@ -88,6 +89,10 @@ export function createSupabaseApi(config) {
 
   return {
     getLaptop: (id) => getOne(`laptops?id=eq.${encodeURIComponent(id)}&select=*`).then(normalizeLaptopRate),
+    listLaptopsByIds: (ids) => {
+      const values = inList(ids);
+      return values ? request(`laptops?id=in.(${values})&select=*`).then(rows => (rows || []).map(normalizeLaptopRate)) : Promise.resolve([]);
+    },
     listRentableLaptops,
     listCatalogLaptops,
     createLaptop: (laptop) => request('laptops', {
@@ -126,6 +131,10 @@ export function createSupabaseApi(config) {
     },
     getOrderPayment: (orderId) => getOne(`rental_order_payments?order_id=eq.${encodeURIComponent(orderId)}&select=*&order=created_at.desc&limit=1`),
     listOrderPayments: (orderId) => request(`rental_order_payments?order_id=eq.${encodeURIComponent(orderId)}&select=*&order=created_at.desc&limit=20`),
+    listOrderPaymentsForOrders: (orderIds) => {
+      const values = inList(orderIds);
+      return values ? request(`rental_order_payments?order_id=in.(${values})&select=*&order=created_at.desc&limit=500`) : Promise.resolve([]);
+    },
     getPaymentByOperationId: (operationId) => getOne(`rental_order_payments?operation_id=eq.${encodeURIComponent(operationId)}&select=*&limit=1`),
     createOrderPayment: (payment) => request('rental_order_payments', {
       method:'POST', body:JSON.stringify(payment)
@@ -143,6 +152,13 @@ export function createSupabaseApi(config) {
       `rental_order_customer_requests?order_id=eq.${encodeURIComponent(orderId)}` +
       '&select=id,kind,status,customer_message,requested_days,estimated_amount,proposed_return_date,return_method,return_locker_address,return_collection_address,return_contact_name,return_contact_phone,return_preferred_time,return_delivery_payer,return_destination_address,return_destination_note,replacement_laptop_id,replacement_difference,replacement_note,created_at,updated_at&order=created_at.desc&limit=12'
     ),
+    listCustomerRequestsForOrders: (orderIds) => {
+      const values = inList(orderIds);
+      return values ? request(
+        `rental_order_customer_requests?order_id=in.(${values})` +
+        '&select=id,order_id,kind,status,customer_message,requested_days,estimated_amount,proposed_return_date,return_method,return_locker_address,return_collection_address,return_contact_name,return_contact_phone,return_preferred_time,return_delivery_payer,return_destination_address,return_destination_note,replacement_laptop_id,replacement_difference,replacement_note,created_at,updated_at&order=created_at.desc&limit=500'
+      ) : Promise.resolve([]);
+    },
     createCustomerRequest: (customerRequest) => request('rental_order_customer_requests', {
       method: 'POST', body: JSON.stringify(customerRequest)
     }).then((rows) => rows?.[0] || null),
@@ -153,6 +169,13 @@ export function createSupabaseApi(config) {
       `customer_benefit_verifications?phone=eq.${encodeURIComponent(phone)}` +
       '&select=id,benefit_type,status,document_id,reviewer_note,approved_at,expires_at,created_at,updated_at&order=created_at.desc&limit=20'
     ),
+    listBenefitVerificationsForPhones: (phones) => {
+      const values = inList(phones);
+      return values ? request(
+        `customer_benefit_verifications?phone=in.(${values})` +
+        '&select=id,phone,benefit_type,status,document_id,reviewer_note,approved_at,expires_at,created_at,updated_at&order=created_at.desc&limit=500'
+      ) : Promise.resolve([]);
+    },
     getBenefitVerificationByDocument: (documentId) => getOne(
       `customer_benefit_verifications?document_id=eq.${encodeURIComponent(documentId)}` +
       '&select=*&limit=1'
@@ -171,6 +194,13 @@ export function createSupabaseApi(config) {
       `rental_order_documents?order_id=eq.${encodeURIComponent(orderId)}` +
       '&select=id,kind,storage_path,file_name,content_type,byte_size,status,uploaded_at,reviewed_at,reviewer_note&order=uploaded_at.desc&limit=20'
     ),
+    listOrderDocumentsForOrders: (orderIds) => {
+      const values = inList(orderIds);
+      return values ? request(
+        `rental_order_documents?order_id=in.(${values})` +
+        '&select=id,order_id,kind,storage_path,file_name,content_type,byte_size,status,uploaded_at,reviewed_at,reviewer_note&order=uploaded_at.desc&limit=500'
+      ) : Promise.resolve([]);
+    },
     getOrderDocument: (id) => getOne(`rental_order_documents?id=eq.${encodeURIComponent(id)}&select=*&limit=1`),
     reviewOrderDocument: (id, patch) => request(`rental_order_documents?id=eq.${encodeURIComponent(id)}`, {
       method: 'PATCH', body: JSON.stringify(patch)
@@ -261,6 +291,13 @@ export function createSupabaseApi(config) {
       `rental_order_support_cases?order_id=eq.${encodeURIComponent(orderId)}` +
       '&select=id,kind,status,customer_message,opened_at,opened_by,manager_reply,replied_at,replied_by,resolved_at,resolved_by&order=opened_at.desc&limit=30'
     ),
+    listOrderSupportCasesForOrders: (orderIds) => {
+      const values = inList(orderIds);
+      return values ? request(
+        `rental_order_support_cases?order_id=in.(${values})` +
+        '&select=id,order_id,kind,status,customer_message,opened_at,opened_by,manager_reply,replied_at,replied_by,resolved_at,resolved_by&order=opened_at.desc&limit=500'
+      ) : Promise.resolve([]);
+    },
     createPromo: (promo) => request('rental_promo_codes', {
       method: 'POST', body: JSON.stringify(promo)
     }).then((rows) => rows?.[0] || null),
@@ -278,6 +315,10 @@ export function createSupabaseApi(config) {
     hasOrderEvent: (orderId, eventType) => getOne(
       `rental_order_events?order_id=eq.${encodeURIComponent(orderId)}&event_type=eq.${encodeURIComponent(eventType)}&select=id&limit=1`
     ),
+    listOrdersWithEvent: (orderIds, eventType) => {
+      const values = inList(orderIds);
+      return values ? request(`rental_order_events?order_id=in.(${values})&event_type=eq.${encodeURIComponent(eventType)}&select=order_id&limit=500`) : Promise.resolve([]);
+    },
     getRecentCabinetChallenge: (phone) => getOne(
       `customer_auth_challenges?phone=eq.${encodeURIComponent(phone)}&select=*&order=created_at.desc&limit=1`
     ),

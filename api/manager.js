@@ -85,22 +85,39 @@ export default async function handler(request, response) {
       // every refresh. That can mean hundreds of storage calls and makes the
       // whole panel look stuck. Documents are now signed only when opened.
       const [orders, rentableLaptops] = await Promise.all([database.listRecentOrders(25), database.listRentableLaptops()]);
-      const benefitCache = new Map();
-      const benefitsFor = phone => {
-        const key = String(phone || '');
-        if (!benefitCache.has(key)) benefitCache.set(key, database.listBenefitVerifications(phone).catch(() => []));
-        return benefitCache.get(key);
-      };
-      const hydrated = await mapWithConcurrency(orders, 5, async order => {
-        const [laptop, documents, requests, payments, supportCases, returnHandoffEvent, benefits] = await Promise.all([
-          database.getLaptop(order.laptop_id),
-          database.listOrderDocuments(order.id).catch(() => []),
-          database.listCustomerRequests(order.id).catch(() => []),
-          database.listOrderPayments(order.id).catch(() => []),
-          database.listOrderSupportCases(order.id).catch(() => []),
-          database.hasOrderEvent(order.id, 'manager_prepared_archa_return_handoff_from_web').catch(() => null),
-          benefitsFor(order.customer_phone)
-        ]);
+      // Fetch every related row in a small fixed number of requests. The old
+      // dashboard made seven database reads for each order on every 5-second
+      // refresh, which could starve the panel right after a document upload.
+      const orderIds = orders.map(order => order.id);
+      const [laptops, allDocuments, allRequests, allPayments, allSupportCases, returnHandoffEvents, allBenefits] = await Promise.all([
+        database.listLaptopsByIds(orders.map(order => order.laptop_id)).catch(() => []),
+        database.listOrderDocumentsForOrders(orderIds).catch(() => []),
+        database.listCustomerRequestsForOrders(orderIds).catch(() => []),
+        database.listOrderPaymentsForOrders(orderIds).catch(() => []),
+        database.listOrderSupportCasesForOrders(orderIds).catch(() => []),
+        database.listOrdersWithEvent(orderIds, 'manager_prepared_archa_return_handoff_from_web').catch(() => []),
+        database.listBenefitVerificationsForPhones(orders.map(order => order.customer_phone)).catch(() => [])
+      ]);
+      const by = (items, key) => (items || []).reduce((map, item) => {
+        const value = String(item?.[key] || '');
+        if (!map.has(value)) map.set(value, []);
+        map.get(value).push(item);
+        return map;
+      }, new Map());
+      const laptopById = new Map((laptops || []).map(laptop => [String(laptop.id), laptop]));
+      const documentsByOrder = by(allDocuments, 'order_id');
+      const requestsByOrder = by(allRequests, 'order_id');
+      const paymentsByOrder = by(allPayments, 'order_id');
+      const supportCasesByOrder = by(allSupportCases, 'order_id');
+      const benefitsByPhone = by(allBenefits, 'phone');
+      const returnHandoffOrders = new Set((returnHandoffEvents || []).map(event => String(event.order_id)));
+      const hydrated = orders.map(order => {
+        const laptop = laptopById.get(String(order.laptop_id));
+        const documents = documentsByOrder.get(String(order.id)) || [];
+        const requests = requestsByOrder.get(String(order.id)) || [];
+        const payments = paymentsByOrder.get(String(order.id)) || [];
+        const supportCases = supportCasesByOrder.get(String(order.id)) || [];
+        const benefits = benefitsByPhone.get(String(order.customer_phone || '')) || [];
         return {
           ...order,
           laptop_title:laptop?.title || laptop?.name || 'Ноутбук Rentop',
@@ -112,7 +129,7 @@ export default async function handler(request, response) {
           payments,
           benefits,
           supportCases,
-          returnHandoffPrepared:Boolean(returnHandoffEvent)
+          returnHandoffPrepared:returnHandoffOrders.has(String(order.id))
         };
       });
       return reply(response, 200, { authenticated:true, managerPhone:session.phone, isChiefAdmin, orders:hydrated, rentableLaptops });
