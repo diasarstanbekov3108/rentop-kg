@@ -432,7 +432,7 @@ function renderCatalogPreview(items) {
   }).join('');
 }
 
-function getFeaturedShowcaseModels(limit = 5) {
+function getFeaturedShowcaseModels(limit = 6) {
   // The landing showcase is an editorial selection, not the result of the
   // currently selected catalog filter. This keeps a useful mix on every visit.
   const pool = laptops.filter(Boolean);
@@ -488,9 +488,9 @@ function updateCatalogView(resetPagination = true) {
     currentPage = 1;
   }
 
-  // The landing page is a fixed five-model showcase, not a second booking
+  // The landing page is a fixed six-model showcase, not a second booking
   // catalog. All filtering and booking remain inside the complete browser.
-  renderCatalogPreview(getFeaturedShowcaseModels(5));
+  renderCatalogPreview(getFeaturedShowcaseModels(6));
   // The full catalog is expensive on a phone. Do not rebuild dozens of cards
   // and image nodes while its dialog is closed; render it only on demand.
   if (catalogBrowser && !catalogBrowser.hidden) renderLaptops(filteredLaptops, false, catalogGrid);

@@ -2121,14 +2121,8 @@ html.catalog-showcase-compact .catalog-showcase-intro{padding:16px 15px!importan
   }
 }
 
-/* Desktop keeps three concise cards. Android receives the complete five-model
+/* Desktop keeps a filled 3×2 grid. Android receives the complete six-model
    staircase selected by the homepage logic. */
-@media (min-width: 769px) {
-  .catalog-showcase-featured .catalog-preview-card:nth-child(n + 4) {
-    display: none;
-  }
-}
-
-html.catalog-showcase-compact .catalog-showcase-featured .catalog-preview-card:nth-child(n + 4) {
+html.catalog-showcase-compact .catalog-showcase-featured .catalog-preview-card:nth-child(n + 7) {
   display: grid !important;
 }
