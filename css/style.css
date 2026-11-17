@@ -2120,3 +2120,15 @@ html.catalog-showcase-compact .catalog-showcase-intro{padding:16px 15px!importan
     box-sizing: border-box;
   }
 }
+
+/* Desktop keeps three concise cards. Android receives the complete five-model
+   staircase selected by the homepage logic. */
+@media (min-width: 769px) {
+  .catalog-showcase-featured .catalog-preview-card:nth-child(n + 4) {
+    display: none;
+  }
+}
+
+html.catalog-showcase-compact .catalog-showcase-featured .catalog-preview-card:nth-child(n + 4) {
+  display: grid !important;
+}

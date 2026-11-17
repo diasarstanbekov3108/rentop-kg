@@ -422,7 +422,7 @@ function renderCatalogPreview(items) {
       <img src="${laptop.image}" alt="${laptop.title}" class="catalog-preview-image" loading="lazy">
       <div class="catalog-preview-copy">
         <h3>${formatLaptopTitle(laptop.title)}</h3>
-        <span class="catalog-preview-meta">${taskLabel(laptop)}</span>
+        <span class="catalog-preview-meta">${laptop.showcaseLabel || taskLabel(laptop)}</span>
         <strong>${laptop.priceText || 'Цена уточняется'}</strong>
         <div class="catalog-preview-actions">
           <span class="catalog-preview-open" aria-hidden="true">Смотреть модель <span>→</span></span>
@@ -430,6 +430,37 @@ function renderCatalogPreview(items) {
       </div>
     </article>`;
   }).join('');
+}
+
+function getFeaturedShowcaseModels(limit = 5) {
+  // The landing showcase is an editorial selection, not the result of the
+  // currently selected catalog filter. This keeps a useful mix on every visit.
+  const pool = laptops.filter(Boolean);
+  const selected = [];
+  const selectedIds = new Set();
+  const take = (label, predicate) => {
+    const laptop = pool.find((item) => !selectedIds.has(String(item.id)) && predicate(item));
+    if (!laptop) return;
+    selectedIds.add(String(laptop.id));
+    selected.push({ ...laptop, showcaseLabel: label });
+  };
+  const isGaming = (item) => getLaptopTasks(item).includes('gaming');
+  const isTestFriendly = (item) => getLaptopTasks(item).includes('exam')
+    || /hp|thinkpad|lenovo|i3|n150|celeron|pentium|pavilion/i.test(`${item.title || ''} ${item.cpu || ''}`);
+
+  take('Игры / монтаж / 3D', isGaming);
+  take('Игры / монтаж / 3D', isGaming);
+  take('Тесты / учёба', isTestFriendly);
+  take('Офис / работа', (item) => getLaptopTasks(item).includes('office'));
+  take('Универсальный вариант', (item) => !isGaming(item));
+
+  for (const laptop of pool) {
+    if (selected.length >= limit) break;
+    if (selectedIds.has(String(laptop.id))) continue;
+    selectedIds.add(String(laptop.id));
+    selected.push({ ...laptop, showcaseLabel: taskLabel(laptop) });
+  }
+  return selected.slice(0, limit);
 }
 
 function syncCatalogShowcaseLayout() {
@@ -457,9 +488,9 @@ function updateCatalogView(resetPagination = true) {
     currentPage = 1;
   }
 
-  // The landing page is a fixed showcase, not a second booking catalog.
-  // All filtering and booking remain inside the complete catalog browser.
-  renderCatalogPreview(filteredLaptops.slice(0, 3));
+  // The landing page is a fixed five-model showcase, not a second booking
+  // catalog. All filtering and booking remain inside the complete browser.
+  renderCatalogPreview(getFeaturedShowcaseModels(5));
   // The full catalog is expensive on a phone. Do not rebuild dozens of cards
   // and image nodes while its dialog is closed; render it only on demand.
   if (catalogBrowser && !catalogBrowser.hidden) renderLaptops(filteredLaptops, false, catalogGrid);
