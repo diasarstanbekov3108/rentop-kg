@@ -22,10 +22,16 @@ const catalogCloseButton = document.getElementById('manager-catalog-close');
 const catalogForm = document.getElementById('manager-catalog-form');
 const catalogList = document.getElementById('manager-catalog-list');
 const catalogResetButton = document.getElementById('manager-catalog-reset');
+const promoPanel = document.getElementById('manager-promo-panel');
+const promoOpenButton = document.querySelector('[data-open-promos]');
+const promoCloseButton = document.getElementById('manager-promo-close');
+const promoForm = document.getElementById('manager-promo-form');
+const promoList = document.getElementById('manager-promo-list');
 const refreshButton = document.getElementById('manager-refresh');
 let orders = [];
 let rentableLaptops = [];
 let catalogLaptops = [];
+let managerPromos = [];
 let filter = 'all';
 let pendingManagerPhone = '';
 let isChiefAdmin = false;
@@ -107,6 +113,21 @@ function editCatalogLaptop(id) {
   catalogForm.elements.useCases.value = laptop.use_cases || '';
   catalogForm.elements.isVisible.checked = laptop.is_visible !== false;
   catalogForm.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+function promoState(promo) {
+  if (promo.status === 'redeemed') return 'использован';
+  if (promo.status === 'revoked') return 'отозван';
+  if (promo.status === 'expired' || new Date(promo.expires_at).getTime() <= Date.now()) return 'истёк';
+  return 'активен';
+}
+function renderPromoManager() {
+  if (!promoList) return;
+  if (!managerPromos.length) { promoList.innerHTML = '<p class="manager-empty">Пока нет выданных промокодов.</p>'; return; }
+  promoList.innerHTML = managerPromos.map(promo => {
+    const usable = promo.status === 'issued' && new Date(promo.expires_at).getTime() > Date.now();
+    return `<article class="manager-promo-item"><div><strong>${escape(promo.code)}</strong><p>−${Number(promo.discount_percent || 0)}% · ${escape(promo.recipient_phone || 'номер не указан')} · <small>${escape(promoState(promo))}</small></p><p>Выдан ${date(promo.created_at)} · действует до ${date(promo.expires_at)}${promo.redeemed_at ? ` · использован ${date(promo.redeemed_at)}` : ''}</p></div>${usable ? `<button type="button" data-revoke-promo="${escape(promo.id)}">Отозвать</button>` : ''}</article>`;
+  }).join('');
 }
 
 function visibleOrders() {
@@ -234,7 +255,8 @@ function render() {
     const identitySummary = order.identity_verified_at ? `Паспорт/ID сверены ${date(order.identity_verified_at)}${order.identity_verified_by ? ` · ${escape(order.identity_verified_by)}` : ''}.` : 'Паспорт/ID ещё не сверены менеджером.';
     const registry = `<section class="manager-section"><h3>Внутренний реестр аренды</h3><div class="manager-registry-form"><label>Адрес проживания клиента<textarea readonly>${escape(order.residence_address || 'Не указан (старая заявка)')}</textarea></label><label>Подтверждающий документ<input readonly value="${escape(order.supporting_document_type || 'Не указан (старая заявка)')}"></label>${identityRegistry}<label>Цель аренды / задачи клиента<textarea data-registry-purpose maxlength="600" placeholder="Например: монтаж видео, учёба, офисная работа">${escape(order.rental_purpose || '')}</textarea></label><label>Заметка менеджера<textarea data-registry-note maxlength="2000" placeholder="Договорённости, комплектация, важные детали">${escape(order.manager_note || '')}</textarea></label><label>Состояние при возврате<textarea data-registry-return maxlength="2000" placeholder="Заполняется после осмотра: корпус, зарядка, комплектность, замечания">${escape(order.return_condition_note || '')}</textarea></label><button class="secondary" data-save-registry="${order.id}">Сохранить реестр и проверку</button></div><p>${identitySummary} В реестре: модель ${escape(order.laptop_title || '—')}, S/N ${escape(order.laptop_serial_number || 'не указан')}, инв. код ${escape(order.laptop_inventory_code || 'не указан')}.</p></section>`;
     const benefits = (order.benefits || []).filter(item => item.status !== 'expired');
-    const benefitPanel = benefits.length ? `<section class="manager-section"><h3>Социальная скидка</h3><div class="manager-requests">${benefits.map(item => `<div class="manager-request"><strong>${escape(benefitLabel(item.benefit_type))}</strong> · ${escape(item.status)}${item.reviewer_note ? `<br>${escape(item.reviewer_note)}` : ''}<br><small>Подано ${date(item.created_at)}${item.approved_at ? ` · принято ${date(item.approved_at)}` : ''}</small></div>`).join('')}</div><p>Подтверждённая льгота — 10%. Она не складывается с тарифной скидкой: для расчёта используется наибольшая из доступных скидок.</p></section>` : '';
+    const currentBenefit = benefits.find(item => item.status === 'approved') || benefits.find(item => item.status === 'pending_review') || null;
+    const benefitPanel = currentBenefit ? `<section class="manager-section"><h3>Текущая льгота профиля</h3><div class="manager-request"><strong>${escape(benefitLabel(currentBenefit.benefit_type))}</strong> · ${escape(currentBenefit.status)}${currentBenefit.reviewer_note ? `<br>${escape(currentBenefit.reviewer_note)}` : ''}<br><small>Подано ${date(currentBenefit.created_at)}${currentBenefit.approved_at ? ` · принято ${date(currentBenefit.approved_at)}` : ''}</small></div><p>Для каждой новой заявки используется только самая выгодная скидка: социальная (10%), тарифная или персональный промокод. Они не складываются.</p></section>` : '';
     const loyaltyAction = order.status === 'completed' ? `<section class="manager-section"><h3>Лояльность клиента</h3><div class="manager-actions"><button class="secondary" data-issue-promo="${order.id}">Выдать персональный промокод</button></div><p>Промокод привязывается к номеру клиента и будет виден только в его личном кабинете.</p></section>` : '';
     const assetTools = isChiefAdmin ? `<section class="manager-section"><h3>Учёт устройства</h3><div class="manager-payment-create"><label>Заводской S/N<input data-asset-serial type="text" maxlength="160" value="${escape(order.laptop_serial_number || '')}" placeholder="Например: C02ABC123XYZ"></label><label>Инвентарный код Rentop<input data-asset-inventory type="text" maxlength="100" value="${escape(order.laptop_inventory_code || '')}" placeholder="Например: RT-0001"></label><button class="secondary" data-save-asset="${order.laptop_id}">Сохранить идентификаторы</button></div></section>` : '';
     const incidentCandidates = rentableLaptops.filter(laptop => String(laptop.id) !== String(order.laptop_id) && Number(laptop.daily_rate || 0) >= Number(order.daily_rate || 0));
@@ -268,8 +290,8 @@ function hasManagerDraft() {
   // a manager is actively typing or selecting a value.
   return Boolean(document.activeElement?.matches('.manager-order textarea, .manager-order input, .manager-order select'));
 }
-async function load(silent = false) { if (activeLoad) return activeLoad; const refreshLabel = refreshButton?.textContent; if (!silent) { statusEl.textContent = 'Обновляем заявки и статусы оплаты…'; if (refreshButton) { refreshButton.disabled = true; refreshButton.textContent = 'Обновляем…'; } } activeLoad = (async () => { try { const data = await api(); const incomingOrders = Array.isArray(data.orders) ? data.orders : null; if (!incomingOrders) throw new Error('Панель вернула неполные данные. Текущая очередь оставлена на экране.'); const keepVisibleQueue = orders.length > 0 && incomingOrders.length === 0; if (!keepVisibleQueue) orders = incomingOrders; rentableLaptops = Array.isArray(data.rentableLaptops) ? data.rentableLaptops : rentableLaptops; isChiefAdmin = Boolean(data.isChiefAdmin); if (catalogOpenButton) catalogOpenButton.hidden = !isChiefAdmin; if (sidebarCatalogButton) sidebarCatalogButton.hidden = !isChiefAdmin; gate.hidden = true; dashboard.hidden = false; const stamp = new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date()); statusEl.textContent = keepVisibleQueue ? `Связь с базой нестабильна: пустой ответ не применён. Показана последняя очередь · ${stamp}` : `${silent ? 'Синхронизировано' : 'Обновлено'}: ${stamp}`; render(); } catch (error) { if (error.status === 401) { dashboard.hidden = true; if (catalogOpenButton) catalogOpenButton.hidden = true; if (sidebarCatalogButton) sidebarCatalogButton.hidden = true; gate.hidden = false; statusEl.textContent = ''; return; } if (orders.length) { dashboard.hidden = false; gate.hidden = true; statusEl.textContent = `Не удалось обновить данные. Показана последняя очередь: ${error.message}`; return; } dashboard.hidden = true; gate.hidden = true; statusEl.textContent = error.message; } finally { if (!silent && refreshButton) { refreshButton.disabled = false; refreshButton.textContent = refreshLabel || 'Обновить'; } activeLoad = null; } })(); return activeLoad; }
-function setFilter(nextFilter) { if (!catalogPanel.hidden) { catalogPanel.hidden = true; dashboard.hidden = false; } filter = nextFilter; document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item.dataset.filter === filter)); render(); }
+async function load(silent = false) { if (activeLoad) return activeLoad; const refreshLabel = refreshButton?.textContent; if (!silent) { statusEl.textContent = 'Обновляем заявки и статусы оплаты…'; if (refreshButton) { refreshButton.disabled = true; refreshButton.textContent = 'Обновляем…'; } } activeLoad = (async () => { try { const data = await api(); const incomingOrders = Array.isArray(data.orders) ? data.orders : null; if (!incomingOrders) throw new Error('Панель вернула неполные данные. Текущая очередь оставлена на экране.'); const keepVisibleQueue = orders.length > 0 && incomingOrders.length === 0; if (!keepVisibleQueue) orders = incomingOrders; rentableLaptops = Array.isArray(data.rentableLaptops) ? data.rentableLaptops : rentableLaptops; managerPromos = Array.isArray(data.promos) ? data.promos : managerPromos; isChiefAdmin = Boolean(data.isChiefAdmin); if (catalogOpenButton) catalogOpenButton.hidden = !isChiefAdmin; if (sidebarCatalogButton) sidebarCatalogButton.hidden = !isChiefAdmin; gate.hidden = true; if (!catalogPanel.hidden || !promoPanel?.hidden) { renderPromoManager(); } else dashboard.hidden = false; const stamp = new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date()); statusEl.textContent = keepVisibleQueue ? `Связь с базой нестабильна: пустой ответ не применён. Показана последняя очередь · ${stamp}` : `${silent ? 'Синхронизировано' : 'Обновлено'}: ${stamp}`; render(); } catch (error) { if (error.status === 401) { dashboard.hidden = true; if (catalogOpenButton) catalogOpenButton.hidden = true; if (sidebarCatalogButton) sidebarCatalogButton.hidden = true; gate.hidden = false; statusEl.textContent = ''; return; } if (orders.length) { dashboard.hidden = false; gate.hidden = true; statusEl.textContent = `Не удалось обновить данные. Показана последняя очередь: ${error.message}`; return; } dashboard.hidden = true; gate.hidden = true; statusEl.textContent = error.message; } finally { if (!silent && refreshButton) { refreshButton.disabled = false; refreshButton.textContent = refreshLabel || 'Обновить'; } activeLoad = null; } })(); return activeLoad; }
+function setFilter(nextFilter) { if (!catalogPanel.hidden) catalogPanel.hidden = true; if (promoPanel && !promoPanel.hidden) promoPanel.hidden = true; dashboard.hidden = false; filter = nextFilter; document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item.dataset.filter === filter)); render(); }
 
 refreshButton?.addEventListener('click', () => load(false));
 window.setInterval(() => {
@@ -633,6 +655,42 @@ catalogOpenButton?.addEventListener('click', async () => {
 });
 sidebarCatalogButton?.addEventListener('click', () => catalogOpenButton?.click());
 catalogCloseButton?.addEventListener('click', () => { catalogPanel.hidden = true; dashboard.hidden = false; });
+promoOpenButton?.addEventListener('click', async () => {
+  dashboard.hidden = true;
+  if (catalogPanel) catalogPanel.hidden = true;
+  if (promoPanel) promoPanel.hidden = false;
+  statusEl.textContent = 'Загружаем промокоды…';
+  await load(false);
+  renderPromoManager();
+});
+promoCloseButton?.addEventListener('click', () => { if (promoPanel) promoPanel.hidden = true; dashboard.hidden = false; render(); });
+promoForm?.addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = promoForm.querySelector('[type="submit"]');
+  const data = new FormData(promoForm);
+  const phone = normalizePhone(data.get('phone'));
+  const discountPercent = Number(data.get('discountPercent'));
+  if (!phone) { statusEl.textContent = 'Введите номер клиента в формате +996XXXXXXXXX.'; return; }
+  if (![5, 10, 15, 20].includes(discountPercent)) { statusEl.textContent = 'Выберите размер скидки 5%, 10%, 15% или 20%.'; return; }
+  if (!window.confirm(`Выдать персональный промокод ${phone} на ${discountPercent}% сроком на 30 дней?`)) return;
+  button.disabled = true; button.textContent = 'Выдаём…';
+  try {
+    const result = await api('POST', { action:'issue_personal_promo', phone, discountPercent });
+    statusEl.textContent = `${result.message} Код: ${result.promo?.code || 'создан'}.`;
+    promoForm.reset();
+    await load(true);
+    renderPromoManager();
+  } catch (error) { statusEl.textContent = error.message; }
+  finally { button.disabled = false; button.textContent = 'Выдать промокод'; }
+});
+promoList?.addEventListener('click', async event => {
+  const revoke = event.target.closest('[data-revoke-promo]');
+  if (!revoke) return;
+  if (!window.confirm('Отозвать этот неиспользованный промокод? В новой заявке он больше не сработает.')) return;
+  revoke.disabled = true; revoke.textContent = 'Отзываем…';
+  try { const result = await api('POST', { action:'revoke_personal_promo', promoId:revoke.dataset.revokePromo }); statusEl.textContent = result.message; await load(true); renderPromoManager(); }
+  catch (error) { statusEl.textContent = error.message; revoke.disabled = false; revoke.textContent = 'Отозвать'; }
+});
 catalogResetButton?.addEventListener('click', resetCatalogForm);
 catalogList?.addEventListener('click', async event => {
   const edit = event.target.closest('[data-catalog-edit]');

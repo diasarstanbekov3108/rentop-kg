@@ -84,7 +84,7 @@ export default async function handler(request, response) {
       // The dashboard used to sign every attachment for up to fifty orders on
       // every refresh. That can mean hundreds of storage calls and makes the
       // whole panel look stuck. Documents are now signed only when opened.
-      const [orders, rentableLaptops] = await Promise.all([database.listRecentOrders(25), database.listRentableLaptops()]);
+      const [orders, rentableLaptops, promos] = await Promise.all([database.listRecentOrders(25), database.listRentableLaptops(), database.listRecentPromos().catch(() => [])]);
       // Fetch every related row in a small fixed number of requests. The old
       // dashboard made seven database reads for each order on every 5-second
       // refresh, which could starve the panel right after a document upload.
@@ -132,7 +132,7 @@ export default async function handler(request, response) {
           returnHandoffPrepared:returnHandoffOrders.has(String(order.id))
         };
       });
-      return reply(response, 200, { authenticated:true, managerPhone:session.phone, isChiefAdmin, orders:hydrated, rentableLaptops });
+      return reply(response, 200, { authenticated:true, managerPhone:session.phone, isChiefAdmin, orders:hydrated, rentableLaptops, promos });
     }
     if (request.method !== 'POST') return reply(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
@@ -218,7 +218,7 @@ export default async function handler(request, response) {
       if (order.status !== 'completed') return reply(response, 409, { error:'Промокод лояльности можно выдать только после завершённой аренды.' });
       if (!order.customer_phone) return reply(response, 409, { error:'У этой аренды не указан номер клиента.' });
       if (![5, 10, 15, 20].includes(percent)) return reply(response, 400, { error:'Выберите скидку 5%, 10%, 15% или 20%.' });
-      const expiresAt = new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString();
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
       let promo;
       for (let attempt = 0; attempt < 3 && !promo; attempt += 1) {
         const code = `RENTOP${percent}-${randomBytes(3).toString('hex').toUpperCase()}`;
@@ -226,6 +226,24 @@ export default async function handler(request, response) {
       }
       await database.createEvent({ order_id:order.id, event_type:'manager_issued_loyalty_promo_from_web', actor_type:'manager', metadata:{ promo_id:promo?.id || null, discount_percent:percent, expires_at:expiresAt } }).catch(error => console.error('Manager promo audit event failed:', error.message));
       return reply(response, 201, { ok:true, promo, message:'Персональный промокод создан и появится в кабинете клиента.' });
+    }
+    if (payload.action === 'issue_personal_promo') {
+      const phone = String(payload.phone || '').replace(/\D/g, '');
+      const percent = Number(payload.discountPercent);
+      if (!/^996\d{9}$/.test(phone)) return reply(response, 400, { error:'Укажите номер клиента Кыргызстана в формате +996XXXXXXXXX.' });
+      if (![5, 10, 15, 20].includes(percent)) return reply(response, 400, { error:'Выберите скидку 5%, 10%, 15% или 20%.' });
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      let promo;
+      for (let attempt = 0; attempt < 3 && !promo; attempt += 1) {
+        const code = `RENTOP${percent}-${randomBytes(3).toString('hex').toUpperCase()}`;
+        try { promo = await database.createPromo({ code, discount_percent:percent, status:'issued', issued_from_order_id:null, recipient_telegram_user_id:null, recipient_phone:`+${phone}`, expires_at:expiresAt }); } catch (error) { if (attempt === 2) throw error; }
+      }
+      return reply(response, 201, { ok:true, promo, message:'Персональный промокод создан на 30 дней и появится в кабинете клиента.' });
+    }
+    if (payload.action === 'revoke_personal_promo') {
+      const promo = await database.revokePromo(String(payload.promoId || ''));
+      if (!promo) return reply(response, 409, { error:'Промокод уже использован, отозван или не найден.' });
+      return reply(response, 200, { ok:true, promo, message:'Промокод отозван. В новой заявке он больше не сработает.' });
     }
     if (payload.action === 'admin_close_rental_early' || payload.action === 'admin_open_incident' || payload.action === 'admin_resolve_incident' || payload.action === 'admin_offer_incident_replacement' || payload.action === 'admin_update_laptop_asset') {
       if (!isChiefAdmin) return reply(response, 403, { error:'Это действие доступно только главному администратору.' });

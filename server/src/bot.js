@@ -205,10 +205,10 @@ export function createRentopBot({ config, telegram, database }) {
   }
 
   async function issueLoyaltyPromo(order, session, percent, chatId) {
-    if (![5, 10, 15].includes(percent)) return telegram.sendMessage(chatId, 'Допустимы промокоды 5%, 10% или 15%.');
+    if (![5, 10, 15, 20].includes(percent)) return telegram.sendMessage(chatId, 'Допустимы промокоды 5%, 10%, 15% или 20%.');
     if (order.status !== 'completed') return telegram.sendMessage(chatId, 'Промокод можно отправить после завершения аренды и возврата залога.');
     const code = `RENTOP${percent}-${randomBytes(3).toString('hex').toUpperCase()}`;
-    const expiresAt = new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString();
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     await database.createPromo({
       code,
       discount_percent: percent,

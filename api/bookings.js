@@ -20,6 +20,23 @@ function applyBenefitDiscount(rental, benefits = []) {
   return { ...rental, discount, total:Math.round(rental.days * rental.rate * (100 - discount) / 100) };
 }
 
+function normalizePromoCode(value) {
+  return String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+}
+
+function samePhone(a, b) {
+  return String(a || '').replace(/\D/g, '') === String(b || '').replace(/\D/g, '');
+}
+
+function usablePromo(promo, phone) {
+  if (!promo) throw new Error('Промокод не найден. Проверьте написание.');
+  if (promo.status !== 'issued' || promo.redeemed_order_id || promo.redeemed_at) throw new Error('Этот промокод уже использован или больше недоступен.');
+  if (!samePhone(promo.recipient_phone, phone)) throw new Error('Этот промокод выдан другому личному кабинету и не может быть применён.');
+  if (!promo.expires_at || new Date(promo.expires_at).getTime() <= Date.now()) throw new Error('Срок действия этого промокода закончился.');
+  if (![5, 10, 15, 20].includes(Number(promo.discount_percent))) throw new Error('У промокода некорректный размер скидки. Обратитесь в поддержку Rentop.');
+  return promo;
+}
+
 function readCookie(request, name) {
   return String(request.headers.cookie || '')
     .split(';')
@@ -69,7 +86,11 @@ export default async function handler(request, response) {
     const laptop = await database.getLaptop(laptopId);
     if (!laptop || laptop.category !== 'rent') throw new Error('Ноутбук для аренды не найден.');
     const benefits = await database.listBenefitVerifications(session.phone).catch(() => []);
-    const rental = applyBenefitDiscount(quote(laptop, payload.startDate, payload.endDate), benefits);
+    const baseRental = applyBenefitDiscount(quote(laptop, payload.startDate, payload.endDate), benefits);
+    const promoCode = normalizePromoCode(payload.promoCode);
+    const promo = promoCode ? usablePromo(await database.getPromoByCode(promoCode), session.phone) : null;
+    const discount = Math.max(Number(baseRental.discount) || 0, Number(promo?.discount_percent) || 0);
+    const rental = { ...baseRental, discount, total:Math.round(baseRental.days * baseRental.rate * (100 - discount) / 100) };
     const token = randomBytes(18).toString('base64url');
     const order = await database.createOrder({
       laptop_id: laptopId,
@@ -93,11 +114,22 @@ export default async function handler(request, response) {
       delivery_preferred_time: null,
       client_token: token
     });
+    if (promo) {
+      // The update is conditional on an unused code, so a second browser tab
+      // cannot spend the same personal code twice.
+      const redeemed = await database.redeemPromo(promo.id, order.id);
+      if (!redeemed) {
+        await database.deleteOrder(order.id).catch(() => {});
+        throw new Error('Промокод только что был использован. Обновите кабинет и выберите другой.');
+      }
+      const repriced = await database.updateOrder(order.id, { discount_percent:rental.discount, total_amount:rental.total });
+      if (!repriced) throw new Error('Не удалось закрепить скидку по промокоду. Заявка не создана.');
+    }
     const bot = createTelegramApi(config.telegramBotToken);
     await bot.sendMessage(config.adminChatId,
       `🆕 Новая заявка с сайта\n\nЗаявка ${order.id.slice(0, 8).toUpperCase()}\n` +
       `${laptop.title}\nКлиент: ${fullName || 'ФИО заполняется в кабинете'}\nТелефон: ${session.phone}\n` +
-      `Срок: ${payload.startDate} — ${payload.endDate}\nСумма: ${rental.total} сом\nПолучение: ${payload.deliveryType === 'arca_locker' ? 'ARCHA POINT (точка будет выбрана в кабинете)' : 'доставка (адрес будет указан в кабинете)'}`
+      `Срок: ${payload.startDate} — ${payload.endDate}\nСкидка: ${rental.discount}%${promo ? ` (промокод ${promo.code})` : ''}\nСумма: ${rental.total} сом\nПолучение: ${payload.deliveryType === 'arca_locker' ? 'ARCHA POINT (точка будет выбрана в кабинете)' : 'доставка (адрес будет указан в кабинете)'}`
     ).catch((error) => console.error('Manager notification failed:', error.message));
     return response.status(201).json({ orderId: order.id, accountUrl: `/account?created=${encodeURIComponent(order.id)}` });
   } catch (error) {

@@ -1321,7 +1321,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             startDate: draft.startDate,
             endDate: draft.endDate,
             deliveryType,
-            lockerAddress: ''
+            lockerAddress: '',
+            promoCode: promo
           })
         });
         const result = await response.json().catch(() => ({}));

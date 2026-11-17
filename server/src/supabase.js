@@ -308,9 +308,28 @@ export function createSupabaseApi(config) {
     createPromo: (promo) => request('rental_promo_codes', {
       method: 'POST', body: JSON.stringify(promo)
     }).then((rows) => rows?.[0] || null),
+    getPromoByCode: (code) => getOne(
+      `rental_promo_codes?code=eq.${encodeURIComponent(String(code || '').toUpperCase())}` +
+      '&select=id,code,discount_percent,status,recipient_phone,expires_at,redeemed_order_id,redeemed_at,created_at&limit=1'
+    ),
+    redeemPromo: (id, orderId) => request(
+      `rental_promo_codes?id=eq.${encodeURIComponent(id)}&status=eq.issued&redeemed_order_id=is.null`, {
+        method:'PATCH',
+        body:JSON.stringify({ status:'redeemed', redeemed_order_id:orderId, redeemed_at:new Date().toISOString() })
+      }
+    ).then((rows) => rows?.[0] || null),
+    revokePromo: (id) => request(
+      `rental_promo_codes?id=eq.${encodeURIComponent(id)}&status=eq.issued`, {
+        method:'PATCH', body:JSON.stringify({ status:'revoked' })
+      }
+    ).then((rows) => rows?.[0] || null),
+    listRecentPromos: (limit = 100) => request(
+      'rental_promo_codes?select=id,code,discount_percent,status,recipient_phone,issued_from_order_id,expires_at,redeemed_order_id,redeemed_at,created_at' +
+      `&order=created_at.desc&limit=${Math.min(Math.max(Number(limit) || 100, 1), 200)}`
+    ),
     listPromosByPhone: (phone) => request(
       `rental_promo_codes?recipient_phone=eq.${encodeURIComponent(phone)}` +
-      '&select=id,code,discount_percent,status,expires_at,redeemed_at,created_at&order=created_at.desc&limit=50'
+      '&select=id,code,discount_percent,status,expires_at,redeemed_order_id,redeemed_at,created_at&order=created_at.desc&limit=50'
     ),
     getAdminActionByUser: (userId) => getOne(`rental_order_admin_actions?admin_user_id=eq.${encodeURIComponent(userId)}&select=*&order=created_at.desc`),
     createEvent: (event) => request('rental_order_events', {

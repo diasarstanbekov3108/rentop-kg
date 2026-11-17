@@ -784,12 +784,17 @@
           <input type="tel" id="user-phone" inputmode="numeric" autocomplete="tel" maxlength="19" value="+996 " placeholder="+996 (___) __-__-__" required>
           <p class="cabinet-order-phone" id="cabinet-order-phone" hidden></p>
         </div>
+        <div class="form-group" id="order-promo-group">
+          <label for="user-promo">Персональный промокод <span>необязательно</span></label>
+          <input type="text" id="user-promo" inputmode="text" autocomplete="off" maxlength="40" placeholder="Например: RENTOP10-ABC123">
+          <p class="form-hint">Промокод привязан к вашему номеру, действует один раз и не складывается с другими скидками — сайт применит только наиболее выгодную.</p>
+        </div>
         <button type="submit" class="btn-submit" id="submitBtn">Войти и продолжить</button>
       </form>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script type="module" src="js/app.js?v=20261117-featured-showcase-v8"></script>
+  <script type="module" src="js/app.js?v=20261118-personal-promos-v9"></script>
 </body>
 </html>
