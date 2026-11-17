@@ -12,12 +12,19 @@ function quote(laptop, startDate, endDate) {
   return { days, rate, discount, total: Math.round(days * rate * (100 - discount) / 100) };
 }
 
-function applyBenefitDiscount(rental, benefits = []) {
+function benefitDiscount(benefits = []) {
   const now = Date.now();
   const approved = benefits.some((item) => item.status === 'approved' && (!item.expires_at || new Date(item.expires_at).getTime() > now));
-  if (!approved) return rental;
-  const discount = Math.max(Number(rental.discount) || 0, 10);
-  return { ...rental, discount, total:Math.round(rental.days * rental.rate * (100 - discount) / 100) };
+  return approved ? 10 : 0;
+}
+
+function rentalWithDiscount(rental, discount) {
+  const cappedDiscount = Math.min(40, Math.max(0, Number(discount) || 0));
+  return {
+    ...rental,
+    discount: cappedDiscount,
+    total: Math.round(rental.days * rental.rate * (100 - cappedDiscount) / 100)
+  };
 }
 
 function normalizePromoCode(value) {
@@ -86,11 +93,11 @@ export default async function handler(request, response) {
     const laptop = await database.getLaptop(laptopId);
     if (!laptop || laptop.category !== 'rent') throw new Error('Ноутбук для аренды не найден.');
     const benefits = await database.listBenefitVerifications(session.phone).catch(() => []);
-    const baseRental = applyBenefitDiscount(quote(laptop, payload.startDate, payload.endDate), benefits);
+    const tariffRental = quote(laptop, payload.startDate, payload.endDate);
+    const baseRental = rentalWithDiscount(tariffRental, tariffRental.discount + benefitDiscount(benefits));
     const promoCode = normalizePromoCode(payload.promoCode);
     const promo = promoCode ? usablePromo(await database.getPromoByCode(promoCode), session.phone) : null;
-    const discount = Math.max(Number(baseRental.discount) || 0, Number(promo?.discount_percent) || 0);
-    const rental = { ...baseRental, discount, total:Math.round(baseRental.days * baseRental.rate * (100 - discount) / 100) };
+    const rental = rentalWithDiscount(baseRental, baseRental.discount + Number(promo?.discount_percent || 0));
     const token = randomBytes(18).toString('base64url');
     const order = await database.createOrder({
       laptop_id: laptopId,
@@ -100,8 +107,11 @@ export default async function handler(request, response) {
       rental_end_date: payload.endDate,
       rental_days: rental.days,
       daily_rate: rental.rate,
-      discount_percent: rental.discount,
-      total_amount: rental.total,
+      // The personal code is redeemed only after the new order has an ID.
+      // The database then verifies the second, repriced update atomically.
+      discount_percent: baseRental.discount,
+      total_amount: baseRental.total,
+      discount_policy: 'stacked_v1',
       status: 'draft',
       delivery_type: payload.deliveryType,
       // The first popup intentionally collects only the delivery method.

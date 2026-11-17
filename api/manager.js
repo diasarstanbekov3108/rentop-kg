@@ -22,7 +22,7 @@ function extendExactDeadline(currentEnd, oldDate, newDate) {
 }
 function discountForTerm(days, hasApprovedBenefit = false) {
   const tariff = Number(days) >= 15 ? 30 : Number(days) >= 7 ? 15 : 0;
-  return Math.max(tariff, hasApprovedBenefit ? 10 : 0);
+  return Math.min(40, tariff + (hasApprovedBenefit ? 10 : 0));
 }
 function catalogText(value, maxLength) { return String(value || '').trim().replace(/\s+/g, ' ').slice(0, maxLength); }
 function catalogPayload(payload) {
@@ -332,8 +332,8 @@ export default async function handler(request, response) {
               if (Number(benefitOrder.discount_percent || 0) !== discount || Number(benefitOrder.total_amount || 0) !== total) {
                 await database.updateOrder(benefitOrder.id, { discount_percent:discount, total_amount:total });
                 await database.createEvent({ order_id:benefitOrder.id, event_type:'manager_applied_approved_social_discount_from_web', actor_type:'manager', metadata:{ discount_percent:discount, total_amount:total, benefit_type:verification.benefit_type } });
-                benefitMessage = discount === 10 ? 'Льготная скидка 10% одобрена, сумма заявки пересчитана.' : `Льгота одобрена. Тарифная скидка ${discount}% уже выгоднее, поэтому сумма не менялась.`;
-              } else benefitMessage = discount === 10 ? 'Льготная скидка 10% одобрена и уже учтена в сумме заявки.' : `Льгота одобрена. Тарифная скидка ${discount}% уже выгоднее.`;
+                benefitMessage = `Льгота 10% одобрена, сумма заявки пересчитана. Общая скидка: ${discount}%.`;
+              } else benefitMessage = `Льгота 10% одобрена и уже учтена в сумме заявки. Общая скидка: ${discount}%.`;
             } else benefitMessage = 'Льгота одобрена. Для уже выставленного или оплаченного счёта изменение суммы согласуйте отдельно.';
           }
         }

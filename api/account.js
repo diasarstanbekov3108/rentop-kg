@@ -33,7 +33,7 @@ function addDays(isoDate, days) { const date = new Date(`${isoDate}T00:00:00Z`);
 function discountForTerm(days, benefits = []) {
   const tariff = days >= 15 ? 30 : days >= 7 ? 15 : 0;
   const benefit = benefits.some(item => item.status === 'approved' && (!item.expires_at || new Date(item.expires_at) > new Date())) ? 10 : 0;
-  return Math.max(tariff, benefit);
+  return Math.min(40, tariff + benefit);
 }
 function orderRef(order) { return String(order.id || '').slice(0, 8).toUpperCase(); }
 function documentLabel(kind) { return ({ identity:'Паспорт или ID-карта', identity_front:'Паспорт или ID-карта — лицевая сторона', identity_back:'Паспорт или ID-карта — обратная сторона', selfie:'Селфи с документом', supporting:'Официальный подтверждающий документ', issue_video:'Видео до получения', return_video:'Видео возврата', benefit_proof:'Документ для социальной скидки' }[kind] || 'Документ'); }

@@ -76,6 +76,7 @@ const applyManualDurationButton = document.getElementById('apply-manual-duration
 const totalPriceEl = document.getElementById('total-price');
 const calcDiscountEl = document.getElementById('calc-discount');
 const calcBreakdownEl = document.getElementById('calc-breakdown');
+const userPromoInput = document.getElementById('user-promo');
 const rentalStartInput = document.getElementById('rental-start-date');
 const rentalEndInput = document.getElementById('rental-end-date');
 const deliveryTypeInput = document.getElementById('delivery-type');
@@ -760,9 +761,26 @@ function updateCalculator(forcedMessage) {
 
   clampRentalDates();
   const draft = currentRentalDraft();
+  const now = Date.now();
+  const tariffDiscount = Number(draft.quote.discountPercent || 0);
+  const benefitDiscount = Array.isArray(cabinetSession?.benefits) && cabinetSession.benefits.some((benefit) => (
+    benefit.status === 'approved' && (!benefit.expires_at || new Date(benefit.expires_at).getTime() > now)
+  )) ? 10 : 0;
+  const promoCode = String(userPromoInput?.value || '').trim().toUpperCase().replace(/\s+/g, '');
+  const activePromo = promoCode && Array.isArray(cabinetSession?.promos)
+    ? cabinetSession.promos.find((promo) => promo.code === promoCode && promo.status === 'issued' && !promo.redeemed_at && (!promo.expires_at || new Date(promo.expires_at).getTime() > now))
+    : null;
+  const promoDiscount = Number(activePromo?.discount_percent || 0);
+  const discount = Math.min(40, tariffDiscount + benefitDiscount + promoDiscount);
+  const total = Math.round(draft.quote.days * draft.quote.dailyRate * (100 - discount) / 100);
+  const discountParts = [
+    tariffDiscount ? `срок ${tariffDiscount}%` : '',
+    benefitDiscount ? 'льгота 10%' : '',
+    promoDiscount ? `промокод ${promoDiscount}%` : ''
+  ].filter(Boolean);
 
   if (daysCount) daysCount.textContent = String(draft.quote.days);
-  if (totalPriceEl) totalPriceEl.textContent = draft.quote.total.toLocaleString('ru-RU');
+  if (totalPriceEl) totalPriceEl.textContent = total.toLocaleString('ru-RU');
   if (daysSlider && draft.quote.days >= 2) {
     // The slider is a quick picker, not an invitation to jump to a costly
     // 30-day total. Longer rentals are still available through the return
@@ -780,13 +798,12 @@ function updateCalculator(forcedMessage) {
   });
   if (calcDiscountEl) {
     if (!draft.quote.days) calcDiscountEl.textContent = 'Укажите корректные даты';
-    else if (draft.quote.discountPercent === 15) calcDiscountEl.textContent = 'Ваша скидка: 15%';
-    else if (draft.quote.discountPercent === 30) calcDiscountEl.textContent = 'Ваша скидка: 30%';
+    else if (discount) calcDiscountEl.textContent = `Ваша скидка: ${discount}%${discountParts.length ? ` (${discountParts.join(' + ')})` : ''}${discount === 40 && tariffDiscount + benefitDiscount + promoDiscount > 40 ? ' · максимум 40%' : ''}`;
     else calcDiscountEl.textContent = 'Без скидки';
   }
   if (calcBreakdownEl) {
-    const perDay = draft.quote.days ? Math.round(draft.quote.total / draft.quote.days) : 0;
-    const saving = Math.max(0, (draft.quote.days * draft.quote.dailyRate) - draft.quote.total);
+    const perDay = draft.quote.days ? Math.round(total / draft.quote.days) : 0;
+    const saving = Math.max(0, (draft.quote.days * draft.quote.dailyRate) - total);
     calcBreakdownEl.textContent = draft.quote.days
       ? `≈ ${perDay.toLocaleString('ru-RU')} сом в день${saving ? ` · экономия ${saving.toLocaleString('ru-RU')} сом` : ''}`
       : '';
@@ -1209,6 +1226,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   rentalStartInput?.addEventListener('change', () => updateCalculator());
   rentalEndInput?.addEventListener('input', () => updateCalculator());
   rentalEndInput?.addEventListener('change', () => updateCalculator());
+  userPromoInput?.addEventListener('input', () => updateCalculator());
   deliveryChoiceButtons.forEach((button) => button.addEventListener('click', () => {
     if (deliveryTypeInput) deliveryTypeInput.value = button.dataset.deliveryOption || 'delivery';
     updateDeliveryNote();
