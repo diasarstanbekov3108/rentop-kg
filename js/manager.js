@@ -115,6 +115,7 @@ function visibleOrders() {
     if (query && !`${order.id} ${order.customer_name} ${order.customer_phone} ${order.laptop_title}`.toLowerCase().includes(query)) return false;
     if (filter === 'new') return ['draft','pending_review','awaiting_payment','payment_review','confirmed','awaiting_archa_reservation','awaiting_locker_loading','awaiting_pickup'].includes(order.status);
     if (filter === 'documents') return order.documents.some(document => document.status === 'pending_review');
+    if (filter === 'loyalty') return order.status === 'completed' || order.documents.some(document => document.kind === 'benefit_proof' && document.status === 'pending_review') || order.benefits?.some(benefit => benefit.status === 'pending_review');
     if (filter === 'active') return ['in_use','incident'].includes(order.status);
     if (filter === 'returns') return ['return_requested','awaiting_return_reservation','awaiting_return_dropoff','awaiting_return_collection','returned'].includes(order.status);
     if (filter === 'completed') return order.status === 'completed';
@@ -126,7 +127,8 @@ function visibleOrders() {
 function documentCard(document, orderId) {
   const documentType = document.kind === 'supporting' && document.file_name ? ` · ${escape(document.file_name)}` : '';
   const reviewNote = document.reviewer_note ? ` · ${escape(document.reviewer_note)}` : '';
-  return `<div class="manager-doc"><span>${docLabel(document.kind)}${documentType} · ${document.status === 'pending_review' ? 'на проверке' : document.status}${reviewNote}</span><button class="manager-doc-view" type="button" data-document-view="${document.id}" data-order="${escape(orderId)}" data-document-name="${escape(document.file_name || docLabel(document.kind))}" data-document-type="${escape(document.content_type || '')}">Открыть</button>${document.status === 'pending_review' ? `<button class="accept" data-document="${document.id}" data-status="accepted">Принять</button><button class="reject" data-document="${document.id}" data-status="rejected">Отклонить</button>` : ''}</div>`;
+  const acceptLabel = document.kind === 'benefit_proof' ? 'Подтвердить льготу — 10%' : 'Принять';
+  return `<div class="manager-doc"><span>${docLabel(document.kind)}${documentType} · ${document.status === 'pending_review' ? 'на проверке' : document.status}${reviewNote}</span><button class="manager-doc-view" type="button" data-document-view="${document.id}" data-order="${escape(orderId)}" data-document-name="${escape(document.file_name || docLabel(document.kind))}" data-document-type="${escape(document.content_type || '')}">Открыть</button>${document.status === 'pending_review' ? `<button class="accept" data-document="${document.id}" data-status="accepted">${acceptLabel}</button><button class="reject" data-document="${document.id}" data-status="rejected">Отклонить</button>` : ''}</div>`;
 }
 function lockerInstruction(order) {
   if (order.delivery_type !== 'arca_locker') return '';
