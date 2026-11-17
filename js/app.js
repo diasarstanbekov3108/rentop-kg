@@ -418,18 +418,27 @@ function renderCatalogPreview(items) {
     return;
   }
   catalogPreviewGrid.innerHTML = items.map(laptop => {
-    return `<article class="catalog-preview-card">
+    return `<article class="catalog-preview-card" data-open-full role="button" tabindex="0" aria-label="Открыть полный каталог и посмотреть модель ${laptop.title}">
       <img src="${laptop.image}" alt="${laptop.title}" class="catalog-preview-image" loading="lazy">
       <div class="catalog-preview-copy">
         <h3>${formatLaptopTitle(laptop.title)}</h3>
         <span class="catalog-preview-meta">${taskLabel(laptop)}</span>
         <strong>${laptop.priceText || 'Цена уточняется'}</strong>
         <div class="catalog-preview-actions">
-          <button type="button" class="catalog-preview-open" data-open-full>Смотреть модель <span>→</span></button>
+          <span class="catalog-preview-open" aria-hidden="true">Смотреть модель <span>→</span></span>
         </div>
       </div>
     </article>`;
   }).join('');
+}
+
+function syncCatalogShowcaseLayout() {
+  // Some Android browsers render a page in "desktop site" mode.  The CSS
+  // viewport then becomes wide although the physical screen is still narrow.
+  // A coarse pointer is a reliable signal to keep this small homepage showcase
+  // compact, while a normal desktop keeps the three-column presentation.
+  const isCompact = window.matchMedia('(max-width: 900px), (pointer: coarse)').matches;
+  document.documentElement.classList.toggle('catalog-showcase-compact', isCompact);
 }
 
 function setCatalogBrowser(open) {
@@ -790,6 +799,7 @@ function closeInfoModal(m) {
 
 // ========== INIT ==========
 document.addEventListener('DOMContentLoaded', async () => {
+  syncCatalogShowcaseLayout();
   const mascotStops = ['.hero h1', '#catalog .section-title', '#archa-point h2', '#b2b h2', '#faq .section-title'];
   let mascotFrame;
   let mascotMoveTimer;
@@ -1091,6 +1101,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   catalogPreviewGrid?.addEventListener('click', (event) => {
     if (event.target.closest('[data-open-full]')) setCatalogBrowser(true);
   });
+  catalogPreviewGrid?.addEventListener('keydown', (event) => {
+    if ((event.key === 'Enter' || event.key === ' ') && event.target.closest('[data-open-full]')) {
+      event.preventDefault();
+      setCatalogBrowser(true);
+    }
+  });
   closeFullCatalog?.addEventListener('click', () => setCatalogBrowser(false));
   closeFullCatalogBottom?.addEventListener('click', () => setCatalogBrowser(false));
   savedOnlyButton?.addEventListener('click', () => {
@@ -1107,10 +1123,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (event.key === 'Escape' && !catalogBrowser?.hidden) setCatalogBrowser(false);
   });
   window.addEventListener('resize', () => {
+    syncCatalogShowcaseLayout();
     const pageCount = catalogPageCount();
     if (currentPage > pageCount) currentPage = pageCount;
     updateCatalogView(false);
   }, { passive:true });
+  window.visualViewport?.addEventListener('resize', syncCatalogShowcaseLayout, { passive:true });
 
   // Фильтры
   categoryFilterButtons.forEach(btn => {
