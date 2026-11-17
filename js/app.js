@@ -414,42 +414,21 @@ function renderLaptops(items, append = false, target = catalogGrid) {
 function renderCatalogPreview(items) {
   if (!catalogPreviewGrid) return;
   if (!items.length) {
-    catalogPreviewGrid.innerHTML = '<p class="catalog-preview-empty">По этому фильтру моделей пока нет. Откройте весь каталог или смените задачу.</p>';
+    catalogPreviewGrid.innerHTML = '<p class="catalog-preview-empty">Сейчас нет подходящих моделей. Откройте полный каталог, чтобы посмотреть весь ассортимент.</p>';
     return;
   }
   catalogPreviewGrid.innerHTML = items.map(laptop => {
-    const isRent = laptop.category === 'rent';
     return `<article class="catalog-preview-card">
-      <img src="${laptop.image}" alt="${laptop.title}" class="catalog-preview-image" loading="lazy" data-title="${laptop.title}" role="button" tabindex="0" aria-label="Открыть фото: ${laptop.title}">
+      <img src="${laptop.image}" alt="${laptop.title}" class="catalog-preview-image" loading="lazy">
       <div class="catalog-preview-copy">
         <h3>${formatLaptopTitle(laptop.title)}</h3>
         <strong>${laptop.priceText || 'Цена уточняется'}</strong>
         <div class="catalog-preview-actions">
-          <button type="button" class="catalog-preview-reserve" data-id="${laptop.id}">${isRent ? 'Забронировать' : 'Купить / Предзаказ'}</button>
+          <button type="button" class="catalog-preview-open" data-open-full>Смотреть модель <span>→</span></button>
         </div>
       </div>
     </article>`;
   }).join('');
-  catalogPreviewGrid.querySelectorAll('[data-id]').forEach(button => {
-    button.addEventListener('click', (event) => openOrderModal(Number(event.currentTarget.dataset.id), { deliveryType: archaSelectionMode ? 'arca_locker' : 'delivery' }));
-  });
-  catalogPreviewGrid.querySelectorAll('.catalog-preview-image').forEach(image => {
-    const openPreviewImage = () => {
-      if (!lightbox || !lightboxImg || !lightboxCaption) return;
-      lightboxImg.src = image.currentSrc || image.src;
-      lightboxImg.alt = image.alt || '';
-      lightboxCaption.textContent = image.dataset.title || image.alt || '';
-      lightbox.classList.add('active');
-      document.body.style.overflow = 'hidden';
-    };
-    image.addEventListener('click', openPreviewImage);
-    image.addEventListener('keydown', event => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        openPreviewImage();
-      }
-    });
-  });
 }
 
 function setCatalogBrowser(open) {
@@ -468,13 +447,9 @@ function updateCatalogView(resetPagination = true) {
     currentPage = 1;
   }
 
-  const perPage = catalogItemsPerPage();
-  currentPage = Math.min(currentPage, catalogPageCount());
-  const startIndex = (currentPage - 1) * perPage;
-  const endIndex = startIndex + perPage;
-  const visibleItems = filteredLaptops.slice(startIndex, endIndex);
-
-  renderCatalogPreview(visibleItems);
+  // The landing page is a fixed showcase, not a second booking catalog.
+  // All filtering and booking remain inside the complete catalog browser.
+  renderCatalogPreview(filteredLaptops.slice(0, 3));
   // The full catalog is expensive on a phone. Do not rebuild dozens of cards
   // and image nodes while its dialog is closed; render it only on demand.
   if (catalogBrowser && !catalogBrowser.hidden) renderLaptops(filteredLaptops, false, catalogGrid);
@@ -1130,17 +1105,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && !catalogBrowser?.hidden) setCatalogBrowser(false);
   });
-  let previewSwipeStart;
-  catalogPreviewGrid?.addEventListener('touchstart', (event) => {
-    previewSwipeStart = event.touches[0]?.clientX;
-  }, { passive:true });
-  catalogPreviewGrid?.addEventListener('touchend', (event) => {
-    const end = event.changedTouches[0]?.clientX;
-    if (!Number.isFinite(previewSwipeStart) || !Number.isFinite(end)) return;
-    const distance = end - previewSwipeStart;
-    if (Math.abs(distance) >= 44) changeCatalogPage(distance < 0 ? 1 : -1);
-    previewSwipeStart = undefined;
-  }, { passive:true });
   window.addEventListener('resize', () => {
     const pageCount = catalogPageCount();
     if (currentPage > pageCount) currentPage = pageCount;

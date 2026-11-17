@@ -36,7 +36,7 @@
   
   <!-- Fonts & Styles -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261112-catalog-structure">
+  <link rel="stylesheet" href="css/style.css?v=20261117-featured-showcase-v1">
     <link rel="stylesheet" href="css/premium.css?v=20261112-archa-cutout">
 
   <!-- Микроразметка Schema.org для Google -->
@@ -151,44 +151,23 @@
   <!-- Каталог -->
   <section id="catalog">
     <div class="container">
-      <div class="catalog-command-center">
+      <div class="catalog-command-center catalog-showcase-intro">
         <div class="catalog-heading">
-          <p class="catalog-main-kicker">КАТАЛОГ УСТРОЙСТВ</p>
+          <p class="catalog-main-kicker">ПОПУЛЯРНЫЕ МОДЕЛИ</p>
           <h2 class="section-title">Выберите ноутбук <span>для аренды</span></h2>
-          <p class="catalog-intro">Подберите модель под ваши задачи. Гибкие сроки, быстрая выдача 24/7.</p>
-          <p class="catalog-hint">Нажмите на карточку ноутбука для просмотра или откройте весь каталог.</p>
+          <p class="catalog-intro">Три модели для быстрого знакомства. Полный выбор, фильтры и бронирование — в каталоге.</p>
+          <p class="catalog-hint">Откройте каталог, чтобы сравнить характеристики и оформить заявку.</p>
         </div>
-      <div class="archa-selection-notice" id="archa-selection-notice" hidden role="status">
-        <div><strong>Получение через ARCHA POINT 24/7</strong><span>Шаг 1 из 2: выберите ноутбук — в заявке уже будет выбран постамат.</span></div>
-        <button type="button" id="close-archa-selection" aria-label="Закрыть режим выбора через постамат">×</button>
-      </div>
-      <div class="catalog-desktop-controls" aria-label="Фильтры каталога">
-        <div class="catalog-taskbar" aria-label="Подбор по задаче">
-          <span class="catalog-taskbar-label">Для чего нужен ноутбук?</span>
-          <button class="filter-btn use-filter-btn active" data-use="all"><span>▦</span>Все задачи</button>
-          <button class="filter-btn use-filter-btn" data-use="study"><span>⌑</span>Учёба</button>
-          <button class="filter-btn use-filter-btn" data-use="exam"><span>▧</span>Экзамены</button>
-          <button class="filter-btn use-filter-btn" data-use="office"><span>▣</span>Офис</button>
-          <button class="filter-btn use-filter-btn" data-use="code"><span>⌘</span>Программирование</button>
-          <button class="filter-btn use-filter-btn" data-use="creative"><span>◇</span>Монтаж / 3D</button>
-          <button class="filter-btn use-filter-btn" data-use="gaming"><span>⌁</span>Игры</button>
-        </div>
-        <div class="filters catalog-typebar" aria-label="Тип устройства">
-          <button class="filter-btn" data-filter="all"><span>▱</span>Все модели</button>
-          <button class="filter-btn active" data-filter="rent"><span>▣</span>Аренда</button>
-          <button class="filter-btn" data-filter="sale"><span>◇</span>Продажа</button>
+        <div class="archa-selection-notice" id="archa-selection-notice" hidden role="status">
+          <div><strong>Получение через ARCHA POINT 24/7</strong><span>Шаг 1 из 2: откройте каталог и выберите ноутбук — в заявке уже будет выбран постамат.</span></div>
+          <button type="button" id="close-archa-selection" aria-label="Закрыть режим выбора через постамат">×</button>
         </div>
       </div>
-      </div>
-      <section class="catalog-showcase" aria-label="Быстрый просмотр каталога">
-        <p class="catalog-showcase-label">РЕКОМЕНДУЕМАЯ МОДЕЛЬ</p>
-        <div class="catalog-pager visually-hidden" aria-label="Навигация по моделям">
-        <button type="button" id="catalog-page-prev" aria-label="Предыдущие модели">←</button>
-          <span id="catalog-page-status" aria-live="polite">Модель загружается</span>
-        <button type="button" id="catalog-page-next" aria-label="Следующие модели">→</button>
+      <section class="catalog-showcase catalog-showcase-featured" aria-label="Популярные модели">
+        <div class="catalog-showcase-heading">
+          <p>ВИТРИНА RENTOP</p>
+          <span>3 модели для быстрого выбора</span>
         </div>
-        <button type="button" class="catalog-showcase-arrow catalog-showcase-arrow-prev" id="catalog-showcase-prev" aria-label="Показать предыдущие модели">←</button>
-
         <div id="catalog-preview-grid" class="catalog-preview-grid">
         <!-- Скелетоны загрузки -->
         <div class="card skeleton">
@@ -210,9 +189,7 @@
           <div class="skeleton-line"></div>
         </div>
         </div>
-        <button type="button" class="catalog-showcase-arrow catalog-showcase-arrow-next" id="catalog-showcase-next" aria-label="Показать следующие модели">→</button>
-        <div class="catalog-carousel-dots" aria-hidden="true"><i class="is-active"></i><i></i><i></i></div>
-        <button type="button" class="catalog-open-all catalog-open-all-prominent" id="open-full-catalog">Смотреть весь каталог <span>→</span></button>
+        <button type="button" class="catalog-open-all catalog-open-all-prominent" id="open-full-catalog">Открыть полный каталог <span>→</span></button>
       </section>
     </div>
   </section>
@@ -831,6 +808,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script type="module" src="js/app.js?v=20261111-live-catalog"></script>
+  <script type="module" src="js/app.js?v=20261117-featured-showcase-v1"></script>
 </body>
 </html>
