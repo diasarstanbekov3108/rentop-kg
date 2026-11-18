@@ -358,6 +358,27 @@ function paymentBreakdown(payment) {
     deliveryMode: breakdown.delivery_charge_mode || 'external'
   };
 }
+function promoForOrder(order) {
+  return customerPromos.find(promo => String(promo.redeemed_order_id || '') === String(order?.id || '')) || null;
+}
+function rentalPriceSummary(order) {
+  const days = Number(order?.rental_days || 0);
+  const dailyRate = Number(order?.daily_rate || 0);
+  const listedAmount = days > 0 && dailyRate > 0 ? Math.round(days * dailyRate) : 0;
+  const finalAmount = Number(order?.total_amount || 0);
+  return { listedAmount, finalAmount, savedAmount: listedAmount > finalAmount ? listedAmount - finalAmount : 0 };
+}
+function rentalDiscountDetails(order) {
+  const promo = promoForOrder(order);
+  const pricing = rentalPriceSummary(order);
+  const promoLine = promo ? `<small>Промокод: ${escape(promo.code)} · −${Number(promo.discount_percent || 0)}%</small>` : '';
+  return {
+    promo,
+    pricing,
+    card: `<div><span>Скидка</span><strong>−${Number(order?.discount_percent || 0)}%</strong>${promoLine}</div>`,
+    receiptRows: `${pricing.listedAmount ? `<div class="row"><span>Аренда до скидки</span><b>${pricing.listedAmount.toLocaleString('ru-RU')} сом</b></div>` : ''}${promo ? `<div class="row"><span>Промокод</span><b>${escape(promo.code)} · −${Number(promo.discount_percent || 0)}%</b></div>` : ''}<div class="row"><span>Общая скидка</span><b>−${Number(order?.discount_percent || 0)}%${pricing.savedAmount ? ` · экономия ${pricing.savedAmount.toLocaleString('ru-RU')} сом` : ''}</b></div><div class="row"><span>Итого за аренду</span><b>${pricing.finalAmount.toLocaleString('ru-RU')} сом</b></div>`
+  };
+}
 function deliveryReceiptDetails(order, breakdown) {
   if (order.delivery_type === 'arca_locker') {
     return {
@@ -387,7 +408,8 @@ function paymentPanel(order) {
     const breakdown = paymentBreakdown(payment);
     const delivery = deliveryReceiptDetails(order, breakdown);
     const deliveryLines = `<span>Получение: ${escape(delivery.method)}</span>${delivery.charge ? `<span>${escape(delivery.charge)}</span>` : ''}`;
-    return `<section class="cabinet-payment success cabinet-receipt"><div><strong>✓ ${isExtension ? 'Продление оплачено' : 'Оплата подтверждена'}</strong><span>${amount} сом · банк подтвердил платёж</span></div><p>${isExtension ? `Новый срок аренды: до ${date(order.rental_end_date)}.` : 'Мы готовим выбранный способ выдачи и сообщим о готовности.'}</p><div class="cabinet-receipt-details"><b>Квитанция Rentop</b><span>Заказчик: ${escape(order.customer_name || 'Клиент Rentop')}</span><span>Заявка: ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</span><span>Ноутбук: ${escape(order.laptop_title || '—')}</span><span>Период: ${escape(date(order.rental_start_date))} — ${escape(date(order.rental_end_date))}</span>${deliveryLines}<span>Платёж: ${escape(reference)}</span><span>Подтверждён: ${escape(dateTime(paidAt, { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }))}</span></div><button class="cabinet-action secondary" type="button" data-print-receipt="${escape(order.id)}">Скачать квитанцию PDF</button><small class="cabinet-receipt-note">Данные заказчика указаны по этой заявке.</small></section>`;
+    const discount = rentalDiscountDetails(order);
+    return `<section class="cabinet-payment success cabinet-receipt"><div><strong>✓ ${isExtension ? 'Продление оплачено' : 'Оплата подтверждена'}</strong><span>${amount} сом · банк подтвердил платёж</span></div><p>${isExtension ? `Новый срок аренды: до ${date(order.rental_end_date)}.` : 'Мы готовим выбранный способ выдачи и сообщим о готовности.'}</p><div class="cabinet-receipt-details"><b>Квитанция Rentop</b><span>Заказчик: ${escape(order.customer_name || 'Клиент Rentop')}</span><span>Заявка: ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</span><span>Ноутбук: ${escape(order.laptop_title || '—')}</span><span>Период: ${escape(date(order.rental_start_date))} — ${escape(date(order.rental_end_date))}</span>${deliveryLines}<span>Итого аренда: ${discount.pricing.finalAmount.toLocaleString('ru-RU')} сом</span>${discount.promo ? `<span>Промокод: ${escape(discount.promo.code)} · −${Number(discount.promo.discount_percent || 0)}%</span>` : ''}<span>Общая скидка: −${Number(order.discount_percent || 0)}%</span><span>Платёж: ${escape(reference)}</span><span>Подтверждён: ${escape(dateTime(paidAt, { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }))}</span></div><button class="cabinet-action secondary" type="button" data-print-receipt="${escape(order.id)}">Скачать квитанцию PDF</button><small class="cabinet-receipt-note">Данные заказчика указаны по этой заявке.</small></section>`;
   }
   if (!isExtension && order.status !== 'awaiting_payment') return '';
   if (!payment) return `<div class="cabinet-payment waiting"><strong>Готовим способ оплаты</strong><p>Менеджер формирует защищённый QR-счёт. Обновите страницу через несколько минут — платить по реквизитам в переписке не нужно.</p>${documentNotice}</div>`;
@@ -405,7 +427,7 @@ function openReceiptPrintWindow(order) {
   const reference = payment.payment_reference || payment.provider_reference || payment.id || order.reference || String(order.id || '').slice(0, 8).toUpperCase();
   const breakdown = paymentBreakdown(payment);
   const delivery = deliveryReceiptDetails(order, breakdown);
-  const deliveryReceiptRows = `<div class="row"><span>Получение</span><b>${escape(delivery.method)}</b></div>${delivery.charge ? `<div class="row"><span>Доставка</span><b>${escape(delivery.charge)}</b></div>` : ''}`;
+  const deliveryReceiptRows = `${rentalDiscountDetails(order).receiptRows}<div class="row"><span>Получение</span><b>${escape(delivery.method)}</b></div>${delivery.charge ? `<div class="row"><span>Доставка</span><b>${escape(delivery.charge)}</b></div>` : ''}`;
   const stampUrl = `${window.location.origin}/assets/rentop-ip-stamp.png`;
   const popup = window.open('', '_blank', 'width=760,height=860');
   if (!popup) { message('Браузер заблокировал окно квитанции. Разрешите всплывающие окна для Rentop и повторите.', 'error'); return; }
@@ -618,7 +640,8 @@ function orderDetailsMarkup(order) {
     const receipt = lastPayment ? `<section class="cabinet-terminal-receipt"><div><span>Последний подтверждённый платёж</span><strong>${paidAmount} сом</strong></div><button class="cabinet-action secondary" type="button" data-print-receipt="${escape(order.id)}">Квитанция PDF</button></section>` : '';
     return `<div class="cabinet-order-workspace-head"><button class="cabinet-workspace-close" type="button" data-close-order-workspace aria-label="Вернуться к списку заявок">← <span>Все заявки</span></button><div class="cabinet-order-workspace-head-actions"><span class="cabinet-badge">${escape(state.title)}</span><button class="cabinet-order-archive" type="button" data-archive-order="${escape(order.id)}">В архив</button></div></div><div class="cabinet-order-hero"><div class="cabinet-order-visual">${visual}</div><div><p class="cabinet-eyebrow">ЗАЯВКА ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</p><h2>${escape(order.laptop_title || 'Ноутбук Rentop')}</h2><p>Спасибо, что выбрали Rentop. Аренда и возврат завершены.</p></div></div>${journeyMarkup}<section class="cabinet-terminal-summary"><span aria-hidden="true">✓</span><div><strong>Аренда завершена</strong><p>Ноутбук принят Rentop. Все действия по заявке сохранены в истории.</p></div></section>${receipt}<section class="cabinet-completion"><strong>Спасибо, что выбрали Rentop!</strong><p>Будем рады помочь снова. Персональный промокод на следующую аренду появится в разделе «Скидки и промокоды».</p>${feedbackActions}</section><details class="cabinet-order-history"><summary>История заявки, документы и платежи</summary><div>${documentSummary(order)}${supportUpdates(order)}${paymentPanel(order)}</div></details>${requestForm(order)}`;
   }
-  return `<div class="cabinet-order-workspace-head"><button class="cabinet-workspace-close" type="button" data-close-order-workspace aria-label="Вернуться к списку заявок">← <span>Все заявки</span></button><span class="cabinet-badge">${escape(state.title)}</span></div><div class="cabinet-order-hero"><div class="cabinet-order-visual">${visual}</div><div><p class="cabinet-eyebrow">ЗАЯВКА ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</p><h2>${escape(order.laptop_title || 'Ноутбук Rentop')}</h2><p>${escape(state.text)}</p></div></div>${journeyMarkup}<section class="cabinet-order-summary"><div><span>Срок аренды</span><strong>${rentalTerm}</strong></div><div><span>Получение</span><strong>${escape(order.delivery_label)}</strong></div><div><span>Сумма</span><strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div><span>Скидка</span><strong>${Number(order.discount_percent || 0)}%</strong></div></section>${documentSummary(order)}${supportUpdates(order)}${pickupInstruction(order)}${paymentPanel(order)}${actionPanel(order)}${requestForm(order)}`;
+  const discount = rentalDiscountDetails(order);
+  return `<div class="cabinet-order-workspace-head"><button class="cabinet-workspace-close" type="button" data-close-order-workspace aria-label="Вернуться к списку заявок">← <span>Все заявки</span></button><span class="cabinet-badge">${escape(state.title)}</span></div><div class="cabinet-order-hero"><div class="cabinet-order-visual">${visual}</div><div><p class="cabinet-eyebrow">ЗАЯВКА ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</p><h2>${escape(order.laptop_title || 'Ноутбук Rentop')}</h2><p>${escape(state.text)}</p></div></div>${journeyMarkup}<section class="cabinet-order-summary"><div><span>Срок аренды</span><strong>${rentalTerm}</strong></div><div><span>Получение</span><strong>${escape(order.delivery_label)}</strong></div><div><span>Итого аренда</span><strong>${discount.pricing.finalAmount.toLocaleString('ru-RU')} сом</strong></div>${discount.card}</section>${documentSummary(order)}${supportUpdates(order)}${pickupInstruction(order)}${paymentPanel(order)}${actionPanel(order)}${requestForm(order)}`;
 }
 
 function openOrderWorkspace(orderId) {
@@ -696,7 +719,8 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
     const activeJourneyStep = Math.max(1, Math.min(4, state.step || 1));
     const journeyMarkup = `<div class="cabinet-stage-progress" aria-label="Текущий этап: ${escape(state.title)}">${journey.map((label, index) => `<div class="${index + 1 < activeJourneyStep ? 'is-done' : index + 1 === activeJourneyStep ? 'is-active' : ''}"><i>${index + 1 < activeJourneyStep ? '✓' : index + 1}</i><span>${label}</span></div>`).join('')}</div>`;
     const archiveAction = canArchiveOrder(order) ? `<button class="cabinet-rental-archive" type="button" data-archive-order="${escape(order.id)}">В архив</button>` : '';
-    return `<article class="cabinet-rental cabinet-rental-summary" data-rental="${order.id}"><div class="cabinet-rental-top">${visual}<div class="cabinet-rental-title"><h3>${escape(order.laptop_title || 'Ноутбук Rentop')}</h3><p class="cabinet-rental-ref">Заявка ${escape(order.reference)}</p></div><div class="cabinet-rental-actions"><span class="cabinet-badge">${escape(state.title)}</span>${archiveAction}</div></div>${journeyMarkup}<p class="cabinet-next-step">${escape(state.text)}</p><div class="cabinet-rental-grid"><div>Срок<strong>${rentalTerm}</strong></div><div>Получение<strong>${escape(order.delivery_label)}</strong></div><div>Сумма<strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div>Скидка<strong>${Number(order.discount_percent || 0)}%</strong></div></div><button class="cabinet-action cabinet-order-open" type="button" data-open-order="${escape(order.id)}">Открыть заявку <span aria-hidden="true">→</span></button></article>`;
+    const discount = rentalDiscountDetails(order);
+    return `<article class="cabinet-rental cabinet-rental-summary" data-rental="${order.id}"><div class="cabinet-rental-top">${visual}<div class="cabinet-rental-title"><h3>${escape(order.laptop_title || 'Ноутбук Rentop')}</h3><p class="cabinet-rental-ref">Заявка ${escape(order.reference)}</p></div><div class="cabinet-rental-actions"><span class="cabinet-badge">${escape(state.title)}</span>${archiveAction}</div></div>${journeyMarkup}<p class="cabinet-next-step">${escape(state.text)}</p><div class="cabinet-rental-grid"><div>Срок<strong>${rentalTerm}</strong></div><div>Получение<strong>${escape(order.delivery_label)}</strong></div><div>Итого аренда<strong>${discount.pricing.finalAmount.toLocaleString('ru-RU')} сом</strong></div>${discount.card}</div><button class="cabinet-action cabinet-order-open" type="button" data-open-order="${escape(order.id)}">Открыть заявку <span aria-hidden="true">→</span></button></article>`;
   }).join('');
   emptyEl.hidden = displayedOrders.length !== 0;
   if (showingArchivedOrders && !displayedOrders.length) emptyEl.innerHTML = '<h3>Архив пока пуст</h3><p>Завершённую заявку можно скрыть из её экрана после окончания аренды.</p>';
