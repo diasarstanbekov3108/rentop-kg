@@ -84,7 +84,7 @@ export default async function handler(request, response) {
       // The dashboard used to sign every attachment for up to fifty orders on
       // every refresh. That can mean hundreds of storage calls and makes the
       // whole panel look stuck. Documents are now signed only when opened.
-      const [orders, rentableLaptops, promos] = await Promise.all([database.listRecentOrders(25), database.listRentableLaptops(), database.listRecentPromos().catch(() => [])]);
+      const [orders, rentableLaptops, promos, b2bLeads] = await Promise.all([database.listRecentOrders(25), database.listRentableLaptops(), database.listRecentPromos().catch(() => []), database.listB2BLeads().catch(() => [])]);
       // Fetch every related row in a small fixed number of requests. The old
       // dashboard made seven database reads for each order on every 5-second
       // refresh, which could starve the panel right after a document upload.
@@ -132,10 +132,19 @@ export default async function handler(request, response) {
           returnHandoffPrepared:returnHandoffOrders.has(String(order.id))
         };
       });
-      return reply(response, 200, { authenticated:true, managerPhone:session.phone, isChiefAdmin, orders:hydrated, rentableLaptops, promos });
+      return reply(response, 200, { authenticated:true, managerPhone:session.phone, isChiefAdmin, orders:hydrated, rentableLaptops, promos, b2bLeads });
     }
     if (request.method !== 'POST') return reply(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
+    if (payload.action === 'update_b2b_lead') {
+      const id = String(payload.leadId || '');
+      const status = String(payload.status || '');
+      const managerNote = String(payload.managerNote || '').trim().slice(0, 2000);
+      if (!id || !['new', 'contacted', 'proposal_sent', 'contract', 'closed', 'lost'].includes(status)) return reply(response, 400, { error:'Укажите корректный статус B2B-заявки.' });
+      const lead = await database.updateB2BLead(id, { status, manager_note:managerNote || null });
+      if (!lead) return reply(response, 404, { error:'B2B-заявка не найдена.' });
+      return reply(response, 200, { ok:true, lead, message:'Статус корпоративной заявки сохранён.' });
+    }
     if (payload.action === 'save_catalog_laptop' || payload.action === 'set_catalog_visibility' || payload.action === 'create_catalog_image_upload') {
       if (!isChiefAdmin) return reply(response, 403, { error:'Управление каталогом доступно только главному администратору.' });
       if (payload.action === 'save_catalog_laptop') {

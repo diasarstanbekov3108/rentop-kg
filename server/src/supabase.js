@@ -327,6 +327,16 @@ export function createSupabaseApi(config) {
       'rental_promo_codes?select=id,code,discount_percent,status,recipient_phone,issued_from_order_id,expires_at,redeemed_order_id,redeemed_at,created_at' +
       `&order=created_at.desc&limit=${Math.min(Math.max(Number(limit) || 100, 1), 200)}`
     ),
+    createB2BLead: (lead) => request('b2b_leads', {
+      method:'POST', body:JSON.stringify(lead)
+    }).then((rows) => rows?.[0] || null),
+    listB2BLeads: (limit = 100) => request(
+      'b2b_leads?select=id,company_name,contact_name,phone,email,quantity,term_months,device_profile,delivery_preference,comment,status,manager_note,created_at,updated_at' +
+      `&order=created_at.desc&limit=${Math.min(Math.max(Number(limit) || 100, 1), 200)}`
+    ),
+    updateB2BLead: (id, patch) => request(`b2b_leads?id=eq.${encodeURIComponent(id)}`, {
+      method:'PATCH', body:JSON.stringify(patch)
+    }).then((rows) => rows?.[0] || null),
     listPromosByPhone: (phone) => request(
       `rental_promo_codes?recipient_phone=eq.${encodeURIComponent(phone)}` +
       '&select=id,code,discount_percent,status,expires_at,redeemed_order_id,redeemed_at,created_at&order=created_at.desc&limit=50'

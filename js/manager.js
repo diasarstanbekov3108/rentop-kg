@@ -27,11 +27,16 @@ const promoOpenButton = document.querySelector('[data-open-promos]');
 const promoCloseButton = document.getElementById('manager-promo-close');
 const promoForm = document.getElementById('manager-promo-form');
 const promoList = document.getElementById('manager-promo-list');
+const b2bPanel = document.getElementById('manager-b2b-panel');
+const b2bOpenButton = document.querySelector('[data-open-b2b]');
+const b2bCloseButton = document.getElementById('manager-b2b-close');
+const b2bList = document.getElementById('manager-b2b-list');
 const refreshButton = document.getElementById('manager-refresh');
 let orders = [];
 let rentableLaptops = [];
 let catalogLaptops = [];
 let managerPromos = [];
+let b2bLeads = [];
 let filter = 'all';
 let pendingManagerPhone = '';
 let isChiefAdmin = false;
@@ -100,6 +105,14 @@ function normalizePhone(value) { const digits = phoneDigits(value); return digit
 function formatPhone(value) { const digits = phoneDigits(value); return `+996${digits ? ` (${digits.slice(0, 3)}${digits.length > 3 ? ')' : ''}${digits.length > 3 ? ` ${digits.slice(3, 5)}` : ''}${digits.length > 5 ? `-${digits.slice(5, 7)}` : ''}${digits.length > 7 ? `-${digits.slice(7, 9)}` : ''}` : ' '}`; }
 function loginMessage(text = '', type = '') { if (!managerLoginStatus) return; managerLoginStatus.textContent = text; managerLoginStatus.className = `cabinet-status${type ? ` is-${type}` : ''}`; }
 function bakaiMessage(text = '', type = '') { if (!bakaiCheck) return; bakaiCheck.textContent = text; bakaiCheck.className = `manager-bakai-check${type ? ` is-${type}` : ''}`; bakaiCheck.hidden = !text; }
+
+const b2bStatusLabel = status => ({ new:'Новая', contacted:'Связались', proposal_sent:'Предложение отправлено', contract:'Договор / подготовка', closed:'Сделка завершена', lost:'Не состоялась' }[status] || status);
+const b2bProfileLabel = profile => ({ office:'Офис и обучение', development:'Разработка', design:'Дизайн / монтаж', mixed:'Разные задачи', other:'Нужна консультация' }[profile] || '—');
+function renderB2BManager() {
+  if (!b2bList) return;
+  if (!b2bLeads.length) { b2bList.innerHTML = '<p class="manager-empty">Корпоративных заявок пока нет.</p>'; return; }
+  b2bList.innerHTML = b2bLeads.map(lead => `<article class="manager-b2b-lead"><div class="manager-b2b-top"><div><span>${escape(b2bStatusLabel(lead.status))}</span><h3>${escape(lead.company_name)}</h3><p>${escape(lead.contact_name)} · <a href="https://wa.me/${escape(String(lead.phone || '').replace(/\D/g, ''))}" target="_blank" rel="noopener">${escape(lead.phone)}</a>${lead.email ? ` · ${escape(lead.email)}` : ''}</p></div><strong>${Number(lead.quantity || 0)} шт.</strong></div><div class="manager-b2b-meta"><span>Срок: ${lead.term_months ? `${Number(lead.term_months)} мес.` : 'обсудить'}</span><span>Задачи: ${escape(b2bProfileLabel(lead.device_profile))}</span><span>Получение: ${lead.delivery_preference === 'delivery' ? 'доставка в офис' : lead.delivery_preference === 'pickup' ? 'самовывоз / выдача' : 'обсудить'}</span></div>${lead.comment ? `<p class="manager-b2b-comment">${escape(lead.comment)}</p>` : ''}<label>Статус<select data-b2b-status="${escape(lead.id)}">${['new','contacted','proposal_sent','contract','closed','lost'].map(status => `<option value="${status}" ${lead.status === status ? 'selected' : ''}>${escape(b2bStatusLabel(status))}</option>`).join('')}</select></label><label>Заметка менеджера<textarea data-b2b-note="${escape(lead.id)}" maxlength="2000" placeholder="Цена, наличие, договорённости, дата передачи">${escape(lead.manager_note || '')}</textarea></label><button class="secondary" type="button" data-save-b2b="${escape(lead.id)}">Сохранить B2B-заявку</button><small>Поступила ${escape(date(lead.created_at))}</small></article>`).join('');
+}
 
 function catalogField(laptop, ...keys) { for (const key of keys) if (laptop?.[key] !== undefined && laptop?.[key] !== null) return laptop[key]; return ''; }
 function catalogPrice(laptop) { return catalogField(laptop, 'price_text', 'priceText') || (laptop.category === 'rent' ? `От ${Number(catalogField(laptop, 'daily_rate', 'dailyRate') || 0).toLocaleString('ru-RU')} сом / день` : 'Цена уточняется'); }
@@ -327,7 +340,7 @@ function hasManagerDraft() {
   // a manager is actively typing or selecting a value.
   return Boolean(document.activeElement?.matches('.manager-order textarea, .manager-order input, .manager-order select'));
 }
-async function load(silent = false) { if (activeLoad) return activeLoad; const refreshLabel = refreshButton?.textContent; if (!silent) { statusEl.textContent = 'Обновляем заявки и статусы оплаты…'; if (refreshButton) { refreshButton.disabled = true; refreshButton.textContent = 'Обновляем…'; } } activeLoad = (async () => { try { const data = await api(); const incomingOrders = Array.isArray(data.orders) ? data.orders : null; if (!incomingOrders) throw new Error('Панель вернула неполные данные. Текущая очередь оставлена на экране.'); const keepVisibleQueue = orders.length > 0 && incomingOrders.length === 0; if (!keepVisibleQueue) orders = incomingOrders; rentableLaptops = Array.isArray(data.rentableLaptops) ? data.rentableLaptops : rentableLaptops; managerPromos = Array.isArray(data.promos) ? data.promos : managerPromos; isChiefAdmin = Boolean(data.isChiefAdmin); if (catalogOpenButton) catalogOpenButton.hidden = !isChiefAdmin; if (sidebarCatalogButton) sidebarCatalogButton.hidden = !isChiefAdmin; gate.hidden = true; if (!catalogPanel.hidden || !promoPanel?.hidden) { renderPromoManager(); } else dashboard.hidden = false; const stamp = new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date()); statusEl.textContent = keepVisibleQueue ? `Связь с базой нестабильна: пустой ответ не применён. Показана последняя очередь · ${stamp}` : `${silent ? 'Синхронизировано' : 'Обновлено'}: ${stamp}`; render(); } catch (error) { if (error.status === 401) { dashboard.hidden = true; if (catalogOpenButton) catalogOpenButton.hidden = true; if (sidebarCatalogButton) sidebarCatalogButton.hidden = true; gate.hidden = false; statusEl.textContent = ''; return; } if (orders.length) { dashboard.hidden = false; gate.hidden = true; statusEl.textContent = `Не удалось обновить данные. Показана последняя очередь: ${error.message}`; return; } dashboard.hidden = true; gate.hidden = true; statusEl.textContent = error.message; } finally { if (!silent && refreshButton) { refreshButton.disabled = false; refreshButton.textContent = refreshLabel || 'Обновить'; } activeLoad = null; } })(); return activeLoad; }
+async function load(silent = false) { if (activeLoad) return activeLoad; const refreshLabel = refreshButton?.textContent; if (!silent) { statusEl.textContent = 'Обновляем заявки и статусы оплаты…'; if (refreshButton) { refreshButton.disabled = true; refreshButton.textContent = 'Обновляем…'; } } activeLoad = (async () => { try { const data = await api(); const incomingOrders = Array.isArray(data.orders) ? data.orders : null; if (!incomingOrders) throw new Error('Панель вернула неполные данные. Текущая очередь оставлена на экране.'); const keepVisibleQueue = orders.length > 0 && incomingOrders.length === 0; if (!keepVisibleQueue) orders = incomingOrders; rentableLaptops = Array.isArray(data.rentableLaptops) ? data.rentableLaptops : rentableLaptops; managerPromos = Array.isArray(data.promos) ? data.promos : managerPromos; b2bLeads = Array.isArray(data.b2bLeads) ? data.b2bLeads : b2bLeads; isChiefAdmin = Boolean(data.isChiefAdmin); if (catalogOpenButton) catalogOpenButton.hidden = !isChiefAdmin; if (sidebarCatalogButton) sidebarCatalogButton.hidden = !isChiefAdmin; gate.hidden = true; if (!catalogPanel.hidden || !promoPanel?.hidden) { renderPromoManager(); } else if (!b2bPanel?.hidden) { renderB2BManager(); } else dashboard.hidden = false; const stamp = new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date()); statusEl.textContent = keepVisibleQueue ? `Связь с базой нестабильна: пустой ответ не применён. Показана последняя очередь · ${stamp}` : `${silent ? 'Синхронизировано' : 'Обновлено'}: ${stamp}`; render(); } catch (error) { if (error.status === 401) { dashboard.hidden = true; if (catalogOpenButton) catalogOpenButton.hidden = true; if (sidebarCatalogButton) sidebarCatalogButton.hidden = true; gate.hidden = false; statusEl.textContent = ''; return; } if (orders.length) { dashboard.hidden = false; gate.hidden = true; statusEl.textContent = `Не удалось обновить данные. Показана последняя очередь: ${error.message}`; return; } dashboard.hidden = true; gate.hidden = true; statusEl.textContent = error.message; } finally { if (!silent && refreshButton) { refreshButton.disabled = false; refreshButton.textContent = refreshLabel || 'Обновить'; } activeLoad = null; } })(); return activeLoad; }
 function setFilter(nextFilter) { if (!catalogPanel.hidden) catalogPanel.hidden = true; if (promoPanel && !promoPanel.hidden) promoPanel.hidden = true; dashboard.hidden = false; filter = nextFilter; document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item.dataset.filter === filter)); render(); }
 
 refreshButton?.addEventListener('click', () => load(false));
@@ -702,6 +715,32 @@ promoOpenButton?.addEventListener('click', async () => {
   renderPromoManager();
 });
 promoCloseButton?.addEventListener('click', () => { if (promoPanel) promoPanel.hidden = true; dashboard.hidden = false; render(); });
+b2bOpenButton?.addEventListener('click', async () => {
+  dashboard.hidden = true;
+  if (catalogPanel) catalogPanel.hidden = true;
+  if (promoPanel) promoPanel.hidden = true;
+  if (b2bPanel) b2bPanel.hidden = false;
+  statusEl.textContent = 'Загружаем корпоративные заявки…';
+  await load(false);
+  renderB2BManager();
+});
+b2bCloseButton?.addEventListener('click', () => { if (b2bPanel) b2bPanel.hidden = true; dashboard.hidden = false; render(); });
+b2bList?.addEventListener('click', async event => {
+  const button = event.target.closest('[data-save-b2b]');
+  if (!button) return;
+  const card = button.closest('.manager-b2b-lead');
+  const leadId = button.dataset.saveB2b;
+  const status = card?.querySelector(`[data-b2b-status="${leadId}"]`)?.value || '';
+  const managerNote = card?.querySelector(`[data-b2b-note="${leadId}"]`)?.value || '';
+  button.disabled = true; button.textContent = 'Сохраняем…';
+  try {
+    const result = await api('POST', { action:'update_b2b_lead', leadId, status, managerNote });
+    const index = b2bLeads.findIndex(lead => String(lead.id) === String(leadId));
+    if (index >= 0) b2bLeads[index] = { ...b2bLeads[index], ...result.lead };
+    renderB2BManager();
+    statusEl.textContent = result.message;
+  } catch (error) { statusEl.textContent = error.message; button.disabled = false; button.textContent = 'Сохранить B2B-заявку'; }
+});
 promoForm?.addEventListener('submit', async event => {
   event.preventDefault();
   const button = promoForm.querySelector('[type="submit"]');

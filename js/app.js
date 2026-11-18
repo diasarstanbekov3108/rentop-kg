@@ -1484,3 +1484,32 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target === modalPrivacy) modalPrivacy.style.display = 'none';
   });
 });
+
+// B2B stays a guided request: the form captures the brief, while the manager
+// confirms stock and a profitable quote before anything is promised.
+const b2bForm = document.getElementById('b2b-form');
+const openB2bForm = document.getElementById('open-b2b-form');
+const b2bFormStatus = document.getElementById('b2b-form-status');
+openB2bForm?.addEventListener('click', () => {
+  if (!b2bForm) return;
+  b2bForm.hidden = false;
+  openB2bForm.hidden = true;
+  b2bForm.scrollIntoView({ behavior:'smooth', block:'start' });
+  b2bForm.elements.companyName?.focus({ preventScroll:true });
+});
+b2bForm?.addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = b2bForm.querySelector('[type="submit"]');
+  const values = Object.fromEntries(new FormData(b2bForm).entries());
+  if (b2bFormStatus) { b2bFormStatus.textContent = 'Отправляем запрос…'; b2bFormStatus.className = 'b2b-form-status'; }
+  button.disabled = true;
+  try {
+    const response = await fetch('/api/b2b', { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify(values) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Не удалось отправить заявку.');
+    b2bForm.reset();
+    if (b2bFormStatus) { b2bFormStatus.textContent = result.message || 'Заявка принята. Менеджер Rentop подготовит персональное предложение.'; b2bFormStatus.className = 'b2b-form-status is-success'; }
+  } catch (error) {
+    if (b2bFormStatus) { b2bFormStatus.textContent = error.message; b2bFormStatus.className = 'b2b-form-status is-error'; }
+  } finally { button.disabled = false; }
+});
