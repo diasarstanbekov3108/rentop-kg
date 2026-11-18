@@ -49,6 +49,12 @@ export default async function handler(request, response) {
     return response.status(201).json({ ok:true, leadId:lead.id, message:'Заявка принята. Менеджер Rentop проверит наличие и подготовит персональное предложение.' });
   } catch (error) {
     console.error('B2B lead failed:', error.message);
-    return response.status(400).json({ error:error.message || 'Не удалось отправить заявку.' });
+    const technicalMessage = String(error?.message || '');
+    const isSchemaRefreshing = /b2b_leads.*schema cache|schema cache.*b2b_leads/i.test(technicalMessage);
+    return response.status(isSchemaRefreshing ? 503 : 400).json({
+      error:isSchemaRefreshing
+        ? 'Форма корпоративной аренды на короткое время обновляется. Попробуйте ещё раз через минуту или напишите нам в WhatsApp — менеджер примет заявку сразу.'
+        : (technicalMessage || 'Не удалось отправить заявку. Попробуйте ещё раз или напишите нам в WhatsApp.')
+    });
   }
 }
