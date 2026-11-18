@@ -55,7 +55,37 @@ const nextAction = order => {
 
 function closeDocumentViewer() { if (!documentViewer) return; documentViewer.hidden = true; if (documentViewerContent) documentViewerContent.innerHTML = ''; document.body.style.overflow = ''; }
 function openDocumentViewer(url, name = 'Документ', contentType = '') { if (!documentViewer || !documentViewerContent || !url) return; const isPdf = contentType === 'application/pdf' || /\.pdf(?:[?#]|$)/i.test(name); const isVideo = contentType.startsWith('video/') || /\.(?:mp4|mov)(?:[?#]|$)/i.test(name); documentViewerContent.innerHTML = isVideo ? `<video controls preload="metadata" src="${escape(url)}">Ваш браузер не поддерживает просмотр видео.</video>` : isPdf ? `<iframe src="${escape(url)}" title="${escape(name)}"></iframe>` : `<img src="${escape(url)}" alt="${escape(name)}">`; documentViewer.hidden = false; document.body.style.overflow = 'hidden'; }
-async function api(method = 'GET', payload) { const url = method === 'GET' ? `/api/manager?refresh=${Date.now()}` : '/api/manager'; const controller = new AbortController(); const timeout = window.setTimeout(() => controller.abort(), 18_000); try { const response = await fetch(url, { method, credentials:'same-origin', cache:'no-store', signal:controller.signal, headers:payload ? { 'content-type':'application/json' } : {}, body:payload ? JSON.stringify(payload) : undefined }); const data = await response.json().catch(() => ({})); if (!response.ok) { const error = new Error(data.error || 'Не удалось загрузить панель.'); error.status = response.status; throw error; } return data; } catch (error) { if (error.name === 'AbortError') throw new Error('Панель не ответила за 18 секунд. Очередь сохранена на экране — повторите обновление позже.'); throw error; } finally { window.clearTimeout(timeout); } }
+async function api(method = 'GET', payload) {
+  // A CDN or a just-woken function can very occasionally return a successful
+  // response before the full dashboard payload is ready. Never treat that as
+  // a real empty queue: make one fresh request before changing the screen.
+  const attempts = method === 'GET' ? 2 : 1;
+  let incompleteResponse = false;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const url = method === 'GET' ? `/api/manager?refresh=${Date.now()}&snapshot=${attempt + 1}` : '/api/manager';
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 18_000);
+    try {
+      const response = await fetch(url, { method, credentials:'same-origin', cache:'no-store', signal:controller.signal, headers:payload ? { 'content-type':'application/json' } : {}, body:payload ? JSON.stringify(payload) : undefined });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        const error = new Error(data?.error || 'Не удалось загрузить панель.');
+        error.status = response.status;
+        throw error;
+      }
+      if (method !== 'GET' || Array.isArray(data?.orders)) return data;
+      incompleteResponse = true;
+      if (attempt + 1 < attempts) await new Promise(resolve => window.setTimeout(resolve, 350));
+    } catch (error) {
+      if (error.name === 'AbortError') throw new Error('Панель не ответила за 18 секунд. Очередь сохранена на экране — повторите обновление позже.');
+      throw error;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+  if (incompleteResponse) throw new Error('Сервер вернул ответ без очереди дважды. Ничего не удалено — попробуйте ещё раз через несколько секунд.');
+  throw new Error('Не удалось загрузить панель.');
+}
 async function accountApi(payload) { const response = await fetch('/api/account', { method:'POST', credentials:'same-origin', headers:{ 'content-type':'application/json' }, body:JSON.stringify(payload) }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || 'Не удалось выполнить вход.'); return data; }
 async function catalogApi(method = 'GET', payload) {
   const response = await fetch(method === 'GET' ? `/api/manager?catalog=1&refresh=${Date.now()}` : '/api/manager', {
