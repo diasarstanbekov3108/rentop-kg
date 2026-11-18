@@ -1490,6 +1490,27 @@ document.addEventListener('DOMContentLoaded', () => {
 const b2bForm = document.getElementById('b2b-form');
 const openB2bForm = document.getElementById('open-b2b-form');
 const b2bFormStatus = document.getElementById('b2b-form-status');
+const b2bWhatsappCopy = document.getElementById('b2b-whatsapp-copy');
+const B2B_WHATSAPP_PHONE = '996707880857';
+const b2bLabels = {
+  termMonths:{ '1':'1 месяц', '3':'3 месяца', '6':'6 месяцев', '12':'12 месяцев и дольше' },
+  deviceProfile:{ office:'офис и обучение', development:'разработка', design:'дизайн / монтаж', mixed:'разные задачи', other:'нужна консультация' },
+  deliveryPreference:{ delivery:'доставка в офис', pickup:'самовывоз / выдача', undecided:'нужно обсудить' }
+};
+function b2bWhatsappMessage(values) {
+  return [
+    'Здравствуйте! Отправляю копию корпоративной заявки Rentop.', '',
+    `Компания: ${values.companyName || '—'}`,
+    `Контакт: ${values.contactName || '—'}`,
+    `Телефон: ${values.phone || '—'}`,
+    values.email ? `E-mail: ${values.email}` : '',
+    `Количество устройств: ${values.quantity || '—'}`,
+    `Срок: ${b2bLabels.termMonths[values.termMonths] || 'обсудить'}`,
+    `Задачи: ${b2bLabels.deviceProfile[values.deviceProfile] || '—'}`,
+    `Получение: ${b2bLabels.deliveryPreference[values.deliveryPreference] || '—'}`,
+    values.comment ? `Комментарий: ${values.comment}` : ''
+  ].filter(Boolean).join('\n');
+}
 openB2bForm?.addEventListener('click', () => {
   if (!b2bForm) return;
   b2bForm.hidden = false;
@@ -1502,6 +1523,7 @@ b2bForm?.addEventListener('submit', async event => {
   const button = b2bForm.querySelector('[type="submit"]');
   const values = Object.fromEntries(new FormData(b2bForm).entries());
   if (b2bFormStatus) { b2bFormStatus.textContent = 'Отправляем запрос…'; b2bFormStatus.className = 'b2b-form-status'; }
+  if (b2bWhatsappCopy) b2bWhatsappCopy.hidden = true;
   button.disabled = true;
   try {
     const response = await fetch('/api/b2b', { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify(values) });
@@ -1509,6 +1531,10 @@ b2bForm?.addEventListener('submit', async event => {
     if (!response.ok) throw new Error(result.error || 'Не удалось отправить заявку.');
     b2bForm.reset();
     if (b2bFormStatus) { b2bFormStatus.textContent = result.message || 'Заявка принята. Менеджер Rentop подготовит персональное предложение.'; b2bFormStatus.className = 'b2b-form-status is-success'; }
+    if (b2bWhatsappCopy) {
+      b2bWhatsappCopy.href = `https://wa.me/${B2B_WHATSAPP_PHONE}?text=${encodeURIComponent(b2bWhatsappMessage(values))}`;
+      b2bWhatsappCopy.hidden = false;
+    }
   } catch (error) {
     if (b2bFormStatus) { b2bFormStatus.textContent = error.message; b2bFormStatus.className = 'b2b-form-status is-error'; }
   } finally { button.disabled = false; }
