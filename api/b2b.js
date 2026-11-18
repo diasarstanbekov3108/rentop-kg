@@ -10,11 +10,19 @@ function phone(value) {
   return digits.length === 9 ? `+996${digits}` : '';
 }
 
+function managerNotification(lead, fallback = false) {
+  const profileLabel = { office:'офис и учёба', development:'разработка', design:'дизайн / монтаж', mixed:'разные задачи', other:'нужно обсудить' }[lead.deviceProfile];
+  const deliveryLabel = { delivery:'доставка в офис', pickup:'самовывоз / выдача', undecided:'нужно обсудить' }[lead.deliveryPreference];
+  return `${fallback ? '⚠️ ' : '🏢 '}Новая B2B-заявка${fallback ? ' (временно без записи в панель)' : ''}\n\nКомпания: ${lead.companyName}\nКонтакт: ${lead.contactName}\nТелефон: ${lead.contactPhone}${lead.email ? `\nE-mail: ${lead.email}` : ''}\nКоличество: ${lead.quantity} шт.\nСрок: ${lead.termMonths ? `${lead.termMonths} мес.` : 'обсудить'}\nЗадачи: ${profileLabel}\nПолучение: ${deliveryLabel}${lead.comment ? `\nКомментарий: ${lead.comment}` : ''}\n\n${fallback ? 'Свяжитесь с клиентом: форма передала заявку в WhatsApp. Как только база восстановится, новые заявки снова будут видны в панели.' : 'Откройте раздел B2B в панели Rentop и подготовьте персональное предложение.'}`;
+}
+
 export default async function handler(request, response) {
   response.setHeader('Cache-Control', 'no-store, max-age=0');
   if (request.method !== 'POST') return response.status(405).json({ error:'Method not allowed.' });
+  let config;
+  let leadPayload;
   try {
-    const config = loadConfig();
+    config = loadConfig();
     const payload = request.body || {};
     // Invisible field: ordinary visitors never fill it, simple bots usually do.
     if (clean(payload.website, 100)) return response.status(200).json({ ok:true });
@@ -33,24 +41,35 @@ export default async function handler(request, response) {
     if (!['office', 'development', 'design', 'mixed', 'other'].includes(deviceProfile)) throw new Error('Выберите задачи для техники.');
     if (!['delivery', 'pickup', 'undecided'].includes(deliveryPreference)) throw new Error('Выберите удобный способ получения.');
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Проверьте корпоративный e-mail.');
-    const database = createSupabaseApi(config);
-    const lead = await database.createB2BLead({
+    leadPayload = {
       company_name:companyName, contact_name:contactName, phone:contactPhone, email:email || null,
       quantity, term_months:termMonths, device_profile:deviceProfile, delivery_preference:deliveryPreference,
       comment:comment || null
-    });
+    };
+    const database = createSupabaseApi(config);
+    const lead = await database.createB2BLead(leadPayload);
     if (!lead) throw new Error('Не удалось сохранить корпоративную заявку.');
-    const profileLabel = { office:'офис и учёба', development:'разработка', design:'дизайн / монтаж', mixed:'разные задачи', other:'нужно обсудить' }[deviceProfile];
-    const deliveryLabel = { delivery:'доставка в офис', pickup:'самовывоз / выдача', undecided:'нужно обсудить' }[deliveryPreference];
     const bot = createTelegramApi(config.telegramBotToken);
-    await bot.sendMessage(config.adminChatId,
-      `🏢 Новая B2B-заявка\n\nКомпания: ${companyName}\nКонтакт: ${contactName}\nТелефон: ${contactPhone}${email ? `\nE-mail: ${email}` : ''}\nКоличество: ${quantity} шт.\nСрок: ${termMonths ? `${termMonths} мес.` : 'обсудить'}\nЗадачи: ${profileLabel}\nПолучение: ${deliveryLabel}${comment ? `\nКомментарий: ${comment}` : ''}\n\nОткройте раздел B2B в панели Rentop и подготовьте персональное предложение.`
-    ).catch(error => console.error('B2B Telegram notification failed:', error.message));
+    await bot.sendMessage(config.adminChatId, managerNotification({
+      companyName, contactName, contactPhone, email, quantity, termMonths, deviceProfile, deliveryPreference, comment
+    })).catch(error => console.error('B2B Telegram notification failed:', error.message));
     return response.status(201).json({ ok:true, leadId:lead.id, message:'Заявка принята. Менеджер Rentop проверит наличие и подготовит персональное предложение.' });
   } catch (error) {
     console.error('B2B lead failed:', error.message);
     const technicalMessage = String(error?.message || '');
     const isSchemaRefreshing = /b2b_leads.*schema cache|schema cache.*b2b_leads/i.test(technicalMessage);
+    if (isSchemaRefreshing && config && leadPayload) {
+      await createTelegramApi(config.telegramBotToken).sendMessage(config.adminChatId, managerNotification({
+        companyName:leadPayload.company_name, contactName:leadPayload.contact_name, contactPhone:leadPayload.phone,
+        email:leadPayload.email, quantity:leadPayload.quantity, termMonths:leadPayload.term_months,
+        deviceProfile:leadPayload.device_profile, deliveryPreference:leadPayload.delivery_preference, comment:leadPayload.comment
+      }, true)).catch(notificationError => console.error('B2B fallback notification failed:', notificationError.message));
+      return response.status(202).json({
+        ok:true,
+        deferred:true,
+        message:'Заявка принята и передана менеджеру. Открываем WhatsApp…'
+      });
+    }
     return response.status(isSchemaRefreshing ? 503 : 400).json({
       error:isSchemaRefreshing
         ? 'Форма корпоративной аренды на короткое время обновляется. Попробуйте ещё раз через минуту или напишите нам в WhatsApp — менеджер примет заявку сразу.'

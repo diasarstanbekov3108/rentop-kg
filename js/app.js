@@ -1489,8 +1489,9 @@ document.addEventListener('DOMContentLoaded', () => {
 // confirms stock and a profitable quote before anything is promised.
 const b2bForm = document.getElementById('b2b-form');
 const openB2bForm = document.getElementById('open-b2b-form');
+const b2bModal = document.getElementById('b2b-modal');
+const closeB2bForm = document.getElementById('close-b2b-form');
 const b2bFormStatus = document.getElementById('b2b-form-status');
-const b2bWhatsappCopy = document.getElementById('b2b-whatsapp-copy');
 const B2B_WHATSAPP_PHONE = '996707880857';
 const b2bLabels = {
   termMonths:{ '1':'1 месяц', '3':'3 месяца', '6':'6 месяцев', '12':'12 месяцев и дольше' },
@@ -1512,29 +1513,34 @@ function b2bWhatsappMessage(values) {
   ].filter(Boolean).join('\n');
 }
 openB2bForm?.addEventListener('click', () => {
-  if (!b2bForm) return;
-  b2bForm.hidden = false;
-  openB2bForm.hidden = true;
-  b2bForm.scrollIntoView({ behavior:'smooth', block:'start' });
+  if (!b2bModal || !b2bForm) return;
+  b2bModal.hidden = false;
+  b2bModal.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('b2b-modal-open');
   b2bForm.elements.companyName?.focus({ preventScroll:true });
 });
+function closeB2bModal() {
+  if (!b2bModal) return;
+  b2bModal.hidden = true;
+  b2bModal.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('b2b-modal-open');
+  openB2bForm?.focus({ preventScroll:true });
+}
+closeB2bForm?.addEventListener('click', closeB2bModal);
+b2bModal?.addEventListener('click', event => { if (event.target === b2bModal) closeB2bModal(); });
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && b2bModal && !b2bModal.hidden) closeB2bModal(); });
 b2bForm?.addEventListener('submit', async event => {
   event.preventDefault();
   const button = b2bForm.querySelector('[type="submit"]');
   const values = Object.fromEntries(new FormData(b2bForm).entries());
   if (b2bFormStatus) { b2bFormStatus.textContent = 'Отправляем запрос…'; b2bFormStatus.className = 'b2b-form-status'; }
-  if (b2bWhatsappCopy) b2bWhatsappCopy.hidden = true;
   button.disabled = true;
   try {
     const response = await fetch('/api/b2b', { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify(values) });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.error || 'Не удалось отправить заявку.');
-    b2bForm.reset();
-    if (b2bFormStatus) { b2bFormStatus.textContent = result.message || 'Заявка принята. Менеджер Rentop подготовит персональное предложение.'; b2bFormStatus.className = 'b2b-form-status is-success'; }
-    if (b2bWhatsappCopy) {
-      b2bWhatsappCopy.href = `https://wa.me/${B2B_WHATSAPP_PHONE}?text=${encodeURIComponent(b2bWhatsappMessage(values))}`;
-      b2bWhatsappCopy.hidden = false;
-    }
+    if (b2bFormStatus) { b2bFormStatus.textContent = 'Заявка принята. Открываем WhatsApp…'; b2bFormStatus.className = 'b2b-form-status is-success'; }
+    window.location.assign(`https://wa.me/${B2B_WHATSAPP_PHONE}?text=${encodeURIComponent(b2bWhatsappMessage(values))}`);
   } catch (error) {
     if (b2bFormStatus) { b2bFormStatus.textContent = error.message; b2bFormStatus.className = 'b2b-form-status is-error'; }
   } finally { button.disabled = false; }
