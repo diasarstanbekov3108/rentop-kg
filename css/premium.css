@@ -1048,13 +1048,15 @@ body {
   --mascot-x: -140px;
   --mascot-y: -140px;
   position: fixed;
-  z-index: 82;
+  z-index: 110;
   top: 0;
   left: 0;
   width: 132px;
   height: 132px;
   opacity: 0;
-  pointer-events: none;
+  /* The visual container itself must remain touchable. On iOS, keeping the
+     parent untouchable can make a child button look present but ignore taps. */
+  pointer-events: auto;
   transform: translate3d(var(--mascot-x), var(--mascot-y), 0);
   transition: transform 620ms cubic-bezier(.2, .82, .27, 1.12), opacity 180ms ease;
 }

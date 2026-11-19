@@ -918,6 +918,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let mascotMoveTimer;
   let mascotDrag;
   let mascotDidDrag = false;
+  let mascotTapHandled = false;
   let mascotMoodTimer;
   let mascotWalkTimer;
   let mascotBeforeOrder;
@@ -950,6 +951,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   rentopMascotButton?.addEventListener('click', (event) => {
+    // Pointer/touch taps are handled on pointerup below. Leave this path for
+    // keyboard activation, where no pointer event exists.
+    if (mascotTapHandled) {
+      mascotTapHandled = false;
+      event.preventDefault();
+      return;
+    }
     if (mascotDidDrag) {
       event.preventDefault();
       mascotDidDrag = false;
@@ -1040,43 +1048,48 @@ document.addEventListener('DOMContentLoaded', async () => {
     setMascotPosition(mascotDrag.left + dx, mascotDrag.top + dy, true);
   };
 
-  // Сенсорный ввод оставляем на Pointer Events, а для мыши используем window-mousemove.
-  // Это стабильно работает и в браузерах, где pointer capture не отдаёт движение кнопке.
+  // One Pointer Events flow for touch, pen and mouse. The previous mixed
+  // pointer + mousedown implementation could suppress a normal tap on mobile.
+  // Window listeners remain as a safe fallback when the finger leaves the icon.
   rentopMascotButton?.addEventListener('pointerdown', (event) => {
-    if (event.pointerType === 'mouse' || event.button !== 0 || !rentopMascot) return;
+    if (event.button !== 0 || !rentopMascot) return;
     beginMascotDrag({ pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, input: 'pointer' });
-    rentopMascotButton.setPointerCapture(event.pointerId);
+    try {
+      rentopMascotButton.setPointerCapture(event.pointerId);
+    } catch {
+      // Some mobile browsers reject capture during a fast tap. Window events
+      // below still complete both the tap and the drag safely.
+    }
   });
 
-  rentopMascotButton?.addEventListener('pointermove', (event) => {
+  const onMascotPointerMove = (event) => {
     if (!mascotDrag || mascotDrag.input !== 'pointer' || mascotDrag.pointerId !== event.pointerId) return;
     event.preventDefault();
     moveMascotDrag(event.clientX, event.clientY);
-  });
-
-  rentopMascotButton?.addEventListener('mousedown', (event) => {
-    if (event.button !== 0 || mascotDrag) return;
-    event.preventDefault();
-    beginMascotDrag({ pointerId: 'mouse', startX: event.clientX, startY: event.clientY, input: 'mouse' });
-  });
-
-  window.addEventListener('mousemove', (event) => {
-    if (mascotDrag?.input === 'mouse') moveMascotDrag(event.clientX, event.clientY);
-  });
+  };
+  rentopMascotButton?.addEventListener('pointermove', onMascotPointerMove);
+  window.addEventListener('pointermove', onMascotPointerMove, { passive: false });
 
   const endMascotDrag = (event) => {
     if (!mascotDrag || (mascotDrag.input === 'pointer' && mascotDrag.pointerId !== event.pointerId)) return;
-    if (mascotDrag.input === 'pointer' && rentopMascotButton?.hasPointerCapture(mascotDrag.pointerId)) rentopMascotButton.releasePointerCapture(mascotDrag.pointerId);
+    const didDrag = mascotDidDrag;
+    if (mascotDrag.input === 'pointer' && rentopMascotButton?.hasPointerCapture(mascotDrag.pointerId)) {
+      rentopMascotButton.releasePointerCapture(mascotDrag.pointerId);
+    }
     mascotDrag = undefined;
     window.clearTimeout(mascotWalkTimer);
     mascotWalkTimer = window.setTimeout(() => rentopMascot?.classList.remove('is-walking'), 260);
+    if (!didDrag && event.type === 'pointerup') {
+      mascotTapHandled = true;
+      setMascotMood('happy', 1050);
+      setMascotOpen(!rentopMascot?.classList.contains('is-open'));
+    }
   };
 
   rentopMascotButton?.addEventListener('pointerup', endMascotDrag);
   rentopMascotButton?.addEventListener('pointercancel', endMascotDrag);
-  window.addEventListener('mouseup', () => {
-    if (mascotDrag?.input === 'mouse') endMascotDrag({});
-  });
+  window.addEventListener('pointerup', endMascotDrag);
+  window.addEventListener('pointercancel', endMascotDrag);
   rentopMascotButton?.addEventListener('dblclick', () => {
     localStorage.removeItem(mascotStorageKey());
     rentopMascot?.classList.remove('is-pinned');
