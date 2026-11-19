@@ -210,6 +210,20 @@ export default async function handler(request, response) {
       if (!path) return reply(response, 502, { error:'Не удалось подготовить защищённый просмотр документа.' });
       return reply(response, 200, { ok:true, viewUrl:path.startsWith('http') ? path : `${config.supabaseUrl}/storage/v1${path}`, fileName:document.file_name || 'Документ', contentType:document.content_type || '' });
     }
+    if (payload.action === 'send_delivery_message') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      const message = String(payload.message || '').trim().slice(0, 1500);
+      if (!order || order.delivery_type !== 'delivery') return reply(response, 400, { error:'Сообщение о доставке доступно только для заявки с курьерской доставкой.' });
+      if (message.length < 3) return reply(response, 400, { error:'Напишите клиенту сообщение хотя бы несколькими словами.' });
+      const existingCases = await database.listOrderSupportCases(order.id);
+      const existing = (existingCases || []).find(item => item.kind === 'delivery_status');
+      const supportCase = existing
+        ? await database.replyToSupportCase(order.id, 'delivery_status', message, session.phone)
+        : await database.openSupportCase({ order_id:order.id, kind:'delivery_status', status:'open', customer_message:null, opened_at:new Date().toISOString(), opened_by:session.phone, manager_reply:message, replied_at:new Date().toISOString(), replied_by:session.phone });
+      if (!supportCase) return reply(response, 502, { error:'Не удалось сохранить сообщение для клиента. Попробуйте ещё раз.' });
+      await database.createEvent({ order_id:order.id, event_type:'manager_sent_delivery_message_from_web', actor_type:'manager', metadata:{ length:message.length } }).catch(error => console.error('Manager delivery message audit event failed:', error.message));
+      return reply(response, 200, { ok:true, supportCase, message:'Сообщение сохранено — клиент увидит его в личном кабинете.' });
+    }
     if (payload.action === 'reply_support_case') {
       const order = await database.getOrder(String(payload.orderId || ''));
       const kind = String(payload.kind || '');

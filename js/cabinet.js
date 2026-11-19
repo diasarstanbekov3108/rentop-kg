@@ -352,7 +352,7 @@ function documentMode(order) {
 function supportUpdates(order) {
   const cases = (order.supportCases || []).filter(item => item.customer_message || item.manager_reply);
   if (!cases.length) return '';
-  return `<section class="cabinet-support-updates" aria-label="Переписка по заявке"><div class="cabinet-conversation-head"><strong>Переписка по заявке</strong><span>Rentop</span></div>${cases.map(item => `<div class="cabinet-message customer"><b>Вы</b><p>${escape(item.customer_message || 'Обращение')}</p><time>${escape(dateTime(item.opened_at, { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }))}</time></div>${item.manager_reply ? `<div class="cabinet-message manager"><b>Rentop</b><p>${escape(item.manager_reply)}</p><time>${escape(dateTime(item.replied_at, { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }))}</time></div>` : '<div class="cabinet-message pending"><span>Ожидаем ответ менеджера</span></div>'}`).join('')}</section>`;
+  return `<section class="cabinet-support-updates" aria-label="Переписка по заявке"><div class="cabinet-conversation-head"><strong>Переписка по заявке</strong><span>Rentop</span></div>${cases.map(item => `${item.customer_message ? `<div class="cabinet-message customer"><b>Вы</b><p>${escape(item.customer_message)}</p><time>${escape(dateTime(item.opened_at, { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }))}</time></div>` : ''}${item.manager_reply ? `<div class="cabinet-message manager"><b>Rentop</b><p>${escape(item.manager_reply)}</p><time>${escape(dateTime(item.replied_at, { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }))}</time></div>` : item.customer_message ? '<div class="cabinet-message pending"><span>Ожидаем ответ менеджера</span></div>' : ''}`).join('')}</section>`;
 }
 function paymentPayloadObject(value) {
   if (value && typeof value === 'object' && !Array.isArray(value)) return value;
@@ -667,7 +667,7 @@ function fileControl(kind) {
   return `<div class="cabinet-file-control"><label for="document-${kind}">${title} <span>${hint}</span></label>${typeChoice}<input class="cabinet-native-file-input" id="document-${kind}" name="${kind}" type="file" accept="${selfie ? 'image/jpeg,image/png' : 'image/jpeg,image/png,application/pdf'}" ${selfie ? 'capture="user"' : ''}><div><label class="cabinet-file-choose" for="document-${kind}">${selfie ? 'Снять селфи камерой' : 'Выбрать из галереи / файлов'}</label><button class="cabinet-file-preview" type="button" data-file-preview="${kind}" disabled>Файл не выбран</button><button class="cabinet-file-remove" type="button" data-file-remove="${kind}" hidden>Удалить</button></div></div>`;
 }
 function videoControl(kind) {
-  return `<div class="cabinet-file-control"><input class="cabinet-native-file-input" id="document-${kind}" name="${kind}" type="file" accept="video/*"><div><label class="cabinet-file-choose" for="document-${kind}">Снять или выбрать видео</label><button class="cabinet-file-preview" type="button" data-file-preview="${kind}" disabled>Видео не выбрано</button><button class="cabinet-file-remove" type="button" data-file-remove="${kind}" hidden>Удалить</button></div><p class="cabinet-video-hint" data-video-hint="${kind}">Откроется камера или медиатека телефона: выберите качественную съёмку 720p или 1080p/30 fps.</p></div>`;
+  return `<div class="cabinet-file-control"><input class="cabinet-native-file-input" id="document-${kind}" name="${kind}" type="file" accept="video/mp4,video/quicktime,video/webm,video/*"><div><label class="cabinet-file-choose" for="document-${kind}">Снять или выбрать видео</label><button class="cabinet-file-preview" type="button" data-file-preview="${kind}" disabled>Видео не выбрано</button><button class="cabinet-file-remove" type="button" data-file-remove="${kind}" hidden>Удалить</button></div><p class="cabinet-video-hint" data-video-hint="${kind}"><strong>Для лучшего качества:</strong> сначала снимите ролик обычной камерой телефона, затем выберите его из галереи. Rentop не сжимает видео при загрузке, но встроенная камера браузера иногда показывает менее чёткий предпросмотр.</p></div>`;
 }
 
 function orderDetailsMarkup(order) {
@@ -689,10 +689,10 @@ function orderDetailsMarkup(order) {
       ? '<div class="cabinet-request-state is-success">✓ Спасибо — ваш отзыв уже получен.</div>'
       : `<div class="cabinet-actions"><button class="cabinet-action" data-panel="feedback" data-order="${order.id}">Оставить отзыв</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Связаться с Rentop</button></div>`;
     const receipt = lastPayment ? `<section class="cabinet-terminal-receipt"><div><span>Последний подтверждённый платёж</span><strong>${paidAmount} сом</strong></div><button class="cabinet-action secondary" type="button" data-print-receipt="${escape(order.id)}">Квитанция PDF</button></section>` : '';
-    return `<div class="cabinet-order-workspace-head"><button class="cabinet-workspace-close" type="button" data-close-order-workspace aria-label="Вернуться к списку заявок">← <span>Все заявки</span></button><div class="cabinet-order-workspace-head-actions"><span class="cabinet-badge">${escape(state.title)}</span><button class="cabinet-order-archive" type="button" data-archive-order="${escape(order.id)}">В архив</button></div></div><div class="cabinet-order-hero"><div class="cabinet-order-visual">${visual}</div><div><p class="cabinet-eyebrow">ЗАЯВКА ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</p><h2>${escape(order.laptop_title || 'Ноутбук Rentop')}</h2><p>Спасибо, что выбрали Rentop. Аренда и возврат завершены.</p></div></div>${journeyMarkup}<section class="cabinet-terminal-summary"><span aria-hidden="true">✓</span><div><strong>Аренда завершена</strong><p>Ноутбук принят Rentop. Все действия по заявке сохранены в истории.</p></div></section>${receipt}<section class="cabinet-completion"><strong>Спасибо, что выбрали Rentop!</strong><p>Будем рады помочь снова. Персональный промокод на следующую аренду появится в разделе «Скидки и промокоды».</p>${feedbackActions}</section><details class="cabinet-order-history"><summary>История заявки, документы и платежи</summary><div>${documentSummary(order)}${supportUpdates(order)}${paymentPanel(order)}</div></details>${requestForm(order)}`;
+    return `<div class="cabinet-order-workspace-head"><button class="cabinet-workspace-close" type="button" data-close-order-workspace aria-label="Вернуться к списку заявок">← <span>Все заявки</span></button><div class="cabinet-order-workspace-head-actions"><button class="cabinet-workspace-refresh" type="button" data-refresh-order-workspace="${escape(order.id)}">Обновить</button><span class="cabinet-badge">${escape(state.title)}</span><button class="cabinet-order-archive" type="button" data-archive-order="${escape(order.id)}">В архив</button></div></div><div class="cabinet-order-hero"><div class="cabinet-order-visual">${visual}</div><div><p class="cabinet-eyebrow">ЗАЯВКА ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</p><h2>${escape(order.laptop_title || 'Ноутбук Rentop')}</h2><p>Спасибо, что выбрали Rentop. Аренда и возврат завершены.</p></div></div>${journeyMarkup}<section class="cabinet-terminal-summary"><span aria-hidden="true">✓</span><div><strong>Аренда завершена</strong><p>Ноутбук принят Rentop. Все действия по заявке сохранены в истории.</p></div></section>${receipt}<section class="cabinet-completion"><strong>Спасибо, что выбрали Rentop!</strong><p>Будем рады помочь снова. Персональный промокод на следующую аренду появится в разделе «Скидки и промокоды».</p>${feedbackActions}</section><details class="cabinet-order-history"><summary>История заявки, документы и платежи</summary><div>${documentSummary(order)}${supportUpdates(order)}${paymentPanel(order)}</div></details>${requestForm(order)}`;
   }
   const discount = rentalDiscountDetails(order);
-  return `<div class="cabinet-order-workspace-head"><button class="cabinet-workspace-close" type="button" data-close-order-workspace aria-label="Вернуться к списку заявок">← <span>Все заявки</span></button><span class="cabinet-badge">${escape(state.title)}</span></div><div class="cabinet-order-hero"><div class="cabinet-order-visual">${visual}</div><div><p class="cabinet-eyebrow">ЗАЯВКА ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</p><h2>${escape(order.laptop_title || 'Ноутбук Rentop')}</h2><p>${escape(state.text)}</p></div></div>${journeyMarkup}<section class="cabinet-order-summary"><div><span>Срок аренды</span><strong>${rentalTerm}</strong></div><div><span>Получение</span><strong>${escape(order.delivery_label)}</strong></div><div><span>Итого аренда</span><strong>${discount.pricing.finalAmount.toLocaleString('ru-RU')} сом</strong></div>${discount.card}</section>${documentSummary(order)}${supportUpdates(order)}${pickupInstruction(order)}${paymentPanel(order)}${actionPanel(order)}${requestForm(order)}`;
+  return `<div class="cabinet-order-workspace-head"><button class="cabinet-workspace-close" type="button" data-close-order-workspace aria-label="Вернуться к списку заявок">← <span>Все заявки</span></button><div class="cabinet-order-workspace-head-actions"><button class="cabinet-workspace-refresh" type="button" data-refresh-order-workspace="${escape(order.id)}">Обновить</button><span class="cabinet-badge">${escape(state.title)}</span></div></div><div class="cabinet-order-hero"><div class="cabinet-order-visual">${visual}</div><div><p class="cabinet-eyebrow">ЗАЯВКА ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</p><h2>${escape(order.laptop_title || 'Ноутбук Rentop')}</h2><p>${escape(state.text)}</p></div></div>${journeyMarkup}<section class="cabinet-order-summary"><div><span>Срок аренды</span><strong>${rentalTerm}</strong></div><div><span>Получение</span><strong>${escape(order.delivery_label)}</strong></div><div><span>Итого аренда</span><strong>${discount.pricing.finalAmount.toLocaleString('ru-RU')} сом</strong></div>${discount.card}</section>${documentSummary(order)}${supportUpdates(order)}${pickupInstruction(order)}${paymentPanel(order)}${actionPanel(order)}${requestForm(order)}`;
 }
 
 function openOrderWorkspace(orderId) {
@@ -1017,7 +1017,11 @@ rentalsEl?.addEventListener('click', event => {
   }
   const pickupConfirm = event.target.closest('[data-confirm-pickup]');
   if (pickupConfirm) {
-    if (!window.confirm('Подтвердите только после того, как вы забрали ноутбук из ячейки и проверили комплектность.')) return;
+    const pickupOrder = cabinetOrders.find(order => String(order.id) === String(pickupConfirm.dataset.confirmPickup));
+    const confirmationText = pickupOrder?.delivery_type === 'delivery'
+      ? 'Подтвердите только после того, как курьер фактически передал вам ноутбук, а вы проверили комплектность.'
+      : 'Подтвердите только после того, как вы забрали ноутбук из ячейки и проверили комплектность.';
+    if (!window.confirm(confirmationText)) return;
     const originalText = pickupConfirm.textContent;
     pickupConfirm.disabled = true;
     pickupConfirm.textContent = 'Подтверждаем получение…';
@@ -1059,6 +1063,20 @@ rentalsEl?.addEventListener('click', event => {
       .catch(error => { message(error.message, 'error'); returnAccessReceived.disabled = false; returnAccessReceived.textContent = originalText; });
     return;
   }
+  const refreshWorkspace = event.target.closest('[data-refresh-order-workspace]');
+  if (refreshWorkspace) {
+    const originalText = refreshWorkspace.textContent;
+    refreshWorkspace.disabled = true;
+    refreshWorkspace.textContent = 'Обновляем…';
+    request('GET')
+      .then(fresh => {
+        if (!fresh.authenticated) throw new Error('Сессия истекла. Войдите в личный кабинет снова.');
+        showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos, fresh.benefits);
+        message('Статус заявки обновлён.', 'success');
+      })
+      .catch(error => { message(error.message, 'error'); refreshWorkspace.disabled = false; refreshWorkspace.textContent = originalText; });
+    return;
+  }
   const button = event.target.closest('[data-panel]');
   if (button) {
     const panel = document.getElementById(`panel-${button.dataset.order}`);
@@ -1079,6 +1097,8 @@ rentalsEl?.addEventListener('click', event => {
       window.requestAnimationFrame(() => panel.scrollIntoView({ behavior:'smooth', block:'start' }));
       return;
     }
+    button.disabled = true;
+    button.textContent = 'Открываем…';
     panel.hidden = false;
     panel.classList.toggle('is-document-result', button.dataset.panel === 'documents' && ['submitted', 'approved'].includes(button.dataset.documentMode || ''));
     const sourceOrder = cabinetOrders.find(order => String(order.id) === String(button.dataset.order));
