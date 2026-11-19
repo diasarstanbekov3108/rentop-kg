@@ -60,14 +60,15 @@ const nextAction = order => {
 
 function closeDocumentViewer() { if (!documentViewer) return; documentViewer.hidden = true; if (documentViewerContent) documentViewerContent.innerHTML = ''; document.body.style.overflow = ''; }
 function openDocumentViewer(url, name = 'Документ', contentType = '') { if (!documentViewer || !documentViewerContent || !url) return; const isPdf = contentType === 'application/pdf' || /\.pdf(?:[?#]|$)/i.test(name); const isVideo = contentType.startsWith('video/') || /\.(?:mp4|mov)(?:[?#]|$)/i.test(name); documentViewerContent.innerHTML = isVideo ? `<video controls preload="metadata" src="${escape(url)}">Ваш браузер не поддерживает просмотр видео.</video>` : isPdf ? `<iframe src="${escape(url)}" title="${escape(name)}"></iframe>` : `<img src="${escape(url)}" alt="${escape(name)}">`; documentViewer.hidden = false; document.body.style.overflow = 'hidden'; }
-async function api(method = 'GET', payload) {
+async function api(method = 'GET', payload, include = '') {
   // A CDN or a just-woken function can very occasionally return a successful
   // response before the full dashboard payload is ready. Never treat that as
   // a real empty queue: make one fresh request before changing the screen.
   const attempts = method === 'GET' ? 2 : 1;
   let incompleteResponse = false;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const url = method === 'GET' ? `/api/manager?refresh=${Date.now()}&snapshot=${attempt + 1}` : '/api/manager';
+    const extra = include ? `&include=${encodeURIComponent(include)}` : '';
+    const url = method === 'GET' ? `/api/manager?refresh=${Date.now()}&snapshot=${attempt + 1}${extra}` : '/api/manager';
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 18_000);
     try {
@@ -340,7 +341,7 @@ function hasManagerDraft() {
   // a manager is actively typing or selecting a value.
   return Boolean(document.activeElement?.matches('.manager-order textarea, .manager-order input, .manager-order select'));
 }
-async function load(silent = false) { if (activeLoad) return activeLoad; const refreshLabel = refreshButton?.textContent; if (!silent) { statusEl.textContent = 'Обновляем заявки и статусы оплаты…'; if (refreshButton) { refreshButton.disabled = true; refreshButton.textContent = 'Обновляем…'; } } activeLoad = (async () => { try { const data = await api(); const incomingOrders = Array.isArray(data.orders) ? data.orders : null; if (!incomingOrders) throw new Error('Панель вернула неполные данные. Текущая очередь оставлена на экране.'); const keepVisibleQueue = orders.length > 0 && incomingOrders.length === 0; if (!keepVisibleQueue) orders = incomingOrders; rentableLaptops = Array.isArray(data.rentableLaptops) ? data.rentableLaptops : rentableLaptops; managerPromos = Array.isArray(data.promos) ? data.promos : managerPromos; b2bLeads = Array.isArray(data.b2bLeads) ? data.b2bLeads : b2bLeads; isChiefAdmin = Boolean(data.isChiefAdmin); if (catalogOpenButton) catalogOpenButton.hidden = !isChiefAdmin; if (sidebarCatalogButton) sidebarCatalogButton.hidden = !isChiefAdmin; gate.hidden = true; if (!catalogPanel.hidden || !promoPanel?.hidden) { renderPromoManager(); } else if (!b2bPanel?.hidden) { renderB2BManager(); } else dashboard.hidden = false; const stamp = new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date()); statusEl.textContent = keepVisibleQueue ? `Связь с базой нестабильна: пустой ответ не применён. Показана последняя очередь · ${stamp}` : `${silent ? 'Синхронизировано' : 'Обновлено'}: ${stamp}`; render(); } catch (error) { if (error.status === 401) { dashboard.hidden = true; if (catalogOpenButton) catalogOpenButton.hidden = true; if (sidebarCatalogButton) sidebarCatalogButton.hidden = true; gate.hidden = false; statusEl.textContent = ''; return; } if (orders.length) { dashboard.hidden = false; gate.hidden = true; statusEl.textContent = `Не удалось обновить данные. Показана последняя очередь: ${error.message}`; return; } dashboard.hidden = true; gate.hidden = true; statusEl.textContent = error.message; } finally { if (!silent && refreshButton) { refreshButton.disabled = false; refreshButton.textContent = refreshLabel || 'Обновить'; } activeLoad = null; } })(); return activeLoad; }
+async function load(silent = false, include = '') { if (activeLoad) return activeLoad; const refreshLabel = refreshButton?.textContent; if (!silent) { statusEl.textContent = 'Обновляем заявки и статусы оплаты…'; if (refreshButton) { refreshButton.disabled = true; refreshButton.textContent = 'Обновляем…'; } } activeLoad = (async () => { try { const data = await api('GET', undefined, include); const incomingOrders = Array.isArray(data.orders) ? data.orders : null; if (!incomingOrders) throw new Error('Панель вернула неполные данные. Текущая очередь оставлена на экране.'); const keepVisibleQueue = orders.length > 0 && incomingOrders.length === 0; if (!keepVisibleQueue) orders = incomingOrders; rentableLaptops = Array.isArray(data.rentableLaptops) ? data.rentableLaptops : rentableLaptops; managerPromos = Array.isArray(data.promos) ? data.promos : managerPromos; b2bLeads = Array.isArray(data.b2bLeads) ? data.b2bLeads : b2bLeads; isChiefAdmin = Boolean(data.isChiefAdmin); if (catalogOpenButton) catalogOpenButton.hidden = !isChiefAdmin; if (sidebarCatalogButton) sidebarCatalogButton.hidden = !isChiefAdmin; gate.hidden = true; if (!catalogPanel.hidden || !promoPanel?.hidden) { renderPromoManager(); } else if (!b2bPanel?.hidden) { renderB2BManager(); } else dashboard.hidden = false; const stamp = new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date()); statusEl.textContent = keepVisibleQueue ? `Связь с базой нестабильна: пустой ответ не применён. Показана последняя очередь · ${stamp}` : `${silent ? 'Синхронизировано' : 'Обновлено'}: ${stamp}`; render(); } catch (error) { if (error.status === 401) { dashboard.hidden = true; if (catalogOpenButton) catalogOpenButton.hidden = true; if (sidebarCatalogButton) sidebarCatalogButton.hidden = true; gate.hidden = false; statusEl.textContent = ''; return; } if (orders.length) { dashboard.hidden = false; gate.hidden = true; statusEl.textContent = `Не удалось обновить данные. Показана последняя очередь: ${error.message}`; return; } dashboard.hidden = true; gate.hidden = true; statusEl.textContent = error.message; } finally { if (!silent && refreshButton) { refreshButton.disabled = false; refreshButton.textContent = refreshLabel || 'Обновить'; } activeLoad = null; } })(); return activeLoad; }
 function setFilter(nextFilter) { if (!catalogPanel.hidden) catalogPanel.hidden = true; if (promoPanel && !promoPanel.hidden) promoPanel.hidden = true; dashboard.hidden = false; filter = nextFilter; document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item.dataset.filter === filter)); render(); }
 
 refreshButton?.addEventListener('click', () => load(false));
@@ -711,7 +712,7 @@ promoOpenButton?.addEventListener('click', async () => {
   if (catalogPanel) catalogPanel.hidden = true;
   if (promoPanel) promoPanel.hidden = false;
   statusEl.textContent = 'Загружаем промокоды…';
-  await load(false);
+  await load(false, 'promos');
   renderPromoManager();
 });
 promoCloseButton?.addEventListener('click', () => { if (promoPanel) promoPanel.hidden = true; dashboard.hidden = false; render(); });
@@ -721,7 +722,7 @@ b2bOpenButton?.addEventListener('click', async () => {
   if (promoPanel) promoPanel.hidden = true;
   if (b2bPanel) b2bPanel.hidden = false;
   statusEl.textContent = 'Загружаем корпоративные заявки…';
-  await load(false);
+  await load(false, 'b2b');
   renderB2BManager();
 });
 b2bCloseButton?.addEventListener('click', () => { if (b2bPanel) b2bPanel.hidden = true; dashboard.hidden = false; render(); });

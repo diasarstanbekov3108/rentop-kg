@@ -84,7 +84,16 @@ export default async function handler(request, response) {
       // The dashboard used to sign every attachment for up to fifty orders on
       // every refresh. That can mean hundreds of storage calls and makes the
       // whole panel look stuck. Documents are now signed only when opened.
-      const [orders, rentableLaptops, promos, b2bLeads] = await Promise.all([database.listRecentOrders(25), database.listRentableLaptops(), database.listRecentPromos().catch(() => []), database.listB2BLeads().catch(() => [])]);
+      // Keep the first manager screen focused on the working queue. Promo and
+      // B2B data are loaded only when their own section is opened; fetching
+      // every auxiliary list delayed the queue noticeably on mobile networks.
+      const include = new Set(String(request.query?.include || '').split(',').map(value => value.trim()));
+      const [orders, rentableLaptops, promos, b2bLeads] = await Promise.all([
+        database.listRecentOrders(15),
+        database.listRentableLaptops(),
+        include.has('promos') ? database.listRecentPromos().catch(() => []) : Promise.resolve(null),
+        include.has('b2b') ? database.listB2BLeads().catch(() => []) : Promise.resolve(null)
+      ]);
       // Fetch every related row in a small fixed number of requests. The old
       // dashboard made seven database reads for each order on every 5-second
       // refresh, which could starve the panel right after a document upload.
@@ -132,7 +141,15 @@ export default async function handler(request, response) {
           returnHandoffPrepared:returnHandoffOrders.has(String(order.id))
         };
       });
-      return reply(response, 200, { authenticated:true, managerPhone:session.phone, isChiefAdmin, orders:hydrated, rentableLaptops, promos, b2bLeads });
+      return reply(response, 200, {
+        authenticated:true,
+        managerPhone:session.phone,
+        isChiefAdmin,
+        orders:hydrated,
+        rentableLaptops,
+        ...(promos ? { promos } : {}),
+        ...(b2bLeads ? { b2bLeads } : {})
+      });
     }
     if (request.method !== 'POST') return reply(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};

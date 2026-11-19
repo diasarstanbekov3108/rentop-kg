@@ -707,9 +707,28 @@ function redirectToCabinet() {
 }
 
 // ========== MODAL + CALCULATOR ==========
-function openOrderModal(id, { deliveryType = 'delivery' } = {}) {
-  currentLaptop = laptops.find(item => item.id === id);
-  if (!currentLaptop) return;
+async function openOrderModal(id, { deliveryType = 'delivery' } = {}) {
+  const selectedLaptop = laptops.find(item => item.id === id);
+  if (!selectedLaptop) return;
+
+  // First identify the customer, then collect the rental details. This avoids
+  // a dead-end form for a person who has not registered yet.
+  if (selectedLaptop.category === 'rent' && !cabinetSession) {
+    await getCabinetSession();
+    if (!cabinetSession) {
+      const today = todayIso();
+      sessionStorage.setItem(CABINET_BOOKING_KEY, JSON.stringify({
+        laptopId: selectedLaptop.id,
+        deliveryType,
+        startDate: today,
+        endDate: addDays(today, 2)
+      }));
+      window.location.assign('/account?return=booking');
+      return;
+    }
+  }
+
+  currentLaptop = selectedLaptop;
 
   modalLaptopTitle.textContent = `${currentLaptop.category === 'rent' ? 'Аренда:' : 'Покупка:'} ${currentLaptop.title}`;
 
