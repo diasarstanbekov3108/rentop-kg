@@ -496,6 +496,7 @@ export default async function handler(request, response) {
       if (payload.action === 'early_return_request') {
         const note = String(payload.message || '').trim().slice(0, 500);
         const returnMethod = ['arca_locker','arca_courier','rentop_courier','customer_courier','self_delivery'].includes(payload.returnMethod) ? payload.returnMethod : '';
+        const returnDeliveryConfirmed = payload.returnDeliveryConfirmed === true;
         const returnLockerAddress = String(payload.returnLockerAddress || '').trim().slice(0, 300);
         const returnCollectionAddress = String(payload.returnCollectionAddress || '').trim().slice(0, 500);
         const returnContactName = String(payload.returnContactName || '').trim().slice(0, 160);
@@ -508,6 +509,7 @@ export default async function handler(request, response) {
         if (returnMethod === 'rentop_courier' && (!returnContactName || !returnContactPhone || !returnPreferredTime || !returnCollectionAddress)) return json(response, 400, { error:'Укажите адрес, контакт и желаемое время для курьера Rentop.' });
         if (returnMethod === 'customer_courier' && (!returnContactName || !returnContactPhone || !returnPreferredTime)) return json(response, 400, { error:'Укажите контакт и желаемое время. Адрес приёма для вашей курьерской службы сообщит менеджер.' });
         if (returnMethod === 'self_delivery' && !returnPreferredTime) return json(response, 400, { error:'Укажите желаемое время самопривоза. Адрес приёма сообщит менеджер.' });
+        if (['rentop_courier','customer_courier','arca_courier'].includes(returnMethod) && !returnDeliveryConfirmed) return json(response, 400, { error:'Подтвердите, что сначала дождётесь точного адреса и времени от Rentop. Курьерскую доставку оплачивает клиент.' });
         const payer = 'customer';
         const requestData = { order_id:order.id, kind:'early_return', customer_message:note || null, return_method:returnMethod, return_locker_address:['arca_locker','arca_courier'].includes(returnMethod) ? returnLockerAddress : null, return_collection_address:returnMethod === 'rentop_courier' ? returnCollectionAddress : null, return_contact_name:['rentop_courier','customer_courier','arca_courier'].includes(returnMethod) ? returnContactName : null, return_contact_phone:['rentop_courier','customer_courier','arca_courier'].includes(returnMethod) ? returnContactPhone : null, return_preferred_time:returnMethod === 'arca_locker' ? null : returnPreferredTime, return_delivery_payer:payer };
         const customerRequest = await database.createCustomerRequest(requestData);
