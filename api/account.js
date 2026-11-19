@@ -38,6 +38,41 @@ function discountForTerm(days, benefits = []) {
 function orderRef(order) { return String(order.id || '').slice(0, 8).toUpperCase(); }
 function documentLabel(kind) { return ({ identity:'Паспорт или ID-карта', identity_front:'Паспорт или ID-карта — лицевая сторона', identity_back:'Паспорт или ID-карта — обратная сторона', selfie:'Селфи с документом', supporting:'Официальный подтверждающий документ', issue_video:'Видео до получения', return_video:'Видео возврата', benefit_proof:'Документ для социальной скидки' }[kind] || 'Документ'); }
 function printableMoment(value) { return new Intl.DateTimeFormat('ru-RU', { timeZone:'Asia/Bishkek', day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' }).format(new Date(value)); }
+function jsonObject(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  if (typeof value !== 'string') return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+function invoiceBreakdownFromEvent(event) {
+  const metadata = jsonObject(event?.metadata);
+  const rentalAmount = Number(metadata.rental_amount);
+  const depositAmount = Number(metadata.deposit_amount);
+  const deliveryFee = Number(metadata.delivery_fee);
+  if (![rentalAmount, depositAmount, deliveryFee].some(Number.isFinite)) return null;
+  const safeRental = Number.isFinite(rentalAmount) ? rentalAmount : 0;
+  const safeDeposit = Number.isFinite(depositAmount) ? depositAmount : 0;
+  return {
+    rental_amount:safeRental,
+    deposit_amount:safeDeposit,
+    rental_and_deposit_amount:Number.isFinite(Number(metadata.rental_and_deposit_amount)) ? Number(metadata.rental_and_deposit_amount) : safeRental + safeDeposit,
+    delivery_fee:Number.isFinite(deliveryFee) ? deliveryFee : 0,
+    delivery_charge_mode:metadata.delivery_charge_mode === 'rentop' ? 'rentop' : 'external'
+  };
+}
+function paymentWithRecoveredBreakdown(payment, invoiceEvents = []) {
+  if (!payment || payment.purpose === 'extension') return payment;
+  const payload = jsonObject(payment.bank_payload);
+  const breakdown = jsonObject(payload.breakdown);
+  if (Object.keys(breakdown).length) return payment;
+  const event = invoiceEvents.find(item => String(jsonObject(item.metadata).operation_id || '') === String(payment.operation_id || '')) || invoiceEvents[0];
+  const recovered = invoiceBreakdownFromEvent(event);
+  return recovered ? { ...payment, bank_payload:{ ...payload, breakdown:recovered } } : payment;
+}
 
 export default async function handler(request, response) {
   allowOrigin(request, response);
@@ -64,13 +99,16 @@ export default async function handler(request, response) {
     // history. The former per-order reads could turn twelve old applications
     // into more than seventy database requests and make a valid session look
     // like it had been lost on a slow mobile connection.
-    const [laptops, allRequests, allDocuments, allPayments, allFeedback, allSupportCases] = await Promise.all([
+    const [laptops, allRequests, allDocuments, allPayments, allFeedback, allSupportCases, allInvoiceEvents] = await Promise.all([
       database.listLaptopsByIds(orders.map(order => order.laptop_id)).catch(() => []),
       database.listCustomerRequestsForOrders(orderIds).catch(() => []),
       database.listOrderDocumentsForOrders(orderIds).catch(() => []),
       database.listOrderPaymentsForOrders(orderIds).catch(() => []),
       database.listOrderFeedbackForOrders(orderIds).catch(() => []),
-      database.listOrderSupportCasesForOrders(orderIds).catch(() => [])
+      database.listOrderSupportCasesForOrders(orderIds).catch(() => []),
+      // Audit records retain the exact invoice composition if an older
+      // payment confirmation previously overwrote its JSON metadata.
+      database.listInvoiceEventsForOrders(orderIds).catch(() => [])
     ]);
     const by = (items, key) => (items || []).reduce((map, item) => {
       const value = String(item?.[key] || '');
@@ -84,6 +122,7 @@ export default async function handler(request, response) {
     const paymentsByOrder = by(allPayments, 'order_id');
     const feedbackByOrder = by(allFeedback, 'order_id');
     const supportCasesByOrder = by(allSupportCases, 'order_id');
+    const invoiceEventsByOrder = by(allInvoiceEvents, 'order_id');
     return orders.map(order => {
       const laptop = laptopById.get(String(order.laptop_id));
       const payments = paymentsByOrder.get(String(order.id)) || [];
@@ -97,7 +136,7 @@ export default async function handler(request, response) {
       documents:documentsByOrder.get(String(order.id)) || [],
       feedback:(feedbackByOrder.get(String(order.id)) || [])[0] || null,
       supportCases:supportCasesByOrder.get(String(order.id)) || [],
-      payment:payments.find(payment => payment.purpose !== 'extension') || null,
+      payment:paymentWithRecoveredBreakdown(payments.find(payment => payment.purpose !== 'extension') || null, invoiceEventsByOrder.get(String(order.id)) || []),
       extensionPayment:payments.find(payment => payment.purpose === 'extension' && ['awaiting_payment', 'paid'].includes(payment.status)) || null
     };
     });

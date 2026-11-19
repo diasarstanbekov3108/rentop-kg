@@ -348,6 +348,13 @@ export function createSupabaseApi(config) {
     listOrderEvents: (orderId) => request(
       `rental_order_events?order_id=eq.${encodeURIComponent(orderId)}&select=id,event_type,actor_type,actor_telegram_id,metadata,created_at&order=created_at.asc&limit=500`
     ),
+    listInvoiceEventsForOrders: (orderIds) => {
+      const values = inList(orderIds);
+      return values ? request(
+        `rental_order_events?order_id=in.(${values})&event_type=eq.bakai_qr_created_from_web` +
+        '&select=order_id,event_type,metadata,created_at&order=created_at.desc&limit=500'
+      ) : Promise.resolve([]);
+    },
     hasOrderEvent: (orderId, eventType) => getOne(
       `rental_order_events?order_id=eq.${encodeURIComponent(orderId)}&event_type=eq.${encodeURIComponent(eventType)}&select=id&limit=1`
     ),

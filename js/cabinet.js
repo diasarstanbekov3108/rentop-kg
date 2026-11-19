@@ -233,6 +233,10 @@ function hasOpenCabinetForm() {
   return Boolean(rentalsEl?.querySelector('.cabinet-request-panel:not([hidden]) form'));
 }
 
+function hasOpenOrderWorkspace() {
+  return Boolean(rentalsEl?.querySelector('#cabinet-order-workspace:not([hidden])'));
+}
+
 function setWorkspaceMode(panel = null) {
   const open = Boolean(panel && !panel.hidden);
   document.documentElement.classList.toggle('cabinet-workspace-open', open);
@@ -263,8 +267,10 @@ function watchPayment(orderId) {
   paymentPollingTimer = window.setInterval(checkPayment, 3000);
 }
 async function refreshAccountIfSafe() {
-  // Never redraw a panel while the customer is choosing files or typing.
-  if (hasOpenCabinetForm() || orderRefreshInFlight) return;
+  // Never redraw an opened application in the background. On mobile a redraw
+  // can interrupt typing, a file picker or the reader's scroll position.
+  // Explicit submitted actions still refresh their result immediately.
+  if (hasOpenCabinetForm() || hasOpenOrderWorkspace() || orderRefreshInFlight) return;
   orderRefreshInFlight = true;
   const epoch = sessionViewEpoch;
   try {
@@ -287,7 +293,7 @@ function watchOrderUpdates(orders) {
   const epoch = sessionViewEpoch;
   orderPollingTimer = window.setInterval(async () => {
     if (epoch === sessionViewEpoch) await refreshAccountIfSafe();
-  }, 30000);
+  }, 90000);
 }
 
 function requestLabel(request) {
@@ -387,6 +393,11 @@ function paymentReceiptRows(payment, isExtension = false) {
   if (breakdown.hasStoredBreakdown) return `<span>Аренда и залог по счёту: ${breakdown.rentalAndDeposit.toLocaleString('ru-RU')} сом</span>`;
   return `<span>Платёж по счёту: ${Number(payment?.amount || 0).toLocaleString('ru-RU')} сом</span>`;
 }
+function paymentReceiptTotalRows(payment, isExtension = false) {
+  const amount = Number(payment?.amount || 0).toLocaleString('ru-RU');
+  const label = isExtension ? 'Итого доплата за продление' : 'Итого по счёту';
+  return `<span>${label}: ${amount} сом</span><span>Оплачено: ${amount} сом</span>`;
+}
 function promoForOrder(order) {
   return customerPromos.find(promo => String(promo.redeemed_order_id || '') === String(order?.id || '')) || null;
 }
@@ -440,7 +451,7 @@ function paymentPanel(order) {
     const delivery = deliveryReceiptDetails(order, breakdown);
     const deliveryLines = `<span>Получение: ${escape(delivery.method)}</span>${delivery.charge ? `<span>${escape(delivery.charge)}</span>` : ''}`;
     const discount = rentalDiscountDetails(order);
-    return `<section class="cabinet-payment success cabinet-receipt"><div><strong>✓ ${isExtension ? 'Продление оплачено' : 'Оплата подтверждена'}</strong><span>${amount} сом · банк подтвердил платёж</span></div><p>${isExtension ? `Новый срок аренды: до ${date(order.rental_end_date)}.` : 'Мы готовим выбранный способ выдачи и сообщим о готовности.'}</p><div class="cabinet-receipt-details"><b>Квитанция Rentop</b><span>Заказчик: ${escape(order.customer_name || 'Клиент Rentop')}</span><span>Заявка: ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</span><span>Ноутбук: ${escape(order.laptop_title || '—')}</span><span>Период: ${escape(date(order.rental_start_date))} — ${escape(date(order.rental_end_date))}</span>${deliveryLines}${paymentReceiptRows(payment, isExtension)}${discount.promo ? `<span>Промокод: ${escape(discount.promo.code)} · −${Number(discount.promo.discount_percent || 0)}%</span>` : ''}<span>Общая скидка по тарифу: −${Number(order.discount_percent || 0)}%</span><span>Платёж: ${escape(reference)}</span><span>Подтверждён: ${escape(dateTime(paidAt, { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }))}</span></div><button class="cabinet-action secondary" type="button" data-print-receipt="${escape(order.id)}">Скачать квитанцию PDF</button><small class="cabinet-receipt-note">Данные заказчика указаны по этой заявке.</small></section>`;
+    return `<section class="cabinet-payment success cabinet-receipt"><div><strong>✓ ${isExtension ? 'Продление оплачено' : 'Оплата подтверждена'}</strong><span>${amount} сом · банк подтвердил платёж</span></div><p>${isExtension ? `Новый срок аренды: до ${date(order.rental_end_date)}.` : 'Мы готовим выбранный способ выдачи и сообщим о готовности.'}</p><div class="cabinet-receipt-details"><b>Квитанция Rentop</b><span>Заказчик: ${escape(order.customer_name || 'Клиент Rentop')}</span><span>Заявка: ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</span><span>Ноутбук: ${escape(order.laptop_title || '—')}</span><span>Период: ${escape(date(order.rental_start_date))} — ${escape(date(order.rental_end_date))}</span>${deliveryLines}${paymentReceiptRows(payment, isExtension)}${paymentReceiptTotalRows(payment, isExtension)}${discount.promo ? `<span>Промокод: ${escape(discount.promo.code)} · −${Number(discount.promo.discount_percent || 0)}%</span>` : ''}<span>Общая скидка по тарифу: −${Number(order.discount_percent || 0)}%</span><span>Платёж: ${escape(reference)}</span><span>Подтверждён: ${escape(dateTime(paidAt, { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }))}</span></div><button class="cabinet-action secondary" type="button" data-print-receipt="${escape(order.id)}">Скачать квитанцию PDF</button><small class="cabinet-receipt-note">Данные заказчика указаны по этой заявке.</small></section>`;
   }
   if (!isExtension && order.status !== 'awaiting_payment') return '';
   if (!payment) return `<div class="cabinet-payment waiting"><strong>Готовим способ оплаты</strong><p>Менеджер формирует защищённый QR-счёт. Обновите страницу через несколько минут — платить по реквизитам в переписке не нужно.</p>${documentNotice}</div>`;
@@ -466,7 +477,7 @@ function openReceiptPrintWindow(order) {
       : breakdown.hasStoredBreakdown
         ? `<div class="row"><span>Аренда и залог по счёту</span><b>${breakdown.rentalAndDeposit.toLocaleString('ru-RU')} сом</b></div>`
         : `<div class="row"><span>Платёж по счёту</span><b>${Number(payment.amount || 0).toLocaleString('ru-RU')} сом</b></div>`;
-  const deliveryReceiptRows = `${paymentRows}<div class="row"><span>Получение</span><b>${escape(delivery.method)}</b></div>${delivery.charge ? `<div class="row"><span>Доставка</span><b>${escape(delivery.charge)}</b></div>` : ''}`;
+  const deliveryReceiptRows = `${paymentRows}<div class="row"><span>Получение</span><b>${escape(delivery.method)}</b></div>${delivery.charge ? `<div class="row"><span>Доставка</span><b>${escape(delivery.charge)}</b></div>` : ''}<div class="row"><span>${isExtension ? 'Итого доплата за продление' : 'Итого по счёту'}</span><b>${amount} сом</b></div><div class="row"><span>Оплачено</span><b>${amount} сом</b></div>`;
   const stampUrl = `${window.location.origin}/assets/rentop-ip-stamp.png`;
   const popup = window.open('', '_blank', 'width=760,height=860');
   if (!popup) { message('Браузер заблокировал окно квитанции. Разрешите всплывающие окна для Rentop и повторите.', 'error'); return; }
@@ -611,6 +622,7 @@ function loyaltyPanel(promos, benefits = [], orderId = '') {
   return `<section class="cabinet-loyalty"><div class="cabinet-loyalty-heading"><strong>Ваши скидки</strong><span>до 40%</span></div>${benefitList}${benefitForm}<div class="cabinet-discount-guide"><strong>Скидка по сроку аренды</strong><span>7–14 дней — 15% · 15+ дней — 30%</span></div><div class="cabinet-promo-heading"><strong>Персональные промокоды</strong><small>Введите код при оформлении новой заявки.</small></div>${promoList}<p class="cabinet-form-hint">Срок аренды, подтверждённая льгота и персональный код складываются. Максимальная скидка — 40%. Залог не уменьшается.</p></section>`;
 }
 function panelMarkup(kind, orderId, documentState = {}) {
+  const order = cabinetOrders.find(item => String(item.id) === String(orderId)) || {};
   if (kind === 'documents') {
     if (documentState.mode === 'approved') return `<div class="cabinet-document-wait is-approved"><strong>Документы проверены</strong><p>Спасибо. Заявка перешла к оплате или подготовке выдачи — следующий шаг показан выше.</p></div>`;
     if (documentState.mode === 'submitted') return `<div class="cabinet-document-wait"><strong>Документы отправлены</strong><p>Ваша заявка обрабатывается. Ожидайте ответа менеджера — повторная отправка заблокирована.</p><button class="cabinet-action ghost" type="button" data-document-correction="${orderId}">Я отправил(а) неверный документ</button></div>`;
