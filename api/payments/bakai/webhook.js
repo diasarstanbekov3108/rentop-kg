@@ -41,6 +41,17 @@ function sameAccount(left, right) {
   return expected === received || expected.replace(/^KGS/, '') === received.replace(/^KGS/, '');
 }
 
+function paymentPayloadObject(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  if (typeof value !== 'string') return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 export default async function handler(request, response) {
   if (request.method !== 'POST') {
     response.setHeader('Allow', 'POST');
@@ -81,7 +92,7 @@ export default async function handler(request, response) {
       // Preserve the invoice breakdown created by the manager. The bank
       // response is attached under its own key instead of replacing it, so
       // the customer receipt can still show delivery separately.
-      bank_payload:{ ...(payment.bank_payload || {}), bank_webhook:payload },
+      bank_payload:{ ...paymentPayloadObject(payment.bank_payload), bank_webhook:payload },
       paid_at:now
     });
     const order = await database.getOrder(payment.order_id);

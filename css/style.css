@@ -2268,3 +2268,10 @@ html.catalog-showcase-compact #catalog .catalog-showcase-featured .catalog-open-
   font-size: 14px;
   text-align: center;
 }
+
+/* A model opened from the storefront is centered and briefly outlined in the
+   full catalogue, so the customer can immediately see the exact selection. */
+.catalog-browser .card.catalog-card-target {
+  border-color: #86efff;
+  box-shadow: 0 0 0 2px rgba(102, 228, 255, 0.45), 0 0 34px rgba(36, 210, 248, 0.3), 0 16px 35px rgba(0, 0, 0, 0.25);
+}

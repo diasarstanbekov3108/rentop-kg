@@ -348,17 +348,34 @@ function supportUpdates(order) {
   if (!cases.length) return '';
   return `<section class="cabinet-support-updates" aria-label="Переписка по заявке"><div class="cabinet-conversation-head"><strong>Переписка по заявке</strong><span>Rentop</span></div>${cases.map(item => `<div class="cabinet-message customer"><b>Вы</b><p>${escape(item.customer_message || 'Обращение')}</p><time>${escape(dateTime(item.opened_at, { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }))}</time></div>${item.manager_reply ? `<div class="cabinet-message manager"><b>Rentop</b><p>${escape(item.manager_reply)}</p><time>${escape(dateTime(item.replied_at, { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }))}</time></div>` : '<div class="cabinet-message pending"><span>Ожидаем ответ менеджера</span></div>'}`).join('')}</section>`;
 }
+function paymentPayloadObject(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  if (typeof value !== 'string') return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 function paymentBreakdown(payment) {
-  const breakdown = payment?.bank_payload?.breakdown || {};
+  // PostgREST can return json/jsonb as either an object or a JSON string,
+  // depending on the query path. Read both forms so a receipt never loses
+  // its invoice lines after a bank confirmation.
+  const payload = paymentPayloadObject(payment?.bank_payload);
+  const breakdown = paymentPayloadObject(payload.breakdown);
   const rentalAndDeposit = Number(breakdown.rental_and_deposit_amount || 0);
   const deliveryFee = Number(breakdown.delivery_fee || 0);
   const rentalAmount = Number(breakdown.rental_amount);
   const depositAmount = Number(breakdown.deposit_amount);
+  const hasSeparateRentalAndDeposit = Number.isFinite(rentalAmount) || Number.isFinite(depositAmount);
+  const hasStoredBreakdown = hasSeparateRentalAndDeposit || rentalAndDeposit > 0 || deliveryFee > 0;
   return {
     rentalAndDeposit: Number.isFinite(rentalAndDeposit) ? rentalAndDeposit : 0,
     rentalAmount: Number.isFinite(rentalAmount) ? rentalAmount : 0,
     depositAmount: Number.isFinite(depositAmount) ? depositAmount : 0,
-    hasSeparateRentalAndDeposit:Number.isFinite(rentalAmount) || Number.isFinite(depositAmount),
+    hasSeparateRentalAndDeposit,
+    hasStoredBreakdown,
     deliveryFee: Number.isFinite(deliveryFee) ? deliveryFee : 0,
     deliveryMode: breakdown.delivery_charge_mode || 'external'
   };
@@ -367,7 +384,8 @@ function paymentReceiptRows(payment, isExtension = false) {
   const breakdown = paymentBreakdown(payment);
   if (isExtension) return `<span>Доплата за продление: ${Number(payment?.amount || 0).toLocaleString('ru-RU')} сом</span>`;
   if (breakdown.hasSeparateRentalAndDeposit) return `<span>Аренда по счёту: ${breakdown.rentalAmount.toLocaleString('ru-RU')} сом</span><span>Возвратный залог: ${breakdown.depositAmount.toLocaleString('ru-RU')} сом</span>`;
-  return `<span>Аренда и залог по счёту: ${breakdown.rentalAndDeposit.toLocaleString('ru-RU')} сом</span>`;
+  if (breakdown.hasStoredBreakdown) return `<span>Аренда и залог по счёту: ${breakdown.rentalAndDeposit.toLocaleString('ru-RU')} сом</span>`;
+  return `<span>Платёж по счёту: ${Number(payment?.amount || 0).toLocaleString('ru-RU')} сом</span>`;
 }
 function promoForOrder(order) {
   return customerPromos.find(promo => String(promo.redeemed_order_id || '') === String(order?.id || '')) || null;
@@ -400,7 +418,9 @@ function deliveryReceiptDetails(order, breakdown) {
   if (order.delivery_type === 'delivery') {
     return {
       method: 'Доставка курьером',
-      charge: breakdown.deliveryMode === 'rentop'
+      charge: !breakdown.hasStoredBreakdown
+        ? ''
+        : breakdown.deliveryMode === 'rentop'
         ? `Доставка Rentop: ${breakdown.deliveryFee.toLocaleString('ru-RU')} сом`
         : 'Доставка оплачивается курьеру отдельно'
     };
@@ -443,7 +463,9 @@ function openReceiptPrintWindow(order) {
     ? `<div class="row"><span>Доплата за продление</span><b>${Number(payment.amount || 0).toLocaleString('ru-RU')} сом</b></div>`
     : breakdown.hasSeparateRentalAndDeposit
       ? `<div class="row"><span>Аренда по счёту</span><b>${breakdown.rentalAmount.toLocaleString('ru-RU')} сом</b></div><div class="row"><span>Возвратный залог</span><b>${breakdown.depositAmount.toLocaleString('ru-RU')} сом</b></div>`
-      : `<div class="row"><span>Аренда и залог по счёту</span><b>${breakdown.rentalAndDeposit.toLocaleString('ru-RU')} сом</b></div>`;
+      : breakdown.hasStoredBreakdown
+        ? `<div class="row"><span>Аренда и залог по счёту</span><b>${breakdown.rentalAndDeposit.toLocaleString('ru-RU')} сом</b></div>`
+        : `<div class="row"><span>Платёж по счёту</span><b>${Number(payment.amount || 0).toLocaleString('ru-RU')} сом</b></div>`;
   const deliveryReceiptRows = `${paymentRows}<div class="row"><span>Получение</span><b>${escape(delivery.method)}</b></div>${delivery.charge ? `<div class="row"><span>Доставка</span><b>${escape(delivery.charge)}</b></div>` : ''}`;
   const stampUrl = `${window.location.origin}/assets/rentop-ip-stamp.png`;
   const popup = window.open('', '_blank', 'width=760,height=860');
@@ -1038,7 +1060,13 @@ rentalsEl?.addEventListener('click', event => {
     // An action button must always open its workspace. Toggling here made a
     // second tap (or a delayed mobile click) close “Уточнить статус” again
     // before the customer could see the form.
-    if (!panel.hidden) return;
+    if (!panel.hidden) {
+      // A form can already be open below the fold (for example after a
+      // delivery-status update). A repeated tap must take the customer to it,
+      // not look like a broken button.
+      window.requestAnimationFrame(() => panel.scrollIntoView({ behavior:'smooth', block:'start' }));
+      return;
+    }
     panel.hidden = false;
     panel.classList.toggle('is-document-result', button.dataset.panel === 'documents' && ['submitted', 'approved'].includes(button.dataset.documentMode || ''));
     const sourceOrder = cabinetOrders.find(order => String(order.id) === String(button.dataset.order));

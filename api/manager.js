@@ -14,6 +14,16 @@ function readCookie(request, name) { const source = String(request.headers.cooki
 function hash(secret, value) { return createHmac('sha256', secret).update(value).digest('hex'); }
 function reply(response, status, body) { response.setHeader('Cache-Control', 'private, no-store, max-age=0'); response.status(status).json(body); }
 function samePhone(a, b) { return String(a || '').replace(/\D/g, '') === String(b || '').replace(/\D/g, ''); }
+function paymentPayloadObject(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  if (typeof value !== 'string') return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 function exactDeadline(paidAt, days) { return new Date(Date.parse(paidAt) + Math.max(1, Number(days) || 1) * 86_400_000).toISOString(); }
 function extendExactDeadline(currentEnd, oldDate, newDate) {
   if (!currentEnd) return null;
@@ -723,7 +733,7 @@ export default async function handler(request, response) {
       const updatedPayment = await database.updateOrderPayment(payment.id, {
         status:'paid',
         bank_transaction_id:reference,
-        bank_payload:{ ...(payment.bank_payload || {}), manual_confirmation:{ source:'manager_manual_confirmation', reference } },
+        bank_payload:{ ...paymentPayloadObject(payment.bank_payload), manual_confirmation:{ source:'manager_manual_confirmation', reference } },
         paid_at:now
       });
       let updatedOrder = order;

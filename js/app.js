@@ -320,6 +320,7 @@ function renderLaptops(items, append = false, target = catalogGrid) {
 
     const card = document.createElement('div');
     card.className = 'card';
+    card.dataset.laptopId = String(laptop.id);
     card.innerHTML = `
       <div class="card-topline">
         <span class="availability-status ${statusClass}">
@@ -421,7 +422,7 @@ function renderCatalogPreview(items) {
     return;
   }
   catalogPreviewGrid.innerHTML = items.map(laptop => {
-    return `<article class="catalog-preview-card" data-open-full role="button" tabindex="0" aria-label="Открыть полный каталог и посмотреть модель ${laptop.title}">
+    return `<article class="catalog-preview-card" data-open-full data-laptop-id="${Number(laptop.id)}" role="button" tabindex="0" aria-label="Открыть полный каталог и посмотреть модель ${laptop.title}">
       <img src="${laptop.image}" alt="${laptop.title}" class="catalog-preview-image" loading="lazy">
       <div class="catalog-preview-copy">
         <h3>${formatLaptopTitle(laptop.title)}</h3>
@@ -483,6 +484,40 @@ function setCatalogBrowser(open) {
     renderLaptops(filteredLaptops, false, catalogGrid);
     catalogBrowser.querySelector('.catalog-browser-dialog')?.focus();
   }
+}
+
+function openCatalogForLaptop(laptopId) {
+  const selected = laptops.find(laptop => String(laptop.id) === String(laptopId));
+  if (!selected) {
+    setCatalogBrowser(true);
+    return;
+  }
+
+  // A click on a storefront model is a direct intent, not a request to keep
+  // an old search/filter state. Resetting the filters guarantees the same
+  // model is visible in the complete catalog on desktop and mobile.
+  activeCategoryFilter = selected.category || 'rent';
+  activeUseFilter = 'all';
+  savedOnly = false;
+  categoryFilterButtons.forEach(button => button.classList.toggle('active', button.dataset.filter === activeCategoryFilter));
+  useFilterButtons.forEach(button => button.classList.toggle('active', button.dataset.use === 'all'));
+  filterAndSearch();
+  setCatalogBrowser(true);
+
+  let attempts = 0;
+  const focusSelectedCard = () => {
+    const card = [...(catalogGrid?.querySelectorAll('.card') || [])]
+      .find(item => item.dataset.laptopId === String(selected.id));
+    if (!card && attempts++ < 4) {
+      window.requestAnimationFrame(focusSelectedCard);
+      return;
+    }
+    if (!card) return;
+    card.scrollIntoView({ behavior:'smooth', block:'center' });
+    card.classList.add('catalog-card-target');
+    window.setTimeout(() => card.classList.remove('catalog-card-target'), 2200);
+  };
+  window.requestAnimationFrame(focusSelectedCard);
 }
 
 // ========== PAGINATION & RENDER CONTROLLER ==========
@@ -1168,12 +1203,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Preview cards are rendered repeatedly after every filter change. Delegation
   // keeps the “Подробнее” action reliable for every current and future card.
   catalogPreviewGrid?.addEventListener('click', (event) => {
-    if (event.target.closest('[data-open-full]')) setCatalogBrowser(true);
+    const previewCard = event.target.closest('[data-open-full]');
+    if (!previewCard) return;
+    event.preventDefault();
+    openCatalogForLaptop(previewCard.dataset.laptopId);
   });
   catalogPreviewGrid?.addEventListener('keydown', (event) => {
-    if ((event.key === 'Enter' || event.key === ' ') && event.target.closest('[data-open-full]')) {
+    const previewCard = event.target.closest('[data-open-full]');
+    if ((event.key === 'Enter' || event.key === ' ') && previewCard) {
       event.preventDefault();
-      setCatalogBrowser(true);
+      openCatalogForLaptop(previewCard.dataset.laptopId);
     }
   });
   closeFullCatalog?.addEventListener('click', () => setCatalogBrowser(false));
