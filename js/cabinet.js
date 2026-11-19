@@ -505,6 +505,22 @@ function pickupInstruction(order) {
   const accessSent = order.locker_status === 'access_sent';
   return `<section class="cabinet-pickup-instruction ${accessSent ? 'is-access-sent' : ''}"><strong>${accessSent ? '✓ Код доступа отправлен' : 'Получение через ARCHA POINT'}</strong><p class="cabinet-pickup-location">${escape(location)}${point ? ` · ${escape(point.hours)}` : ''}</p>${point ? `<a class="cabinet-map-link" href="${escape(point.map)}" target="_blank" rel="noopener">Открыть маршрут в 2ГИС ↗</a>` : ''}<p>${copy}</p><ol><li>Откройте ячейку только кодом из SMS ARCHA POINT или по инструкции менеджера.</li><li>После открытия снимите короткое видео ноутбука, корпуса, экрана, зарядки и комплекта.</li><li>Прикрепите видео ниже и подтвердите получение. При проблеме не подтверждайте получение — откройте обращение.</li></ol></section>`;
 }
+function topikGuide(order) {
+  const guide = {
+    pending_review: ['Топик: ждём документы', 'Загрузите четыре документа в заявке. После проверки менеджер подготовит защищённый QR-счёт.'],
+    awaiting_payment: ['Топик: следующий шаг — оплата', 'Откройте QR-счёт только в личном кабинете Rentop. После подтверждения банка статус обновится здесь.'],
+    confirmed: ['Топик: выдача готовится', order.delivery_type === 'delivery' ? 'Менеджер согласует точный интервал и стоимость доставки. Указанное вами время — ориентир.' : 'Rentop передаёт заявку в ARCHA POINT. Дождитесь статуса о готовности ячейки.'],
+    awaiting_pickup: ['Топик: получите ноутбук и снимите видео', order.delivery_type === 'delivery' ? 'Подтверждайте получение только после передачи ноутбука. Сначала снимите короткое видео комплекта.' : 'Следуйте инструкции с кодом ARCHA POINT, снимите видео и только потом подтвердите получение.'],
+    in_use: ['Топик: аренда активна', 'Здесь можно продлить срок или оформить возврат. Перед возвратом заранее выберите удобный способ передачи.'],
+    awaiting_return_reservation: ['Топик: готовим возврат', 'Следуйте выбранному способу возврата. Не передавайте ноутбук курьеру и не идите к постамату до инструкции Rentop.'],
+    awaiting_return_dropoff: ['Топик: почти готово', 'Снимите видео состояния ноутбука и комплекта, затем завершите передачу выбранным способом.'],
+    awaiting_return_collection: ['Топик: согласовываем приём', 'Дождитесь точного адреса и времени от Rentop перед отправкой иной курьерской службой.'],
+    returned: ['Топик: возврат принят в обработку', 'Менеджер проверит ноутбук и видео. После итогового осмотра аренда будет завершена.'],
+    completed: ['Топик: аренда завершена', 'Спасибо! Квитанция и история заявки остаются доступны в этом кабинете.']
+  }[order.status] || ['Топик: статус заявки', 'Откройте следующий доступный шаг в заявке или напишите менеджеру, если нужна помощь.'];
+  const whatsapp = supportWhatsappUrl ? `<a class="cabinet-action ghost cabinet-whatsapp" href="${escape(supportWhatsappUrl)}?text=${encodeURIComponent(`Здравствуйте! Нужна помощь по заявке ${order.reference}.`)}" target="_blank" rel="noopener">Написать в WhatsApp</a>` : '';
+  return `<aside class="cabinet-topik-guide" aria-label="Подсказка Топика"><img src="/assets/rentop-mini-mascot.png" alt="Топик, помощник Rentop"><div><span>ПОМОЩНИК RENTOP</span><strong>${guide[0]}</strong><p>${guide[1]}</p><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${escape(order.id)}">Задать вопрос менеджеру</button>${whatsapp}</div></div></aside>`;
+}
 function actionPanel(order) {
   const canAct = order.status === 'in_use';
   const deadline = rentalDeadline(order);
@@ -686,7 +702,8 @@ function orderDetailsMarkup(order) {
   const isCompleted = order.status === 'completed';
   const journey = isCompleted ? ['Заявка', 'Оплата', 'Получение', 'Завершено'] : ['Заявка', 'Оплата', 'Подготовка', order.delivery_type === 'arca_locker' ? 'Выдача' : 'Доставка'];
   const activeJourneyStep = isCompleted ? 4 : Math.max(1, Math.min(4, state.step || 1));
-  const journeyMarkup = `<div class="cabinet-stage-progress" aria-label="Текущий этап: ${escape(state.title)}">${journey.map((label, index) => { const done = isCompleted || index + 1 < activeJourneyStep; return `<div class="${done ? 'is-done' : index + 1 === activeJourneyStep ? 'is-active' : ''}"><i>${done ? '✓' : index + 1}</i><span>${label}</span></div>`; }).join('')}</div>`;
+  let journeyMarkup = `<div class="cabinet-stage-progress" aria-label="Текущий этап: ${escape(state.title)}">${journey.map((label, index) => { const done = isCompleted || index + 1 < activeJourneyStep; return `<div class="${done ? 'is-done' : index + 1 === activeJourneyStep ? 'is-active' : ''}"><i>${done ? '✓' : index + 1}</i><span>${label}</span></div>`; }).join('')}</div>`;
+  journeyMarkup += topikGuide(order);
   if (isCompleted) {
     const lastPayment = order.extensionPayment?.status === 'paid' ? order.extensionPayment : order.payment?.status === 'paid' ? order.payment : null;
     const paidAmount = lastPayment ? Number(lastPayment.amount || 0).toLocaleString('ru-RU') : '';

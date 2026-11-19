@@ -637,7 +637,7 @@
 </div>
 
   <div class="rentop-mascot" id="rentop-mascot">
-    <button class="rentop-mascot-button" type="button" title="Зажмите и перетащите помощника в любое место. Короткое нажатие откроет помощь." aria-label="Открыть помощника Rentop. Зажмите и перетащите в удобное место" aria-expanded="false" aria-controls="rentop-mascot-panel">
+    <button class="rentop-mascot-button" type="button" title="Топика можно перетащить в удобное место. Короткое нажатие откроет помощь." aria-label="Открыть Топика, помощника Rentop. Зажмите и перетащите в удобное место" aria-expanded="false" aria-controls="rentop-mascot-panel">
       <img class="rentop-mascot-work" src="assets/rentop-mascot-work.png" alt="">
       <img class="rentop-mascot-look" src="assets/rentop-mascot-look.png" alt="">
       <img class="rentop-mascot-wave" src="assets/rentop-mascot-wave-2d.png" alt="">
@@ -648,17 +648,27 @@
     </button>
     <div class="rentop-mascot-panel" id="rentop-mascot-panel" hidden>
       <button class="rentop-mascot-close" type="button" aria-label="Закрыть помощника">×</button>
-      <strong>Помощник Rentop</strong>
-      <span id="rentop-mascot-answer" role="status">Нажмите на описание модели — коротко подскажу, для каких задач она подходит.</span>
+      <strong>Топик · помощник Rentop</strong>
+      <span id="rentop-mascot-answer" role="status">Помогу подобрать ноутбук, пройти оформление и понять следующий шаг по аренде.</span>
+      <div class="rentop-mascot-tasks" aria-label="Подбор ноутбука с Топиком">
+        <b>Для какой задачи?</b>
+        <div>
+          <button type="button" data-mascot-task="study">Учёба</button>
+          <button type="button" data-mascot-task="office">Офис</button>
+          <button type="button" data-mascot-task="exam">Экзамен</button>
+          <button type="button" data-mascot-task="gaming">Игры / монтаж</button>
+        </div>
+      </div>
       <div class="rentop-mascot-actions" aria-label="Быстрые действия помощника">
         <button type="button" data-mascot-action="catalog">Подобрать ноутбук</button>
+        <button type="button" data-mascot-action="next">Следующий шаг</button>
         <button type="button" data-mascot-action="help">Помощь с заказом</button>
-        <a href="https://wa.me/996707880857" target="_blank" rel="noopener">Написать в WhatsApp</a>
+        <a id="rentop-mascot-whatsapp" href="https://wa.me/996707880857?text=%D0%97%D0%B4%D1%80%D0%B0%D0%B2%D1%81%D1%82%D0%B2%D1%83%D0%B9%D1%82%D0%B5%21%20%D0%9D%D1%83%D0%B6%D0%BD%D0%B0%20%D0%BF%D0%BE%D0%BC%D0%BE%D1%89%D1%8C%20%D1%81%20%D0%BF%D0%BE%D0%B4%D0%B1%D0%BE%D1%80%D0%BE%D0%BC%20%D0%BD%D0%BE%D1%83%D1%82%D0%B1%D1%83%D0%BA%D0%B0%20%D0%B2%20Rentop." target="_blank" rel="noopener">Написать в WhatsApp</a>
       </div>
       <button class="rentop-mascot-hide" id="rentop-mascot-hide" type="button">Скрыть помощника</button>
     </div>
   </div>
-  <button class="rentop-mascot-restore" id="rentop-mascot-restore" type="button" hidden>Показать помощника</button>
+  <button class="rentop-mascot-restore" id="rentop-mascot-restore" type="button" hidden>Показать Топика</button>
 
   <!-- Плавающая кнопка WhatsApp -->
   <a href="https://wa.me/996707880857" class="floating-whatsapp" target="_blank" aria-label="Написать в WhatsApp">

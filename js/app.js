@@ -927,6 +927,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     : 'rentop_mascot_position_v2_desktop';
   const mascotMoodClasses = ['is-looking', 'is-waving', 'is-thinking', 'is-happy'];
   const mascotAnswer = document.getElementById('rentop-mascot-answer');
+  const mascotWhatsapp = document.getElementById('rentop-mascot-whatsapp');
+  const mascotTaskLabels = { study: 'учёбы', office: 'офисной работы', exam: 'онлайн-экзамена', gaming: 'игр, монтажа или 3D' };
 
   const setMascotOpen = (open) => {
     if (!rentopMascot || !rentopMascotButton || !rentopMascotPanel) return;
@@ -948,6 +950,42 @@ document.addEventListener('DOMContentLoaded', async () => {
     mascotAnswer.textContent = `${title}: ${advice}`;
     setMascotOpen(true);
     setMascotMood('happy', 1600);
+  };
+
+  const setMascotWhatsapp = (text) => {
+    if (mascotWhatsapp) mascotWhatsapp.href = `https://wa.me/996707880857?text=${encodeURIComponent(text)}`;
+  };
+  const selectMascotTask = (task) => {
+    const label = mascotTaskLabels[task] || 'вашей задачи';
+    activeCategoryFilter = 'rent';
+    activeUseFilter = task;
+    savedOnly = false;
+    categoryFilterButtons.forEach((button) => button.classList.toggle('active', button.dataset.filter === 'rent'));
+    useFilterButtons.forEach((button) => button.classList.toggle('active', button.dataset.use === task));
+    filterAndSearch();
+    setMascotWhatsapp(`Здравствуйте! Топик помог подобрать ноутбук для ${label}. Хочу уточнить подходящую модель.`);
+    if (mascotAnswer) mascotAnswer.textContent = `Показываю модели для ${label}. В каталоге можно сравнить характеристики и выбрать удобные даты.`;
+    setMascotMood('happy', 1600);
+    setMascotOpen(false);
+    setCatalogBrowser(true);
+  };
+  const guideMascotNextStep = () => {
+    if (modal?.classList.contains('active')) {
+      const nextField = !rentalStartInput?.value ? rentalStartInput : !rentalEndInput?.value ? rentalEndInput : !deliveryTypeInput?.value ? deliveryChoiceButtons[0] : null;
+      if (nextField) {
+        if (mascotAnswer) mascotAnswer.textContent = !rentalStartInput?.value ? 'Следующий шаг — выберите дату начала аренды.' : !rentalEndInput?.value ? 'Теперь выберите дату возврата: этот день не входит в оплачиваемый срок.' : 'Выберите удобный способ получения ноутбука.';
+        nextField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        window.setTimeout(() => nextField.focus?.(), 360);
+      } else if (mascotAnswer) mascotAnswer.textContent = 'Проверьте срок, способ получения и контактные данные — затем можно продолжить оформление.';
+      setMascotMood('thinking', 1500);
+      return;
+    }
+    if (catalogBrowser && !catalogBrowser.hidden) {
+      if (mascotAnswer) mascotAnswer.textContent = 'Выберите подходящую модель, затем нажмите «Забронировать» и укажите даты.';
+      return;
+    }
+    if (mascotAnswer) mascotAnswer.textContent = 'Начнём с задачи: выберите учёбу, офис, экзамен или игры — я открою подходящие модели.';
+    setMascotOpen(true);
   };
 
   rentopMascotButton?.addEventListener('click', (event) => {
@@ -981,10 +1019,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   rentopMascotPanel?.querySelectorAll('[data-mascot-action]').forEach((button) => {
     button.addEventListener('click', () => {
-      const target = button.dataset.mascotAction === 'catalog' ? '#catalog' : '#faq';
+      const action = button.dataset.mascotAction;
+      if (action === 'catalog') {
+        if (mascotAnswer) mascotAnswer.textContent = 'Выберите задачу выше — тогда я сразу покажу подходящие модели.';
+        return;
+      }
+      if (action === 'next') { guideMascotNextStep(); return; }
       setMascotOpen(false);
-      document.querySelector(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.querySelector('#faq')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
+  });
+  rentopMascotPanel?.querySelectorAll('[data-mascot-task]').forEach((button) => {
+    button.addEventListener('click', () => selectMascotTask(button.dataset.mascotTask || 'all'));
   });
   catalogGrid?.addEventListener('click', (event) => {
     if (event.target.closest('button, a, .card-img')) return;
