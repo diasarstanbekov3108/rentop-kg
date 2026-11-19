@@ -1019,6 +1019,11 @@ rentalsEl?.addEventListener('click', event => {
     const sourceOrder = cabinetOrders.find(order => String(order.id) === String(button.dataset.order));
     panel.innerHTML = panel.hidden ? '' : `<button class="cabinet-workspace-close" type="button" data-close-workspace aria-label="Закрыть форму">× <span>К заявке</span></button>${panelMarkup(button.dataset.panel, button.dataset.order, { mode:button.dataset.documentMode, kinds:button.dataset.documentKinds, requestId:button.dataset.requestId, days:button.dataset.extensionDays, offerSmsVerified:Boolean(sourceOrder?.offer_otp_verified_at), benefitRequested:sourceOrder?.benefit_requested_type || '', deliveryType:sourceOrder?.delivery_type || '', deliveryAddress:sourceOrder?.delivery_address || '', deliveryPreferredTime:sourceOrder?.delivery_preferred_time || '', lockerAddress:sourceOrder?.locker_address || '', address:sourceOrder?.return_collection_address || sourceOrder?.residence_address || '', name:sourceOrder?.return_contact_name || sourceOrder?.customer_name || '', phone:sourceOrder?.return_contact_phone || sourceOrder?.customer_phone || '' })}`;
     setWorkspaceMode(panel.hidden ? null : panel);
+    if (button.dataset.panel === 'documents') {
+      // The upload form is rendered after the order details. On a phone it
+      // often sits below the viewport, so take the customer straight to it.
+      window.requestAnimationFrame(() => panel.scrollIntoView({ behavior:'smooth', block:'start' }));
+    }
     // Do not autofocus here: iOS Safari can scroll and zoom the page when a
     // workspace opens even though the customer only tapped a button.
     return;
