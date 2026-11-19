@@ -1129,7 +1129,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const saved = JSON.parse(sessionStorage.getItem(CABINET_BOOKING_KEY) || 'null');
       if (saved?.laptopId) {
-        sessionStorage.removeItem(CABINET_BOOKING_KEY);
         openOrderModal(Number(saved.laptopId), { deliveryType: saved.deliveryType });
         if (rentalStartInput && saved.startDate) rentalStartInput.value = saved.startDate;
         if (rentalEndInput && saved.endDate) rentalEndInput.value = saved.endDate;
@@ -1368,12 +1367,13 @@ document.addEventListener('DOMContentLoaded', async () => {
           return;
         }
         if (!response.ok || !result.accountUrl) throw new Error(result.error || 'Не удалось создать заявку.');
+        sessionStorage.removeItem(CABINET_BOOKING_KEY);
         window.location.assign(result.accountUrl);
         return;
       } catch (error) {
         submitInFlight = false;
         if (submitBtn) submitBtn.textContent = 'Продолжить оформление';
-        updateCalculator({ text: error.message || 'Не удалось создать заявку.', isError: true });
+        updateCalculator({ text: rentalErrorText(error), isError: true });
         return;
       }
     }

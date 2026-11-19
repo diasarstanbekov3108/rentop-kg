@@ -688,12 +688,15 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
     ? `<div class="cabinet-profile-name"><span class="cabinet-profile-avatar" aria-hidden="true">${escape(fullName.split(' ').filter(Boolean).slice(0,2).map(part => part[0]).join('').toUpperCase() || 'R')}</span><p><strong>${escape(fullName)}</strong><span>Номер подтверждён · ${escape(phone)}</span></p></div>`
     : `<form class="cabinet-profile-form" id="profile-form"><label for="profile-full-name">${returningToBooking ? 'Создайте профиль для оформления заявки' : 'Заполните ФИО для договора'}</label><div><input id="profile-full-name" name="fullName" autocomplete="name" placeholder="Фамилия Имя Отчество" required><button class="cabinet-action" type="submit">${returningToBooking ? 'Сохранить и продолжить' : 'Сохранить'}</button></div><p>Указывайте данные так же, как в документе. Номер уже подтверждён по SMS.</p></form>`;
   const created = new URLSearchParams(window.location.search).get('created');
-  dashboardNotice.hidden = !created;
+  dashboardNotice.hidden = !created && !(returningToBooking && hasValidProfileName);
   if (created) {
     const createdOrder = cabinetOrders.find(order => String(order.id) === String(created));
     dashboardNotice.textContent = createdOrder?.delivery_type === 'delivery'
       ? 'Заявка создана. Откройте «Загрузить документы»: там укажете адрес и удобное время доставки, затем при необходимости добавите льготу.'
       : 'Заявка создана и уже появилась в кабинете. Следующий шаг покажем здесь.';
+  }
+  if (returningToBooking && hasValidProfileName) {
+    dashboardNotice.innerHTML = 'Вход выполнен. Выбранный ноутбук и даты сохранены. <a class="cabinet-notice-link" href="/?resume_booking=1">Продолжить оформление заявки →</a>';
   }
   const codeSent = cabinetOrders.find(order => order.status === 'awaiting_pickup' && order.locker_status === 'access_sent');
   if (codeSent) { dashboardNotice.hidden = false; dashboardNotice.textContent = 'Код доступа ARCHA POINT отмечен как отправленный. Откройте заявку и пройдите получение.'; }
@@ -731,9 +734,6 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   // position so a customer recording or uploading evidence is never thrown
   // back to the beginning of the application.
   window.requestAnimationFrame(() => window.scrollTo({ top:pageScrollTop, behavior:'auto' }));
-  if (returningToBooking && hasValidProfileName) {
-    window.setTimeout(() => window.location.assign('/?resume_booking=1'), 250);
-  }
 }
 function showLogin() {
   sessionViewEpoch += 1;
