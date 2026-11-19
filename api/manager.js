@@ -579,10 +579,16 @@ export default async function handler(request, response) {
       const existing = await database.getOrderPayment(order.id).catch(() => null);
       if (existing?.status === 'paid') return reply(response, 409, { error:'Эта заявка уже оплачена.' });
       if (existing?.status === 'awaiting_payment' && new Date(existing.expires_at) > new Date()) return reply(response, 409, { error:'Для этой заявки уже создан активный QR. Сначала отзовите его, если нужен новый счёт.' });
-      const defaultAmount = Number(order.total_amount || 0) + Number(order.deposit_amount || 0);
-      const rentalAndDepositAmount = Number(payload.amount || defaultAmount);
+      const defaultRentalAmount = Number(order.total_amount || 0);
+      const defaultDepositAmount = Number(order.deposit_amount || 0);
+      const hasSeparateAmounts = Object.prototype.hasOwnProperty.call(payload, 'rentalAmount') || Object.prototype.hasOwnProperty.call(payload, 'depositAmount');
+      const legacyCombinedAmount = Number(payload.amount || defaultRentalAmount + defaultDepositAmount);
+      const rentalAmount = hasSeparateAmounts ? Number(payload.rentalAmount ?? defaultRentalAmount) : Math.max(0, legacyCombinedAmount - defaultDepositAmount);
+      const depositAmount = hasSeparateAmounts ? Number(payload.depositAmount ?? defaultDepositAmount) : Math.min(defaultDepositAmount, legacyCombinedAmount);
+      const rentalAndDepositAmount = hasSeparateAmounts ? rentalAmount + depositAmount : legacyCombinedAmount;
       const deliveryChargeMode = order.delivery_type === 'delivery' && payload.deliveryChargeMode === 'rentop' ? 'rentop' : 'external';
       const deliveryFee = deliveryChargeMode === 'rentop' ? Number(payload.deliveryFee || 0) : 0;
+      if (!Number.isFinite(rentalAmount) || rentalAmount < 0 || !Number.isFinite(depositAmount) || depositAmount < 0) return reply(response, 400, { error:'Укажите корректные суммы аренды и возвратного залога.' });
       if (!Number.isFinite(deliveryFee) || deliveryFee < 0 || deliveryFee > 100_000) return reply(response, 400, { error:'Укажите корректную стоимость доставки.' });
       const amount = rentalAndDepositAmount + deliveryFee;
       if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) return reply(response, 400, { error:'Укажите корректную сумму оплаты.' });
@@ -600,11 +606,11 @@ export default async function handler(request, response) {
         qr_image:qr.qrImage || null,
         qr_image_with_frame:qr.qrImageWithFrame || null,
         qr_link:qr.qrLink || null,
-        bank_payload:{ source:'manager_invoice', breakdown:{ rental_and_deposit_amount:rentalAndDepositAmount, delivery_fee:deliveryFee, delivery_charge_mode:deliveryChargeMode } },
+        bank_payload:{ source:'manager_invoice', breakdown:{ rental_amount:rentalAmount, deposit_amount:depositAmount, rental_and_deposit_amount:rentalAndDepositAmount, delivery_fee:deliveryFee, delivery_charge_mode:deliveryChargeMode } },
         status:'awaiting_payment',
         expires_at:new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
       });
-      await database.createEvent({ order_id:order.id, event_type:'bakai_qr_created_from_web', actor_type:'manager', metadata:{ operation_id:operationId, amount, rental_and_deposit_amount:rentalAndDepositAmount, delivery_fee:deliveryFee, delivery_charge_mode:deliveryChargeMode } }).catch(error => console.error('Bakai payment audit event failed:', error.message));
+      await database.createEvent({ order_id:order.id, event_type:'bakai_qr_created_from_web', actor_type:'manager', metadata:{ operation_id:operationId, amount, rental_amount:rentalAmount, deposit_amount:depositAmount, rental_and_deposit_amount:rentalAndDepositAmount, delivery_fee:deliveryFee, delivery_charge_mode:deliveryChargeMode } }).catch(error => console.error('Bakai payment audit event failed:', error.message));
       return reply(response, 201, { ok:true, payment });
     }
     if (payload.action === 'create_extension_bakai_payment') {

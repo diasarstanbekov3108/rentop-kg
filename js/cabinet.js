@@ -352,11 +352,22 @@ function paymentBreakdown(payment) {
   const breakdown = payment?.bank_payload?.breakdown || {};
   const rentalAndDeposit = Number(breakdown.rental_and_deposit_amount || 0);
   const deliveryFee = Number(breakdown.delivery_fee || 0);
+  const rentalAmount = Number(breakdown.rental_amount);
+  const depositAmount = Number(breakdown.deposit_amount);
   return {
     rentalAndDeposit: Number.isFinite(rentalAndDeposit) ? rentalAndDeposit : 0,
+    rentalAmount: Number.isFinite(rentalAmount) ? rentalAmount : 0,
+    depositAmount: Number.isFinite(depositAmount) ? depositAmount : 0,
+    hasSeparateRentalAndDeposit:Number.isFinite(rentalAmount) || Number.isFinite(depositAmount),
     deliveryFee: Number.isFinite(deliveryFee) ? deliveryFee : 0,
     deliveryMode: breakdown.delivery_charge_mode || 'external'
   };
+}
+function paymentReceiptRows(payment, isExtension = false) {
+  const breakdown = paymentBreakdown(payment);
+  if (isExtension) return `<span>Доплата за продление: ${Number(payment?.amount || 0).toLocaleString('ru-RU')} сом</span>`;
+  if (breakdown.hasSeparateRentalAndDeposit) return `<span>Аренда по счёту: ${breakdown.rentalAmount.toLocaleString('ru-RU')} сом</span><span>Возвратный залог: ${breakdown.depositAmount.toLocaleString('ru-RU')} сом</span>`;
+  return `<span>Аренда и залог по счёту: ${breakdown.rentalAndDeposit.toLocaleString('ru-RU')} сом</span>`;
 }
 function promoForOrder(order) {
   return customerPromos.find(promo => String(promo.redeemed_order_id || '') === String(order?.id || '')) || null;
@@ -409,7 +420,7 @@ function paymentPanel(order) {
     const delivery = deliveryReceiptDetails(order, breakdown);
     const deliveryLines = `<span>Получение: ${escape(delivery.method)}</span>${delivery.charge ? `<span>${escape(delivery.charge)}</span>` : ''}`;
     const discount = rentalDiscountDetails(order);
-    return `<section class="cabinet-payment success cabinet-receipt"><div><strong>✓ ${isExtension ? 'Продление оплачено' : 'Оплата подтверждена'}</strong><span>${amount} сом · банк подтвердил платёж</span></div><p>${isExtension ? `Новый срок аренды: до ${date(order.rental_end_date)}.` : 'Мы готовим выбранный способ выдачи и сообщим о готовности.'}</p><div class="cabinet-receipt-details"><b>Квитанция Rentop</b><span>Заказчик: ${escape(order.customer_name || 'Клиент Rentop')}</span><span>Заявка: ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</span><span>Ноутбук: ${escape(order.laptop_title || '—')}</span><span>Период: ${escape(date(order.rental_start_date))} — ${escape(date(order.rental_end_date))}</span>${deliveryLines}<span>Итого аренда: ${discount.pricing.finalAmount.toLocaleString('ru-RU')} сом</span>${discount.promo ? `<span>Промокод: ${escape(discount.promo.code)} · −${Number(discount.promo.discount_percent || 0)}%</span>` : ''}<span>Общая скидка: −${Number(order.discount_percent || 0)}%</span><span>Платёж: ${escape(reference)}</span><span>Подтверждён: ${escape(dateTime(paidAt, { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }))}</span></div><button class="cabinet-action secondary" type="button" data-print-receipt="${escape(order.id)}">Скачать квитанцию PDF</button><small class="cabinet-receipt-note">Данные заказчика указаны по этой заявке.</small></section>`;
+    return `<section class="cabinet-payment success cabinet-receipt"><div><strong>✓ ${isExtension ? 'Продление оплачено' : 'Оплата подтверждена'}</strong><span>${amount} сом · банк подтвердил платёж</span></div><p>${isExtension ? `Новый срок аренды: до ${date(order.rental_end_date)}.` : 'Мы готовим выбранный способ выдачи и сообщим о готовности.'}</p><div class="cabinet-receipt-details"><b>Квитанция Rentop</b><span>Заказчик: ${escape(order.customer_name || 'Клиент Rentop')}</span><span>Заявка: ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</span><span>Ноутбук: ${escape(order.laptop_title || '—')}</span><span>Период: ${escape(date(order.rental_start_date))} — ${escape(date(order.rental_end_date))}</span>${deliveryLines}${paymentReceiptRows(payment, isExtension)}${discount.promo ? `<span>Промокод: ${escape(discount.promo.code)} · −${Number(discount.promo.discount_percent || 0)}%</span>` : ''}<span>Общая скидка по тарифу: −${Number(order.discount_percent || 0)}%</span><span>Платёж: ${escape(reference)}</span><span>Подтверждён: ${escape(dateTime(paidAt, { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }))}</span></div><button class="cabinet-action secondary" type="button" data-print-receipt="${escape(order.id)}">Скачать квитанцию PDF</button><small class="cabinet-receipt-note">Данные заказчика указаны по этой заявке.</small></section>`;
   }
   if (!isExtension && order.status !== 'awaiting_payment') return '';
   if (!payment) return `<div class="cabinet-payment waiting"><strong>Готовим способ оплаты</strong><p>Менеджер формирует защищённый QR-счёт. Обновите страницу через несколько минут — платить по реквизитам в переписке не нужно.</p>${documentNotice}</div>`;
@@ -417,22 +428,28 @@ function paymentPanel(order) {
   const rawImage = String(payment.qr_image || payment.qr_image_with_frame || '');
   const image = rawImage && !rawImage.startsWith('data:') && !rawImage.startsWith('http') ? `data:image/png;base64,${rawImage}` : rawImage;
   const expires = dateTime(payment.expires_at, { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
-  return `<section class="cabinet-payment"><div><strong>${isExtension ? 'Оплата продления' : 'Оплата аренды'}</strong><span>${Number(payment.amount || 0).toLocaleString('ru-RU')} сом · до ${escape(expires)}</span></div><p>${image ? 'Нажмите «Оплатить по QR»: код откроется крупно на весь экран. Платёжная ссылка Банка доступна как дополнительный способ, но её поддержка зависит от приложения банка.' : 'Банк создал ссылку на QR. Откройте её в поддерживаемом банковском приложении или попросите менеджера перевыпустить счёт.'} Не переводите сумму вручную на другие реквизиты.</p>${documentNotice}${image ? `<button class="cabinet-action cabinet-payment-open" type="button" data-open-payment="${escape(order.id)}">Оплатить по QR</button>` : ''}${payment.qr_link ? `<a class="cabinet-action cabinet-payment-link secondary" href="${escape(payment.qr_link)}" target="_blank" rel="noopener">Открыть платёжную ссылку Банка</a>` : ''}</section>`;
+  return `<section class="cabinet-payment"><div><strong>${isExtension ? 'Оплата продления' : 'Оплата аренды и залога'}</strong><span>${Number(payment.amount || 0).toLocaleString('ru-RU')} сом · до ${escape(expires)}</span></div><p>${image ? 'Нажмите «Оплатить по QR»: код откроется крупно на весь экран. Платёжная ссылка Банка доступна как дополнительный способ, но её поддержка зависит от приложения банка.' : 'Банк создал ссылку на QR. Откройте её в поддерживаемом банковском приложении или попросите менеджера перевыпустить счёт.'} Не переводите сумму вручную на другие реквизиты.</p>${documentNotice}${image ? `<button class="cabinet-action cabinet-payment-open" type="button" data-open-payment="${escape(order.id)}">Оплатить по QR</button>` : ''}${payment.qr_link ? `<a class="cabinet-action cabinet-payment-link secondary" href="${escape(payment.qr_link)}" target="_blank" rel="noopener">Открыть платёжную ссылку Банка</a>` : ''}</section>`;
 }
 function openReceiptPrintWindow(order) {
   if (!order) return;
+  const isExtension = Boolean(order.extensionPayment);
   const payment = order.extensionPayment || order.payment;
   if (!payment || payment.status !== 'paid') return;
   const amount = Number(payment.amount || order.total_amount || 0).toLocaleString('ru-RU');
   const reference = payment.payment_reference || payment.provider_reference || payment.id || order.reference || String(order.id || '').slice(0, 8).toUpperCase();
   const breakdown = paymentBreakdown(payment);
   const delivery = deliveryReceiptDetails(order, breakdown);
-  const deliveryReceiptRows = `${rentalDiscountDetails(order).receiptRows}<div class="row"><span>Получение</span><b>${escape(delivery.method)}</b></div>${delivery.charge ? `<div class="row"><span>Доставка</span><b>${escape(delivery.charge)}</b></div>` : ''}`;
+  const paymentRows = isExtension
+    ? `<div class="row"><span>Доплата за продление</span><b>${Number(payment.amount || 0).toLocaleString('ru-RU')} сом</b></div>`
+    : breakdown.hasSeparateRentalAndDeposit
+      ? `<div class="row"><span>Аренда по счёту</span><b>${breakdown.rentalAmount.toLocaleString('ru-RU')} сом</b></div><div class="row"><span>Возвратный залог</span><b>${breakdown.depositAmount.toLocaleString('ru-RU')} сом</b></div>`
+      : `<div class="row"><span>Аренда и залог по счёту</span><b>${breakdown.rentalAndDeposit.toLocaleString('ru-RU')} сом</b></div>`;
+  const deliveryReceiptRows = `${paymentRows}<div class="row"><span>Получение</span><b>${escape(delivery.method)}</b></div>${delivery.charge ? `<div class="row"><span>Доставка</span><b>${escape(delivery.charge)}</b></div>` : ''}`;
   const stampUrl = `${window.location.origin}/assets/rentop-ip-stamp.png`;
   const popup = window.open('', '_blank', 'width=760,height=860');
   if (!popup) { message('Браузер заблокировал окно квитанции. Разрешите всплывающие окна для Rentop и повторите.', 'error'); return; }
   popup.opener = null;
-  popup.document.write(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Квитанция Rentop</title><style>body{margin:0;background:#eef4f7;color:#102235;font:16px Arial,sans-serif}.receipt{box-sizing:border-box;width:min(100%,720px);min-height:760px;margin:32px auto;padding:48px;background:#fff;border:1px solid #c8d9e3;border-radius:18px}.brand{font-size:26px;font-weight:900;letter-spacing:.04em}.brand span{color:#16bdea}.subtitle{margin:5px 0 24px;color:#5d7388;font-size:13px}.rule{height:3px;background:#0695d0}.eyebrow{margin:28px 0 8px;color:#39718b;font-size:12px;font-weight:800;letter-spacing:.15em;text-transform:uppercase}h1{margin:0 0 22px;font-size:32px}.status{padding:12px 14px;border-radius:10px;background:#e4f8ef;color:#126740;font-weight:700}.supplier{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:20px 0;padding:16px;border:1px solid #d7e2e8;border-radius:12px;background:#fafcfd}.supplier b,.supplier span{display:block}.supplier b{color:#078dca;font-size:11px;letter-spacing:.07em;text-transform:uppercase}.supplier span{margin-top:7px;color:#3f566a;font-size:13px;line-height:1.45}.rows{margin:26px 0;border-top:1px solid #dce6eb}.row{display:flex;justify-content:space-between;gap:18px;padding:14px 0;border-bottom:1px solid #dce6eb}.row span{color:#587080}.total{margin-top:26px;padding:20px;border-radius:14px;background:#06243a;color:#fff}.total b{display:block;color:#8de9ff;font-size:31px;margin-top:6px}.seal{margin-top:28px;min-height:130px}.seal img{width:145px;height:145px;object-fit:contain;mix-blend-mode:multiply}.foot{margin-top:26px;padding-top:16px;border-top:1px solid #dce6eb;color:#60798a;font-size:12px;line-height:1.55}@media(max-width:580px){.receipt{margin:0;padding:28px 22px;border:0;border-radius:0}.supplier{grid-template-columns:1fr}.row{display:block}.row b{display:block;margin-top:4px}.seal img{width:118px;height:118px}}@media print{body{background:#fff}.receipt{margin:0;border:0;border-radius:0}}</style></head><body><main class="receipt"><div class="brand">RENTOP.<span>KG</span></div><p class="subtitle">Сервис аренды и шеринга техники · DS Ecosystem</p><div class="rule"></div><p class="eyebrow">Подтверждение оплаты</p><h1>Квитанция по аренде</h1><div class="status">✓ Платёж подтверждён банком</div><section class="supplier"><div><b>Исполнитель</b><span>ИП Арстанбеков Диас Эмильевич<br>ИНН 23108200550307<br>RENTOP.KG</span></div><div><b>Заказчик</b><span>${escape(order.customer_name || 'Клиент Rentop')}<br>Заявка ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</span></div></section><div class="rows"><div class="row"><span>Услуга</span><b>Аренда ноутбука: ${escape(order.laptop_title || '—')}</b></div><div class="row"><span>Период аренды</span><b>${escape(date(order.rental_start_date))} — ${escape(date(order.rental_end_date))}</b></div>${deliveryReceiptRows}<div class="row"><span>Идентификатор платежа</span><b>${escape(reference)}</b></div><div class="row"><span>Подтверждён</span><b>${escape(dateTime(payment.paid_at || payment.updated_at || payment.created_at, { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }))}</b></div></div><section class="total"><span>Оплачено</span><b>${amount} сом</b></section><div class="seal"><img src="${stampUrl}" alt="Печать ИП Rentop"></div><p class="foot">Квитанция сформирована в Rentop KG. Она подтверждает успешное принятие платежа и не заменяет фискальный кассовый чек, если его выдача требуется законом.</p></main><script>window.onload=()=>window.print()<\/script></body></html>`);
+  popup.document.write(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Квитанция Rentop</title><style>body{margin:0;background:#eef4f7;color:#102235;font:16px Arial,sans-serif}.receipt{box-sizing:border-box;width:min(100%,720px);min-height:760px;margin:32px auto;padding:48px;background:#fff;border:1px solid #c8d9e3;border-radius:18px}.brand{font-size:26px;font-weight:900;letter-spacing:.04em}.brand span{color:#16bdea}.subtitle{margin:5px 0 24px;color:#5d7388;font-size:13px}.rule{height:3px;background:#0695d0}.eyebrow{margin:28px 0 8px;color:#39718b;font-size:12px;font-weight:800;letter-spacing:.15em;text-transform:uppercase}h1{margin:0 0 22px;font-size:32px}.status{padding:12px 14px;border-radius:10px;background:#e4f8ef;color:#126740;font-weight:700}.supplier{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:20px 0;padding:16px;border:1px solid #d7e2e8;border-radius:12px;background:#fafcfd}.supplier b,.supplier span{display:block}.supplier b{color:#078dca;font-size:11px;letter-spacing:.07em;text-transform:uppercase}.supplier span{margin-top:7px;color:#3f566a;font-size:13px;line-height:1.45}.rows{margin:26px 0;border-top:1px solid #dce6eb}.row{display:flex;justify-content:space-between;gap:18px;padding:14px 0;border-bottom:1px solid #dce6eb}.row span{color:#587080}.total{margin-top:26px;padding:20px;border-radius:14px;background:#06243a;color:#fff}.total b{display:block;color:#8de9ff;font-size:31px;margin-top:6px}.seal{margin-top:28px;min-height:130px}.seal img{width:145px;height:145px;object-fit:contain;mix-blend-mode:multiply}.foot{margin-top:26px;padding-top:16px;border-top:1px solid #dce6eb;color:#60798a;font-size:12px;line-height:1.55}@media(max-width:580px){.receipt{margin:0;padding:28px 22px;border:0;border-radius:0}.supplier{grid-template-columns:1fr}.row{display:block}.row b{display:block;margin-top:4px}.seal img{width:118px;height:118px}}@media print{body{background:#fff}.receipt{margin:0;border:0;border-radius:0}}</style></head><body><main class="receipt"><div class="brand">RENTOP.<span>KG</span></div><p class="subtitle">Сервис аренды и шеринга техники · DS Ecosystem</p><div class="rule"></div><p class="eyebrow">Подтверждение оплаты</p><h1>${isExtension ? 'Квитанция по продлению' : 'Квитанция по аренде и залогу'}</h1><div class="status">✓ Платёж подтверждён банком</div><section class="supplier"><div><b>Исполнитель</b><span>ИП Арстанбеков Диас Эмильевич<br>ИНН 23108200550307<br>RENTOP.KG</span></div><div><b>Заказчик</b><span>${escape(order.customer_name || 'Клиент Rentop')}<br>Заявка ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</span></div></section><div class="rows"><div class="row"><span>Услуга</span><b>Аренда ноутбука: ${escape(order.laptop_title || '—')}</b></div><div class="row"><span>Период аренды</span><b>${escape(date(order.rental_start_date))} — ${escape(date(order.rental_end_date))}</b></div>${deliveryReceiptRows}<div class="row"><span>Идентификатор платежа</span><b>${escape(reference)}</b></div><div class="row"><span>Подтверждён</span><b>${escape(dateTime(payment.paid_at || payment.updated_at || payment.created_at, { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }))}</b></div></div><section class="total"><span>Оплачено</span><b>${amount} сом</b></section><div class="seal"><img src="${stampUrl}" alt="Печать ИП Rentop"></div><p class="foot">Квитанция сформирована в Rentop KG. Она подтверждает успешное принятие платежа и не заменяет фискальный кассовый чек, если его выдача требуется законом.</p></main><script>window.onload=()=>window.print()<\/script></body></html>`);
   popup.document.close();
 }
 function pickupInstruction(order) {
@@ -541,7 +558,7 @@ function actionPanel(order) {
   if (order.status === 'incident') return `${documents}<section class="cabinet-pickup-flow"><strong>Rentop проверяет ситуацию с ноутбуком</strong><p>Аренда и залог не списываются дополнительно, пока менеджер не зафиксирует решение. При необходимости мы предложим доступную замену и согласуем способ передачи.</p><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Связаться с менеджером</button>${whatsapp}</div></section>`;
   if (!canAct) return `${documentsPending}${documents}<div class="cabinet-action-disabled">Продление и досрочный возврат станут доступны после выдачи ноутбука.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="support" data-order="${order.id}">Помощь</button>${whatsapp}</div>`;
   const deadlineNotice = deadline ? `<div class="cabinet-request-state ${deadline.due ? 'is-warning' : ''}"><strong>${deadline.title}</strong><p>${deadline.text}</p></div>` : '';
-  const returnLabel = deadline?.due ? 'Оформить возврат' : 'Вернуть раньше';
+  const returnLabel = 'Вернуть';
   const exactTerm = order.rental_ends_at ? `До ${moment(order.rental_ends_at)} (Бишкек).` : `До ${date(order.rental_end_date)}.`;
   return `${deadlineNotice}<div class="cabinet-active-actions"><strong>Управление арендой</strong><p>${exactTerm} Продление проверяется по доступности ноутбука, возврат — после выбора удобного способа.</p><div class="cabinet-actions"><button class="cabinet-action" data-panel="extend" data-order="${order.id}">Продлить аренду</button><button class="cabinet-action secondary" data-panel="return" data-order="${order.id}">${returnLabel}</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Помощь</button>${whatsapp}</div></div>`;
 }
@@ -967,37 +984,45 @@ rentalsEl?.addEventListener('click', event => {
   const pickupConfirm = event.target.closest('[data-confirm-pickup]');
   if (pickupConfirm) {
     if (!window.confirm('Подтвердите только после того, как вы забрали ноутбук из ячейки и проверили комплектность.')) return;
+    const originalText = pickupConfirm.textContent;
     pickupConfirm.disabled = true;
+    pickupConfirm.textContent = 'Подтверждаем получение…';
     request('POST', { action:'confirm_pickup', orderId:pickupConfirm.dataset.confirmPickup })
       .then(async result => { message(result.message, 'success'); const fresh = await request('GET'); if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos, fresh.benefits); })
-      .catch(error => { message(error.message, 'error'); pickupConfirm.disabled = false; });
+      .catch(error => { message(error.message, 'error'); pickupConfirm.disabled = false; pickupConfirm.textContent = originalText; });
     return;
   }
   const pickupAccessReceived = event.target.closest('[data-pickup-access-received]');
   if (pickupAccessReceived) {
     if (!window.confirm('Нажимайте только если ARCHA POINT действительно прислал SMS с кодом выдачи. После этого откроется загрузка видео получения.')) return;
+    const originalText = pickupAccessReceived.textContent;
     pickupAccessReceived.disabled = true;
+    pickupAccessReceived.textContent = 'Открываем загрузку видео…';
     request('POST', { action:'confirm_pickup_access_received', orderId:pickupAccessReceived.dataset.pickupAccessReceived })
       .then(async result => { message(result.message, 'success'); const fresh = await request('GET'); if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos, fresh.benefits); })
-      .catch(error => { message(error.message, 'error'); pickupAccessReceived.disabled = false; });
+      .catch(error => { message(error.message, 'error'); pickupAccessReceived.disabled = false; pickupAccessReceived.textContent = originalText; });
     return;
   }
   const returnDropoffConfirm = event.target.closest('[data-confirm-return-dropoff]');
   if (returnDropoffConfirm) {
     if (!window.confirm('Подтвердите только после того, как ноутбук, зарядка и комплект действительно помещены в ячейку ARCHA POINT и ячейка закрылась.')) return;
+    const originalText = returnDropoffConfirm.textContent;
     returnDropoffConfirm.disabled = true;
+    returnDropoffConfirm.textContent = 'Подтверждаем возврат…';
     request('POST', { action:'confirm_return_dropoff', orderId:returnDropoffConfirm.dataset.confirmReturnDropoff })
       .then(async result => { message(result.message, 'success'); const fresh = await request('GET'); if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos, fresh.benefits); })
-      .catch(error => { message(error.message, 'error'); returnDropoffConfirm.disabled = false; });
+      .catch(error => { message(error.message, 'error'); returnDropoffConfirm.disabled = false; returnDropoffConfirm.textContent = originalText; });
     return;
   }
   const returnAccessReceived = event.target.closest('[data-return-access-received]');
   if (returnAccessReceived) {
     if (!window.confirm('Нажимайте только если ARCHA POINT действительно прислал SMS с кодом возврата. После этого откроется загрузка видео.')) return;
+    const originalText = returnAccessReceived.textContent;
     returnAccessReceived.disabled = true;
+    returnAccessReceived.textContent = 'Открываем загрузку видео…';
     request('POST', { action:'confirm_return_access_received', orderId:returnAccessReceived.dataset.returnAccessReceived })
       .then(async result => { message(result.message, 'success'); const fresh = await request('GET'); if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos, fresh.benefits); })
-      .catch(error => { message(error.message, 'error'); returnAccessReceived.disabled = false; });
+      .catch(error => { message(error.message, 'error'); returnAccessReceived.disabled = false; returnAccessReceived.textContent = originalText; });
     return;
   }
   const button = event.target.closest('[data-panel]');
@@ -1019,11 +1044,10 @@ rentalsEl?.addEventListener('click', event => {
     const sourceOrder = cabinetOrders.find(order => String(order.id) === String(button.dataset.order));
     panel.innerHTML = panel.hidden ? '' : `<button class="cabinet-workspace-close" type="button" data-close-workspace aria-label="Закрыть форму">× <span>К заявке</span></button>${panelMarkup(button.dataset.panel, button.dataset.order, { mode:button.dataset.documentMode, kinds:button.dataset.documentKinds, requestId:button.dataset.requestId, days:button.dataset.extensionDays, offerSmsVerified:Boolean(sourceOrder?.offer_otp_verified_at), benefitRequested:sourceOrder?.benefit_requested_type || '', deliveryType:sourceOrder?.delivery_type || '', deliveryAddress:sourceOrder?.delivery_address || '', deliveryPreferredTime:sourceOrder?.delivery_preferred_time || '', lockerAddress:sourceOrder?.locker_address || '', address:sourceOrder?.return_collection_address || sourceOrder?.residence_address || '', name:sourceOrder?.return_contact_name || sourceOrder?.customer_name || '', phone:sourceOrder?.return_contact_phone || sourceOrder?.customer_phone || '' })}`;
     setWorkspaceMode(panel.hidden ? null : panel);
-    if (button.dataset.panel === 'documents') {
-      // The upload form is rendered after the order details. On a phone it
-      // often sits below the viewport, so take the customer straight to it.
-      window.requestAnimationFrame(() => panel.scrollIntoView({ behavior:'smooth', block:'start' }));
-    }
+    // Action forms are rendered after the order details. On a phone they can
+    // open below the viewport, which looks like a failed tap, so always show
+    // the newly opened step immediately (documents, videos, return and help).
+    window.requestAnimationFrame(() => panel.scrollIntoView({ behavior:'smooth', block:'start' }));
     // Do not autofocus here: iOS Safari can scroll and zoom the page when a
     // workspace opens even though the customer only tapped a button.
     return;

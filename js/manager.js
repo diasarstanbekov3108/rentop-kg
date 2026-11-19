@@ -279,11 +279,18 @@ function render() {
       ? `<p class="manager-action-note">${!documentsReadyForPayment ? 'Сначала примите все четыре обязательных документа.' : benefitPendingForPayment ? 'Клиент запросил социальную скидку: примите или отклоните льготный документ, чтобы зафиксировать итоговую сумму до счёта.' : 'Документы приняты: сверьте ID, заполните реестр и сохраните проверку — затем появится действие «Перевести к оплате» и можно будет выставить защищённый QR-счёт.'}</p>`
       : '';
     const pending = order.documents.filter(document => document.status === 'pending_review').length;
-    const paymentAmount = Number(order.total_amount || 0) + Number(order.deposit_amount || 0);
-    const paymentDraft = paymentDrafts.get(String(order.id)) || { amount:paymentAmount, deliveryFee:0, deliveryMode:'external' };
+    const defaultRentalAmount = Number(order.total_amount || 0);
+    const defaultDepositAmount = Number(order.deposit_amount || 0);
+    const savedPaymentDraft = paymentDrafts.get(String(order.id)) || {};
+    const paymentDraft = {
+      rentalAmount:Number(savedPaymentDraft.rentalAmount ?? savedPaymentDraft.amount ?? defaultRentalAmount),
+      depositAmount:Number(savedPaymentDraft.depositAmount ?? defaultDepositAmount),
+      deliveryFee:Number(savedPaymentDraft.deliveryFee || 0),
+      deliveryMode:savedPaymentDraft.deliveryMode || 'external'
+    };
     const hasActivePayment = order.payment?.status === 'awaiting_payment' && new Date(order.payment.expires_at) > new Date();
     const deliveryCharge = order.delivery_type === 'delivery' ? `<label>Как оплачивается доставка<select data-delivery-charge-mode><option value="external" ${paymentDraft.deliveryMode === 'external' ? 'selected' : ''}>Клиент оплачивает курьера при встрече</option><option value="rentop" ${paymentDraft.deliveryMode === 'rentop' ? 'selected' : ''}>Включить доставку Rentop в QR-счёт</option></select></label><label class="manager-delivery-fee">Доставка Rentop, сом<input data-delivery-fee type="number" min="0" max="100000" step="1" value="${Number(paymentDraft.deliveryFee || 0)}" ${paymentDraft.deliveryMode === 'rentop' ? '' : 'disabled'}></label>` : '';
-    const paymentAction = order.status === 'awaiting_payment' && !hasActivePayment ? `<div class="manager-payment-create" data-payment-draft="${order.id}"><label>Аренда и залог, сом<input data-payment-amount type="number" min="1" max="1000000" step="1" value="${Number(paymentDraft.amount || paymentAmount)}"></label>${deliveryCharge}<small data-payment-summary>QR-счёт: ${Number(paymentDraft.amount || paymentAmount).toLocaleString('ru-RU')} сом${paymentDraft.deliveryMode === 'rentop' && Number(paymentDraft.deliveryFee || 0) ? ` + доставка ${Number(paymentDraft.deliveryFee).toLocaleString('ru-RU')} сом` : ''}.</small><button class="secondary" data-create-payment="${order.id}">Создать настоящий QR-счёт</button></div>` : '';
+    const paymentAction = order.status === 'awaiting_payment' && !hasActivePayment ? `<div class="manager-payment-create" data-payment-draft="${order.id}"><label>Аренда, сом<input data-payment-rental type="number" min="0" max="1000000" step="1" value="${paymentDraft.rentalAmount}"></label><label>Возвратный залог, сом<input data-payment-deposit type="number" min="0" max="1000000" step="1" value="${paymentDraft.depositAmount}"></label>${deliveryCharge}<small data-payment-summary>QR-счёт: ${(paymentDraft.rentalAmount + paymentDraft.depositAmount + (paymentDraft.deliveryMode === 'rentop' ? paymentDraft.deliveryFee : 0)).toLocaleString('ru-RU')} сом · аренда ${paymentDraft.rentalAmount.toLocaleString('ru-RU')} + залог ${paymentDraft.depositAmount.toLocaleString('ru-RU')}${paymentDraft.deliveryMode === 'rentop' && paymentDraft.deliveryFee ? ` + доставка ${paymentDraft.deliveryFee.toLocaleString('ru-RU')}` : ''}.</small><button class="secondary" data-create-payment="${order.id}">Создать настоящий QR-счёт</button></div>` : '';
     const paymentMismatch = ['confirmed','awaiting_pickup','issued','in_use'].includes(order.status) && order.payment?.status === 'awaiting_payment' ? '<p class="manager-payment-warning">Банк ещё не подтвердил этот QR. Не выдавайте ноутбук: статус заявки был изменён вручную, а оплата не зафиксирована webhook-ом.</p>' : '';
     const manualPaymentAction = hasActivePayment ? `<button class="secondary manager-payment-manual" data-manual-payment="${order.id}">Подтвердить оплату вручную</button>` : '';
     const paymentState = order.payment ? `<section class="manager-section"><h3>Оплата Bakai</h3><div class="manager-request">${escape(order.payment.status)} · ${Number(order.payment.amount || 0).toLocaleString('ru-RU')} сом · ${escape(order.payment.operation_id || '')}${hasActivePayment ? `<button class="danger manager-payment-revoke" data-revoke-payment="${order.id}">Отозвать QR</button>` : ''}</div>${hasActivePayment ? '<p class="manager-payment-warning">Используйте ручное подтверждение только после проверки поступления в Bakai Business. Отзыв уберёт QR из кабинета Rentop, но не отменяет его в Банке.</p>' : ''}${paymentMismatch}</section>` : '';
@@ -376,17 +383,18 @@ function updatePaymentDraft(form) {
   if (!form) return;
   const orderId = String(form.dataset.paymentDraft || '');
   if (!orderId) return;
-  const amount = Math.max(0, Number(form.querySelector('[data-payment-amount]')?.value || 0));
+  const rentalAmount = Math.max(0, Number(form.querySelector('[data-payment-rental]')?.value || 0));
+  const depositAmount = Math.max(0, Number(form.querySelector('[data-payment-deposit]')?.value || 0));
   const deliveryMode = form.querySelector('[data-delivery-charge-mode]')?.value || 'external';
   const deliveryFee = deliveryMode === 'rentop' ? Math.max(0, Number(form.querySelector('[data-delivery-fee]')?.value || 0)) : 0;
-  paymentDrafts.set(orderId, { amount, deliveryFee, deliveryMode });
+  paymentDrafts.set(orderId, { rentalAmount, depositAmount, deliveryFee, deliveryMode });
   const feeInput = form.querySelector('[data-delivery-fee]');
   if (feeInput) feeInput.disabled = deliveryMode !== 'rentop';
   const summary = form.querySelector('[data-payment-summary]');
-  if (summary) summary.textContent = `QR-счёт: ${(amount + deliveryFee).toLocaleString('ru-RU')} сом${deliveryMode === 'rentop' && deliveryFee ? ` · аренда/залог ${amount.toLocaleString('ru-RU')} + доставка ${deliveryFee.toLocaleString('ru-RU')}` : deliveryMode === 'external' && form.querySelector('[data-delivery-charge-mode]') ? ' · доставка оплачивается курьеру отдельно' : ''}.`;
+  if (summary) summary.textContent = `QR-счёт: ${(rentalAmount + depositAmount + deliveryFee).toLocaleString('ru-RU')} сом · аренда ${rentalAmount.toLocaleString('ru-RU')} + залог ${depositAmount.toLocaleString('ru-RU')}${deliveryMode === 'rentop' && deliveryFee ? ` + доставка ${deliveryFee.toLocaleString('ru-RU')}` : deliveryMode === 'external' && form.querySelector('[data-delivery-charge-mode]') ? ' · доставка оплачивается курьеру отдельно' : ''}.`;
 }
 ordersEl?.addEventListener('input', event => {
-  const field = event.target.closest('[data-payment-amount], [data-delivery-fee]');
+  const field = event.target.closest('[data-payment-rental], [data-payment-deposit], [data-delivery-fee]');
   if (field) updatePaymentDraft(field.closest('[data-payment-draft]'));
 });
 ordersEl?.addEventListener('change', event => {
@@ -484,13 +492,14 @@ ordersEl.addEventListener('click', async event => {
     const form = createPayment.closest('[data-payment-draft]');
     updatePaymentDraft(form);
     const draft = paymentDrafts.get(String(createPayment.dataset.createPayment)) || {};
-    const amount = Number(draft.amount);
+    const rentalAmount = Number(draft.rentalAmount);
+    const depositAmount = Number(draft.depositAmount);
     const deliveryFee = Number(draft.deliveryMode === 'rentop' ? draft.deliveryFee : 0);
-    if (!Number.isFinite(amount) || amount <= 0) { statusEl.textContent = 'Введите корректную сумму в сомах.'; return; }
+    if (!Number.isFinite(rentalAmount) || rentalAmount < 0 || !Number.isFinite(depositAmount) || depositAmount < 0 || rentalAmount + depositAmount <= 0) { statusEl.textContent = 'Укажите сумму аренды или возвратного залога.'; return; }
     if (!Number.isFinite(deliveryFee) || deliveryFee < 0) { statusEl.textContent = 'Проверьте стоимость доставки.'; return; }
-    const total = amount + deliveryFee;
+    const total = rentalAmount + depositAmount + deliveryFee;
     if (!window.confirm(`Создать настоящий QR-счёт Bakai на ${total.toLocaleString('ru-RU')} сом? Деньги не спишутся сейчас, но QR можно будет оплатить.`)) return;
-    payload = { action:'create_bakai_payment', orderId:createPayment.dataset.createPayment, amount, deliveryFee, deliveryChargeMode:draft.deliveryMode || 'external' };
+    payload = { action:'create_bakai_payment', orderId:createPayment.dataset.createPayment, rentalAmount, depositAmount, deliveryFee, deliveryChargeMode:draft.deliveryMode || 'external' };
     successMessage = 'QR-счёт Bakai создан и показан клиенту в личном кабинете.';
   } else if (createExtensionPayment) {
     const amount = Number(createExtensionPayment.closest('.manager-order')?.querySelector('[data-extension-payment-amount]')?.value);
@@ -681,8 +690,11 @@ ordersEl.addEventListener('click', async event => {
     }
     statusEl.textContent = successMessage;
     showFeedback(successMessage, 'success');
-    render();
-    window.setTimeout(load, 900);
+    // Payment readiness depends on the server-side document and ID registry
+    // checks. Reload them immediately so the action cannot be shown from a
+    // stale local card after the manager just accepted a file or saved ID data.
+    if (['review_document', 'save_order_registry'].includes(payload.action)) { await load(true); statusEl.textContent = successMessage; }
+    else { render(); window.setTimeout(load, 900); }
   } catch (error) { statusEl.textContent = error.message; showFeedback(error.message, 'error'); target.disabled = false; target.textContent = original; }
 });
 ordersEl.addEventListener('toggle', event => {
