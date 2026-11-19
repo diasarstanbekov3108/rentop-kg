@@ -1550,3 +1550,88 @@ button.condition-card:focus-visible,
    description starts only after the illustration's lower edge. */
 @media(max-width:768px){#archa-point .archa-showcase-main{position:relative;display:block!important;min-height:0!important}#archa-point .locker-copy{position:relative;z-index:1;padding-right:0}#archa-point .archa-locker-visual{position:absolute;z-index:0;top:-14px;right:-28px;width:72%;height:250px;min-height:0!important;margin:0!important;pointer-events:none}#archa-point .archa-locker-visual>img{width:100%;height:100%;object-fit:contain;object-position:right top;transform:scale(1.55);transform-origin:right top}#archa-point .locker-copy h2{width:57%;min-height:0;font-size:clamp(28px,8vw,34px)!important;line-height:1.03!important}#archa-point .locker-copy>p:not(.archa-partner-pill){max-width:100%;clear:both}#archa-point .locker-steps{position:relative;z-index:1}#archa-point .locker-action{position:relative;z-index:1}}
 @media(max-width:390px){#archa-point .archa-locker-visual{top:-10px;right:-30px;width:74%;height:235px}#archa-point .locker-copy h2{width:57%;min-height:0;font-size:28px!important}}
+
+/* Seasonal layer: keeps the current Rentop composition intact and only adds
+   a calm Bishkek winter atmosphere behind the existing hero content. */
+body.winter-theme .hero{
+  background:
+    linear-gradient(90deg,rgba(3,14,27,.93) 0%,rgba(3,17,33,.82) 37%,rgba(3,18,35,.5) 66%,rgba(3,15,29,.44) 100%),
+    url("../assets/rentop-winter-bishkek-hero-v1.png") center center / cover no-repeat!important;
+}
+body.winter-theme .hero::before{
+  background:linear-gradient(115deg,rgba(2,10,20,.3),transparent 52%,rgba(4,27,51,.16))!important;
+}
+/* During the winter campaign the city is the hero visual. The usual product
+   render is kept in the markup, so it can return after the campaign. */
+body.winter-theme .hero-layout{
+  grid-template-columns:minmax(0,1fr)!important;
+  min-height:500px;
+}
+body.winter-theme .hero-visual{display:none!important}
+
+/* The existing animated helper remains unchanged; this is only a small
+   decorative hat layered over every one of its animation states. */
+.winter-theme .rentop-mascot-santa-hat{
+  position:absolute;
+  z-index:4;
+  top:8px;
+  left:50%;
+  width:47px;
+  height:10px;
+  border-radius:999px;
+  background:linear-gradient(#fff,#dcecf4);
+  box-shadow:0 2px 5px rgba(0,0,0,.34);
+  pointer-events:none;
+  transform:translateX(-48%) rotate(-5deg);
+}
+.winter-theme .rentop-mascot-santa-hat::before{
+  content:"";
+  position:absolute;
+  z-index:-1;
+  bottom:5px;
+  left:5px;
+  width:37px;
+  height:31px;
+  clip-path:polygon(5% 100%,48% 2%,71% 23%,93% 84%,76% 100%);
+  background:linear-gradient(135deg,#f34c50 0%,#c71931 55%,#8d0d22 100%);
+  box-shadow:inset -3px -3px 4px rgba(87,0,18,.28);
+  transform:rotate(7deg);
+  transform-origin:bottom center;
+}
+.winter-theme .rentop-mascot-santa-hat::after{
+  content:"";
+  position:absolute;
+  top:-14px;
+  right:-3px;
+  width:13px;
+  height:13px;
+  border-radius:50%;
+  background:#fff;
+  box-shadow:0 2px 4px rgba(0,0,0,.26);
+}
+.winter-theme .rentop-mascot.is-facing-left .rentop-mascot-santa-hat{
+  transform:translateX(-48%) scaleX(-1) rotate(-5deg);
+}
+
+/* Removing the decorative B2B laptop lets its useful details use the space. */
+#b2b .b2b-content{
+  grid-template-columns:minmax(0,1.05fr) minmax(285px,.75fr);
+  grid-template-areas:"copy benefits" "action benefits";
+  min-height:0;
+  gap:20px 48px;
+}
+#b2b .b2b-copy{grid-area:copy}
+#b2b .b2b-list{grid-area:benefits}
+#b2b .b2b-open-action{grid-area:action;align-self:start}
+
+@media(max-width:768px){
+  body.winter-theme .hero{
+    background:
+      linear-gradient(165deg,rgba(3,15,28,.9) 0%,rgba(3,17,33,.72) 55%,rgba(3,14,27,.82) 100%),
+      url("../assets/rentop-winter-bishkek-hero-v1.png") 60% center / cover no-repeat!important;
+  }
+  .winter-theme .rentop-mascot-santa-hat{top:7px;transform:translateX(-48%) scale(.9) rotate(-5deg)}
+  .winter-theme .rentop-mascot.is-facing-left .rentop-mascot-santa-hat{transform:translateX(-48%) scaleX(-.9) rotate(-5deg)}
+  body.winter-theme .hero-layout{min-height:0!important}
+  #b2b .b2b-content{display:flex;gap:0}
+}
