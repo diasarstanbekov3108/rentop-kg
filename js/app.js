@@ -826,24 +826,9 @@ async function openOrderModal(id, { deliveryType = 'delivery' } = {}) {
   const selectedLaptop = laptops.find(item => item.id === id);
   if (!selectedLaptop) return;
 
-  // First identify the customer, then collect the rental details. This avoids
-  // a dead-end form for a person who has not registered yet.
-  if (selectedLaptop.category === 'rent' && !cabinetSession) {
-    await getCabinetSession();
-    if (!cabinetSession) {
-      const today = todayIso();
-      persistPendingBooking({
-        laptopId: selectedLaptop.id,
-        laptopTitle: selectedLaptop.title || '',
-        deliveryType,
-        startDate: today,
-        endDate: addDays(today, 2)
-      });
-      window.location.assign('/account?return=booking');
-      return;
-    }
-  }
-
+  // Let a new customer see the exact model, dates, delivery method and price
+  // first. The verified-phone step happens only when they press Continue;
+  // redirectToCabinet() then preserves this completed draft.
   currentLaptop = selectedLaptop;
 
   modalLaptopTitle.textContent = `Вы выбрали: ${currentLaptop.title}`;
