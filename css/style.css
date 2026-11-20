@@ -503,8 +503,8 @@ section {
 }
 
 /* A manager can send a customer directly to one exact catalogue model. */
-.card-topline-actions{display:flex;align-items:center;gap:7px}.catalog-share-button{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:50%;background:rgba(15,23,42,.72);color:var(--text-muted);font-size:18px;line-height:1;cursor:pointer;transition:.2s ease}.catalog-share-button:hover{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
-@media(min-width:350px) and (max-width:768px){.catalog-browser .card-topline .catalog-share-button{position:absolute;right:42px;pointer-events:auto}}
+.card-topline-actions{display:flex;flex:0 0 auto;align-items:center;gap:7px}.catalog-share-button{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:50%;background:rgba(15,23,42,.72);color:var(--text-muted);font-size:18px;line-height:1;cursor:pointer;transition:.2s ease}.catalog-share-button:hover{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+@media(min-width:350px) and (max-width:768px){.catalog-browser .card-topline .catalog-share-button{position:absolute;right:42px;pointer-events:auto}.catalog-browser .availability-status{flex:1;min-width:0;overflow:hidden;font-size:0;white-space:nowrap}.catalog-browser .availability-status::after{content:'Доступен';overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.catalog-browser .availability-status.is-busy::after{content:'Занят'}.catalog-browser .availability-status.is-soon::after{content:'Скоро доступен'}}
 
 .card:hover {
   transform: translateY(-4px);
@@ -1024,6 +1024,13 @@ footer {
 }
 
 .modal-subtitle {
+  display: inline-flex;
+  align-items: center;
+  max-width: calc(100% - 10px);
+  padding: 8px 11px;
+  border: 1px solid rgba(88, 220, 252, .46);
+  border-radius: 10px;
+  background: rgba(18, 82, 108, .28);
   color: var(--accent);
   font-weight: 600;
   font-size: 14px;

@@ -821,7 +821,7 @@ async function openOrderModal(id, { deliveryType = 'delivery' } = {}) {
 
   currentLaptop = selectedLaptop;
 
-  modalLaptopTitle.textContent = `${currentLaptop.category === 'rent' ? 'Аренда:' : 'Покупка:'} ${currentLaptop.title}`;
+  modalLaptopTitle.textContent = `Вы выбрали: ${currentLaptop.title}`;
 
   if (currentLaptop.category === 'rent') {
     calcBox.style.display = 'block';
@@ -1331,7 +1331,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateOrderAuthUi();
   const linkedLaptopId = new URLSearchParams(window.location.search).get('model');
   if (linkedLaptopId && laptops.some(laptop => String(laptop.id) === String(linkedLaptopId))) {
-    openCatalogForLaptop(linkedLaptopId, { keepShareLink:false });
+    // A link sent by a manager is a direct invitation to book this model.
+    // Unregistered visitors are safely sent through the same SMS/profile flow
+    // and come back to this exact application afterwards.
+    openOrderModal(Number(linkedLaptopId));
   }
   const returnToBooking = new URLSearchParams(window.location.search).get('resume_booking') === '1';
   if (returnToBooking && cabinetSession) {
