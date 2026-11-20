@@ -10,6 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/cabinet.css?v=20261120-topik-unified-v1">
+  <link rel="stylesheet" href="css/cabinet-topik.css?v=20261120-visible-v2">
 </head>
 <body class="cabinet-page">
   <header class="cabinet-header">
@@ -75,7 +76,8 @@
   </main>
   <aside class="cabinet-topik" id="cabinet-topik" aria-label="Топик, помощник Rentop">
     <button class="cabinet-topik-toggle" id="cabinet-topik-toggle" type="button" aria-label="Открыть Топика, помощника Rentop" aria-expanded="false" aria-controls="cabinet-topik-panel">
-      <img src="assets/rentop-mascot-work.png" alt="">
+      <img class="cabinet-topik-work" src="assets/rentop-mascot-work.png" alt="">
+      <img class="cabinet-topik-happy" src="assets/rentop-mascot-happy-2d.png" alt="">
     </button>
     <section class="cabinet-topik-panel" id="cabinet-topik-panel" hidden>
       <button class="cabinet-topik-close" id="cabinet-topik-close" type="button" aria-label="Закрыть Топика">×</button>
@@ -84,9 +86,11 @@
       <div class="cabinet-topik-actions">
         <button type="button" id="cabinet-topik-open-order">Открыть текущую заявку</button>
         <button type="button" id="cabinet-topik-support">Нужна помощь</button>
+        <button type="button" class="cabinet-topik-hide" id="cabinet-topik-hide">Скрыть помощника</button>
       </div>
     </section>
   </aside>
+  <button class="cabinet-topik-restore" id="cabinet-topik-restore" type="button" hidden>Показать Топика</button>
   <div class="cabinet-topik-confetti" id="cabinet-topik-confetti" aria-hidden="true" hidden></div>
   <div class="cabinet-document-viewer" id="cabinet-document-viewer" hidden role="dialog" aria-modal="true" aria-label="Просмотр документа">
     <div class="cabinet-document-viewer-card"><button class="cabinet-document-viewer-close" id="cabinet-document-viewer-close" type="button" aria-label="Закрыть просмотр">×</button><div id="cabinet-document-viewer-content"></div></div>
@@ -103,6 +107,6 @@
       <p class="cabinet-payment-dialog-expiry" id="cabinet-payment-dialog-expiry"></p>
     </div>
   </div>
-  <script type="module" src="js/cabinet.js?v=20261120-topik-unified-v1"></script>
+  <script type="module" src="js/cabinet.js?v=20261120-topik-visible-v2"></script>
 </body>
 </html>

@@ -30,6 +30,8 @@ const cabinetTopikPanel = document.getElementById('cabinet-topik-panel');
 const cabinetTopikMessage = document.getElementById('cabinet-topik-message');
 const cabinetTopikOpenOrder = document.getElementById('cabinet-topik-open-order');
 const cabinetTopikSupport = document.getElementById('cabinet-topik-support');
+const cabinetTopikHide = document.getElementById('cabinet-topik-hide');
+const cabinetTopikRestore = document.getElementById('cabinet-topik-restore');
 const cabinetTopikConfetti = document.getElementById('cabinet-topik-confetti');
 let pendingPhone = '';
 let currentPreviewUrl = '';
@@ -45,6 +47,7 @@ let cabinetOrders = [];
 let customerProfile = null;
 let orderRefreshInFlight = false;
 const HIDDEN_COMPLETIONS_KEY = 'rentop_hidden_completions_v1';
+const HIDDEN_CABINET_TOPIK_KEY = 'rentop_cabinet_topik_hidden_v1';
 const hiddenCompletionOrders = new Set((() => { try { return JSON.parse(localStorage.getItem(HIDDEN_COMPLETIONS_KEY) || '[]'); } catch { return []; } })());
 function persistHiddenCompletions() { localStorage.setItem(HIDDEN_COMPLETIONS_KEY, JSON.stringify([...hiddenCompletionOrders].slice(-100))); }
 let showingArchivedOrders = false;
@@ -568,6 +571,11 @@ function setCabinetTopikOpen(open) {
   if (!cabinetTopikPanel || !cabinetTopikToggle) return;
   cabinetTopikPanel.hidden = !open;
   cabinetTopikToggle.setAttribute('aria-expanded', String(open));
+}
+function setCabinetTopikHidden(hidden) {
+  cabinetTopik?.toggleAttribute('hidden', hidden);
+  if (cabinetTopikRestore) cabinetTopikRestore.hidden = !hidden;
+  try { localStorage.setItem(HIDDEN_CABINET_TOPIK_KEY, hidden ? '1' : '0'); } catch { /* Private browsing can block storage. */ }
 }
 function updateCabinetTopik() {
   const order = activeTopikOrder();
@@ -1497,6 +1505,13 @@ cabinetTopikToggle?.addEventListener('click', () => {
   setCabinetTopikOpen(opening);
 });
 cabinetTopikClose?.addEventListener('click', () => setCabinetTopikOpen(false));
+if (localStorage.getItem(HIDDEN_CABINET_TOPIK_KEY) === '1') setCabinetTopikHidden(true);
+cabinetTopikHide?.addEventListener('click', () => setCabinetTopikHidden(true));
+cabinetTopikRestore?.addEventListener('click', () => {
+  setCabinetTopikHidden(false);
+  updateCabinetTopik();
+  setCabinetTopikOpen(true);
+});
 cabinetTopikOpenOrder?.addEventListener('click', () => {
   const orderId = cabinetTopikOpenOrder.dataset.orderId;
   if (!orderId) return;

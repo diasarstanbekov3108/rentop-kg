@@ -1,0 +1,10 @@
+/* Same Topik visual as on the storefront, kept above an iOS browser toolbar. */
+.cabinet-topik{z-index:2500;right:max(12px,env(safe-area-inset-right));bottom:calc(84px + env(safe-area-inset-bottom));width:84px;height:84px;pointer-events:auto}
+.cabinet-topik-toggle{position:relative;width:84px;height:84px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.cabinet-topik-toggle img{position:absolute;inset:0;width:84px;height:84px;object-fit:contain;transition:opacity 160ms ease,transform 160ms ease}
+.cabinet-topik-happy{opacity:0}.cabinet-topik.is-farewell .cabinet-topik-work{opacity:0}.cabinet-topik.is-farewell .cabinet-topik-happy{opacity:1;animation:topik-farewell .9s ease-in-out 2}
+.cabinet-topik-panel{position:absolute;right:calc(100% - 8px);bottom:4px;width:min(276px,calc(100vw - 104px));padding:13px 14px;background:rgba(7,20,33,.98);box-shadow:0 18px 42px rgba(0,0,0,.42)}
+.cabinet-topik-actions .cabinet-topik-hide{border-color:rgba(181,217,232,.34);background:transparent;color:#b5d9e8}
+.cabinet-topik-restore{position:fixed;z-index:2501;right:max(14px,env(safe-area-inset-right));bottom:calc(86px + env(safe-area-inset-bottom));min-height:34px;padding:7px 11px;border:1px solid rgba(116,226,253,.5);border-radius:999px;background:#0b2d43;color:#dff8ff;font:700 11px Manrope,sans-serif;box-shadow:0 10px 24px rgba(0,0,0,.25);cursor:pointer}
+@media(max-width:600px){.cabinet-topik{right:max(8px,env(safe-area-inset-right));bottom:calc(72px + env(safe-area-inset-bottom));width:84px;height:84px}.cabinet-topik-toggle,.cabinet-topik-toggle img{width:84px;height:84px}.cabinet-topik-panel{right:calc(100% - 4px);bottom:0;width:min(248px,calc(100vw - 94px))}.cabinet-topik-restore{right:max(12px,env(safe-area-inset-right));bottom:calc(78px + env(safe-area-inset-bottom)}}
+@media(prefers-reduced-motion:reduce){.cabinet-topik.is-farewell .cabinet-topik-happy{animation:none}}
