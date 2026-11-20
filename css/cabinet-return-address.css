@@ -1,0 +1,6 @@
+/* A receiving address is a required handoff instruction, not supporting copy. */
+.cabinet-return-address{display:grid;gap:6px;margin:14px 0;padding:16px;border:2px solid #67ddfb;border-radius:14px;background:linear-gradient(135deg,rgba(20,105,135,.42),rgba(8,39,58,.92));box-shadow:0 0 0 3px rgba(94,219,248,.1)}
+.cabinet-return-address span{color:#8beaff;font-size:11px;font-weight:900;letter-spacing:.12em}
+.cabinet-return-address strong{color:#fff;font-size:20px;line-height:1.35;overflow-wrap:anywhere}
+.cabinet-return-address p{margin:0!important;color:#d9f5ff!important;font-size:14px!important;line-height:1.5}
+@media(max-width:600px){.cabinet-return-address{padding:15px}.cabinet-return-address strong{font-size:19px}}
