@@ -928,6 +928,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const mascotMoodClasses = ['is-looking', 'is-waving', 'is-thinking', 'is-happy'];
   const mascotAnswer = document.getElementById('rentop-mascot-answer');
   const mascotWhatsapp = document.getElementById('rentop-mascot-whatsapp');
+  const mascotStage = document.getElementById('rentop-mascot-stage');
+  const mascotViews = [...document.querySelectorAll('[data-mascot-view]')];
   const mascotTaskLabels = { study: 'учёбы', office: 'офисной работы', exam: 'онлайн-экзамена', gaming: 'игр, монтажа или 3D' };
 
   const setMascotOpen = (open) => {
@@ -935,6 +937,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     rentopMascot.classList.toggle('is-open', open);
     rentopMascotPanel.hidden = !open;
     rentopMascotButton.setAttribute('aria-expanded', String(open));
+  };
+
+  const setMascotView = (view) => {
+    mascotViews.forEach((menu) => { menu.hidden = menu.dataset.mascotView !== view; });
+  };
+
+  const mascotStageText = () => {
+    if (modal?.classList.contains('active')) {
+      if (!rentalStartInput?.value) return 'Оформление: выберите дату начала аренды.';
+      if (!rentalEndInput?.value) return 'Оформление: выберите дату возврата. Этот день не входит в оплачиваемый срок.';
+      const delivery = deliveryTypeInput?.value === 'arca_locker'
+        ? 'Оформление: выбрано получение через ARCHA POINT. Далее укажите удобную точку в личном кабинете.'
+        : 'Оформление: выбрана доставка Rentop. Указанное время — ориентир, точный интервал подтвердит менеджер.';
+      return `${delivery} Проверьте срок и контактные данные перед продолжением.`;
+    }
+    if (catalogBrowser && !catalogBrowser.hidden) return 'Каталог: выберите модель, затем нажмите «Забронировать» и укажите даты.';
+    return 'Начало пути: выберите задачу, а Топик покажет подходящие модели.';
+  };
+
+  const refreshMascotStage = () => {
+    const text = mascotStageText();
+    if (mascotStage) mascotStage.textContent = text;
+    return text;
   };
 
   const showMascotLaptopAdvice = (laptop) => {
@@ -948,6 +973,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     else if (tasks.includes('code')) advice = 'Подходит для программирования, браузера, рабочих программ и многозадачности.';
     else if (tasks.includes('budget')) advice = 'Бюджетный вариант для документов, Word, Excel, учёбы и интернета.';
     mascotAnswer.textContent = `${title}: ${advice}`;
+    setMascotView('home');
     setMascotOpen(true);
     setMascotMood('happy', 1600);
   };
@@ -985,6 +1011,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     if (mascotAnswer) mascotAnswer.textContent = 'Начнём с задачи: выберите учёбу, офис, экзамен или игры — я открою подходящие модели.';
+    setMascotView('tasks');
     setMascotOpen(true);
   };
 
@@ -1002,7 +1029,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     setMascotMood('happy', 1050);
-    setMascotOpen(!rentopMascot.classList.contains('is-open'));
+    const opening = !rentopMascot.classList.contains('is-open');
+    if (opening) { refreshMascotStage(); setMascotView('home'); }
+    setMascotOpen(opening);
   });
   rentopMascotClose?.addEventListener('click', () => setMascotOpen(false));
   const mascotHiddenStorageKey = 'rentop_mascot_hidden_v1';
@@ -1015,15 +1044,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   rentopMascotHide?.addEventListener('click', () => setMascotHidden(true));
   rentopMascotRestore?.addEventListener('click', () => {
     setMascotHidden(false);
+    refreshMascotStage();
+    setMascotView('home');
     setMascotOpen(true);
+  });
+  rentopMascotPanel?.querySelectorAll('[data-mascot-nav]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const view = button.dataset.mascotNav || 'home';
+      if (view === 'stage') refreshMascotStage();
+      setMascotView(view);
+    });
   });
   rentopMascotPanel?.querySelectorAll('[data-mascot-action]').forEach((button) => {
     button.addEventListener('click', () => {
       const action = button.dataset.mascotAction;
-      if (action === 'catalog') {
-        if (mascotAnswer) mascotAnswer.textContent = 'Выберите задачу выше — тогда я сразу покажу подходящие модели.';
-        return;
-      }
       if (action === 'next') { guideMascotNextStep(); return; }
       setMascotOpen(false);
       document.querySelector('#faq')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1128,7 +1162,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!didDrag && event.type === 'pointerup') {
       mascotTapHandled = true;
       setMascotMood('happy', 1050);
-      setMascotOpen(!rentopMascot?.classList.contains('is-open'));
+      const opening = !rentopMascot?.classList.contains('is-open');
+      if (opening) { refreshMascotStage(); setMascotView('home'); }
+      setMascotOpen(opening);
     }
   };
 
@@ -1338,14 +1374,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     event.preventDefault();
     syncEndDateFromDuration(manualDurationInput.value);
   });
-  rentalStartInput?.addEventListener('input', () => updateCalculator());
-  rentalStartInput?.addEventListener('change', () => updateCalculator());
-  rentalEndInput?.addEventListener('input', () => updateCalculator());
-  rentalEndInput?.addEventListener('change', () => updateCalculator());
+  rentalStartInput?.addEventListener('input', () => { updateCalculator(); refreshMascotStage(); });
+  rentalStartInput?.addEventListener('change', () => { updateCalculator(); refreshMascotStage(); });
+  rentalEndInput?.addEventListener('input', () => { updateCalculator(); refreshMascotStage(); });
+  rentalEndInput?.addEventListener('change', () => { updateCalculator(); refreshMascotStage(); });
   userPromoInput?.addEventListener('input', () => updateCalculator());
   deliveryChoiceButtons.forEach((button) => button.addEventListener('click', () => {
     if (deliveryTypeInput) deliveryTypeInput.value = button.dataset.deliveryOption || 'delivery';
     updateDeliveryNote();
+    refreshMascotStage();
   }));
   updateDeliveryNote();
 

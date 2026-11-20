@@ -21,6 +21,14 @@ const paymentDialogQr = document.getElementById('cabinet-payment-dialog-qr');
 const paymentDialogAmount = document.getElementById('cabinet-payment-dialog-amount');
 const paymentDialogExpiry = document.getElementById('cabinet-payment-dialog-expiry');
 const paymentDialogLink = document.getElementById('cabinet-payment-dialog-link');
+const cabinetTopik = document.getElementById('cabinet-topik');
+const cabinetTopikToggle = document.getElementById('cabinet-topik-toggle');
+const cabinetTopikClose = document.getElementById('cabinet-topik-close');
+const cabinetTopikPanel = document.getElementById('cabinet-topik-panel');
+const cabinetTopikMessage = document.getElementById('cabinet-topik-message');
+const cabinetTopikOpenOrder = document.getElementById('cabinet-topik-open-order');
+const cabinetTopikSupport = document.getElementById('cabinet-topik-support');
+const cabinetTopikConfetti = document.getElementById('cabinet-topik-confetti');
 let pendingPhone = '';
 let currentPreviewUrl = '';
 let paymentByOrder = new Map();
@@ -505,12 +513,16 @@ function pickupInstruction(order) {
   const accessSent = order.locker_status === 'access_sent';
   return `<section class="cabinet-pickup-instruction ${accessSent ? 'is-access-sent' : ''}"><strong>${accessSent ? '✓ Код доступа отправлен' : 'Получение через ARCHA POINT'}</strong><p class="cabinet-pickup-location">${escape(location)}${point ? ` · ${escape(point.hours)}` : ''}</p>${point ? `<a class="cabinet-map-link" href="${escape(point.map)}" target="_blank" rel="noopener">Открыть маршрут в 2ГИС ↗</a>` : ''}<p>${copy}</p><ol><li>Откройте ячейку только кодом из SMS ARCHA POINT или по инструкции менеджера.</li><li>После открытия снимите короткое видео ноутбука, корпуса, экрана, зарядки и комплекта.</li><li>Прикрепите видео ниже и подтвердите получение. При проблеме не подтверждайте получение — откройте обращение.</li></ol></section>`;
 }
-function topikGuide(order) {
-  const guide = {
+function topikGuideContent(order) {
+  return {
     pending_review: ['Топик: ждём документы', 'Загрузите четыре документа в заявке. После проверки менеджер подготовит защищённый QR-счёт.'],
     awaiting_payment: ['Топик: следующий шаг — оплата', 'Откройте QR-счёт только в личном кабинете Rentop. После подтверждения банка статус обновится здесь.'],
+    payment_review: ['Топик: проверяем оплату', 'Банк передал информацию о платеже. Не оплачивайте счёт повторно — следующий статус появится здесь.'],
     confirmed: ['Топик: выдача готовится', order.delivery_type === 'delivery' ? 'Менеджер согласует точный интервал и стоимость доставки. Указанное вами время — ориентир.' : 'Rentop передаёт заявку в ARCHA POINT. Дождитесь статуса о готовности ячейки.'],
+    awaiting_archa_reservation: ['Топик: резервируем ячейку', 'ARCHA POINT готовит ячейку. Пока не приезжайте к постамату — дождитесь следующего статуса.'],
+    awaiting_locker_loading: ['Топик: закладываем ноутбук', 'Менеджер помещает ноутбук и комплект в постамат. После готовности придёт код доступа.'],
     awaiting_pickup: ['Топик: получите ноутбук и снимите видео', order.delivery_type === 'delivery' ? 'Подтверждайте получение только после передачи ноутбука. Сначала снимите короткое видео комплекта.' : 'Следуйте инструкции с кодом ARCHA POINT, снимите видео и только потом подтвердите получение.'],
+    issued: ['Топик: подтвердите получение', 'Проверьте ноутбук и комплект, прикрепите короткое видео и подтвердите получение только после фактической передачи.'],
     in_use: ['Топик: аренда активна', 'Здесь можно продлить срок или оформить возврат. Перед возвратом заранее выберите удобный способ передачи.'],
     awaiting_return_reservation: ['Топик: готовим возврат', 'Следуйте выбранному способу возврата. Не передавайте ноутбук курьеру и не идите к постамату до инструкции Rentop.'],
     awaiting_return_dropoff: ['Топик: почти готово', 'Снимите видео состояния ноутбука и комплекта, затем завершите передачу выбранным способом.'],
@@ -518,8 +530,54 @@ function topikGuide(order) {
     returned: ['Топик: возврат принят в обработку', 'Менеджер проверит ноутбук и видео. После итогового осмотра аренда будет завершена.'],
     completed: ['Топик: аренда завершена', 'Спасибо! Квитанция и история заявки остаются доступны в этом кабинете.']
   }[order.status] || ['Топик: статус заявки', 'Откройте следующий доступный шаг в заявке или напишите менеджеру, если нужна помощь.'];
+}
+function topikGuide(order) {
+  const guide = topikGuideContent(order);
   const whatsapp = supportWhatsappUrl ? `<a class="cabinet-action ghost cabinet-whatsapp" href="${escape(supportWhatsappUrl)}?text=${encodeURIComponent(`Здравствуйте! Нужна помощь по заявке ${order.reference}.`)}" target="_blank" rel="noopener">Написать в WhatsApp</a>` : '';
   return `<aside class="cabinet-topik-guide" aria-label="Подсказка Топика"><img src="/assets/rentop-mini-mascot.png" alt="Топик, помощник Rentop"><div><span>ПОМОЩНИК RENTOP</span><strong>${guide[0]}</strong><p>${guide[1]}</p><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${escape(order.id)}">Задать вопрос менеджеру</button>${whatsapp}</div></div></aside>`;
+}
+function activeTopikOrder() {
+  const activeId = activeWorkspaceOrderId();
+  return cabinetOrders.find(order => String(order.id) === activeId)
+    || cabinetOrders.find(order => !['completed', 'cancelled', 'rejected'].includes(String(order.status || '')))
+    || cabinetOrders[0]
+    || null;
+}
+function setCabinetTopikOpen(open) {
+  if (!cabinetTopikPanel || !cabinetTopikToggle) return;
+  cabinetTopikPanel.hidden = !open;
+  cabinetTopikToggle.setAttribute('aria-expanded', String(open));
+}
+function updateCabinetTopik() {
+  const order = activeTopikOrder();
+  if (!cabinetTopikMessage || !cabinetTopik) return;
+  if (!order) {
+    cabinetTopikMessage.textContent = 'Откройте заявку — я коротко покажу текущий этап и следующее действие.';
+    cabinetTopik.classList.remove('is-farewell');
+    if (cabinetTopikOpenOrder) cabinetTopikOpenOrder.hidden = true;
+    return;
+  }
+  const guide = topikGuideContent(order);
+  cabinetTopikMessage.textContent = `${guide[0]}. ${guide[1]}`;
+  cabinetTopik.classList.toggle('is-farewell', order.status === 'completed');
+  if (cabinetTopikOpenOrder) {
+    cabinetTopikOpenOrder.hidden = false;
+    cabinetTopikOpenOrder.textContent = activeWorkspaceOrderId() ? 'Показать следующий шаг' : 'Открыть текущую заявку';
+    cabinetTopikOpenOrder.dataset.orderId = String(order.id);
+  }
+  if (cabinetTopikSupport) cabinetTopikSupport.dataset.orderId = String(order.id);
+}
+function celebrateTopikPayment(order) {
+  const payment = order?.extensionPayment || order?.payment;
+  if (!payment || payment.status !== 'paid' || !cabinetTopikConfetti) return;
+  const key = `rentop_topik_payment_celebrated_${order.id}_${payment.id || payment.payment_reference || 'paid'}`;
+  if (localStorage.getItem(key) === '1') return;
+  localStorage.setItem(key, '1');
+  cabinetTopikConfetti.replaceChildren(...Array.from({ length: 22 }, () => document.createElement('i')));
+  cabinetTopikConfetti.hidden = false;
+  cabinetTopikConfetti.classList.remove('is-running');
+  window.requestAnimationFrame(() => cabinetTopikConfetti.classList.add('is-running'));
+  window.setTimeout(() => { cabinetTopikConfetti.hidden = true; cabinetTopikConfetti.classList.remove('is-running'); }, 2100);
 }
 function actionPanel(order) {
   const canAct = order.status === 'in_use';
@@ -728,6 +786,7 @@ function openOrderWorkspace(orderId) {
   workspace.innerHTML = orderDetailsMarkup(order);
   rentalsEl.append(workspace);
   setWorkspaceMode(workspace);
+  updateCabinetTopik();
 }
 
 function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequired = false, promos = [], benefits = []) {
@@ -745,6 +804,8 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   cabinetOrders = Array.isArray(orders) ? orders : [];
   supportWhatsappUrl = whatsappUrl || '';
   paymentByOrder = new Map(cabinetOrders.filter(order => order.payment || order.extensionPayment).map(order => [String(order.id), order.extensionPayment || order.payment]));
+  updateCabinetTopik();
+  cabinetOrders.filter(order => (order.extensionPayment || order.payment)?.status === 'paid').slice(0, 1).forEach(celebrateTopikPayment);
   if (activePaymentOrderId) {
     const activePayment = paymentByOrder.get(activePaymentOrderId);
     if (!activePayment || activePayment.status !== 'awaiting_payment') {
@@ -896,6 +957,7 @@ rentalsEl?.addEventListener('click', event => {
     if (hasUnsavedDocumentDraft() && !window.confirm('Выбранные фото, видео и заполненные данные будут удалены. Вернуться к списку заявок?')) return;
     workspace?.remove();
     setWorkspaceMode();
+    updateCabinetTopik();
     return;
   }
   const closeCompletion = event.target.closest('[data-close-completion]');
@@ -1400,6 +1462,29 @@ archiveToggle?.addEventListener('click', () => {
   document.getElementById('cabinet-order-workspace')?.remove();
   setWorkspaceMode();
   showRentals(cabinetOrders, '', customerProfile, supportWhatsappUrl, offerSmsConsentRequired, customerPromos, customerBenefits);
+});
+cabinetTopikToggle?.addEventListener('click', () => {
+  const opening = cabinetTopikPanel?.hidden !== false;
+  updateCabinetTopik();
+  setCabinetTopikOpen(opening);
+});
+cabinetTopikClose?.addEventListener('click', () => setCabinetTopikOpen(false));
+cabinetTopikOpenOrder?.addEventListener('click', () => {
+  const orderId = cabinetTopikOpenOrder.dataset.orderId;
+  if (!orderId) return;
+  openOrderWorkspace(orderId);
+  document.getElementById('cabinet-order-workspace')?.scrollIntoView({ behavior:'smooth', block:'start' });
+  updateCabinetTopik();
+});
+cabinetTopikSupport?.addEventListener('click', () => {
+  const orderId = cabinetTopikSupport.dataset.orderId;
+  if (!orderId) return;
+  openOrderWorkspace(orderId);
+  window.requestAnimationFrame(() => {
+    const supportButton = [...document.querySelectorAll('#cabinet-order-workspace [data-panel="support"]')]
+      .find((button) => button.dataset.order === orderId);
+    supportButton?.click();
+  });
 });
 bindPhoneMask(phoneInput);
 loadSession();

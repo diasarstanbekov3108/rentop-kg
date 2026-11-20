@@ -37,7 +37,7 @@
   <!-- Fonts & Styles -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css?v=20261118-b2b-v2">
-    <link rel="stylesheet" href="css/premium.css?v=20261119-b2b-mobile">
+  <link rel="stylesheet" href="css/premium.css?v=20261120-topik-nav-v1">
 
   <!-- Микроразметка Schema.org для Google -->
   <script type="application/ld+json">
@@ -650,20 +650,31 @@
       <button class="rentop-mascot-close" type="button" aria-label="Закрыть помощника">×</button>
       <strong>Топик · помощник Rentop</strong>
       <span id="rentop-mascot-answer" role="status">Помогу подобрать ноутбук, пройти оформление и понять следующий шаг по аренде.</span>
-      <div class="rentop-mascot-tasks" aria-label="Подбор ноутбука с Топиком">
+      <div class="rentop-mascot-menu" data-mascot-view="home">
+        <button type="button" data-mascot-nav="tasks">Подобрать ноутбук</button>
+        <button type="button" data-mascot-nav="stage">Текущий этап</button>
+        <button type="button" data-mascot-nav="help">Помощь с заказом</button>
+      </div>
+      <div class="rentop-mascot-menu" data-mascot-view="tasks" hidden>
         <b>Для какой задачи?</b>
-        <div>
+        <div class="rentop-mascot-task-grid">
           <button type="button" data-mascot-task="study">Учёба</button>
           <button type="button" data-mascot-task="office">Офис</button>
           <button type="button" data-mascot-task="exam">Экзамен</button>
           <button type="button" data-mascot-task="gaming">Игры / монтаж</button>
         </div>
+        <button type="button" class="rentop-mascot-back" data-mascot-nav="home">Назад</button>
       </div>
-      <div class="rentop-mascot-actions" aria-label="Быстрые действия помощника">
-        <button type="button" data-mascot-action="catalog">Подобрать ноутбук</button>
-        <button type="button" data-mascot-action="next">Следующий шаг</button>
-        <button type="button" data-mascot-action="help">Помощь с заказом</button>
+      <div class="rentop-mascot-menu" data-mascot-view="stage" hidden>
+        <p class="rentop-mascot-stage" id="rentop-mascot-stage"></p>
+        <button type="button" data-mascot-action="next">Перейти к следующему шагу</button>
+        <button type="button" class="rentop-mascot-back" data-mascot-nav="home">Назад</button>
+      </div>
+      <div class="rentop-mascot-menu" data-mascot-view="help" hidden>
+        <p>Топик подскажет путь по сайту, а вопрос по заявке сразу передаст человеку.</p>
         <a id="rentop-mascot-whatsapp" href="https://wa.me/996707880857?text=%D0%97%D0%B4%D1%80%D0%B0%D0%B2%D1%81%D1%82%D0%B2%D1%83%D0%B9%D1%82%D0%B5%21%20%D0%9D%D1%83%D0%B6%D0%BD%D0%B0%20%D0%BF%D0%BE%D0%BC%D0%BE%D1%89%D1%8C%20%D1%81%20%D0%BF%D0%BE%D0%B4%D0%B1%D0%BE%D1%80%D0%BE%D0%BC%20%D0%BD%D0%BE%D1%83%D1%82%D0%B1%D1%83%D0%BA%D0%B0%20%D0%B2%20Rentop." target="_blank" rel="noopener">Написать в WhatsApp</a>
+        <button type="button" data-mascot-action="faq">Открыть FAQ</button>
+        <button type="button" class="rentop-mascot-back" data-mascot-nav="home">Назад</button>
       </div>
       <button class="rentop-mascot-hide" id="rentop-mascot-hide" type="button">Скрыть помощника</button>
     </div>
@@ -830,6 +841,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script type="module" src="js/app.js?v=20261118-b2b-v2"></script>
+  <script type="module" src="js/app.js?v=20261120-topik-nav-v1"></script>
 </body>
 </html>
