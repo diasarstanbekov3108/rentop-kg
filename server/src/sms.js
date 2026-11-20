@@ -1,6 +1,19 @@
 import { randomBytes } from 'node:crypto';
 
 const MAX_SMS_LENGTH = 800;
+const SEND_STATUS_DESCRIPTION = Object.freeze({
+  '1': 'ошибка формата запроса',
+  '2': 'неверные данные авторизации',
+  '3': 'IP-адрес сервера не разрешён у SMS-провайдера',
+  '4': 'недостаточно средств на балансе SMS-кабинета',
+  '5': 'имя отправителя не подтверждено у SMS-провайдера',
+  '6': 'текст сообщения заблокирован фильтром SMS-провайдера',
+  '7': 'некорректный номер получателя',
+  '8': 'некорректное время отправки',
+  '9': 'SMS-провайдер перегружен — повторите попытку через несколько секунд',
+  '10': 'провайдер отклонил повторную отправку',
+  '11': 'тестовый запрос обработан'
+});
 
 function xmlEscape(value) {
   return String(value)
@@ -57,7 +70,9 @@ export function createNikitaSmsClient(options) {
     const status = getTag(body, 'status');
     const message = getTag(body, 'message');
     if (status !== '0' && !(test && status === '11')) {
-      throw new Error(`Nikita SMS отклонил запрос (код ${status || 'неизвестен'}): ${message || 'без описания'}`);
+      const error = new Error(`Nikita SMS отклонил запрос (код ${status || 'неизвестен'}): ${message || SEND_STATUS_DESCRIPTION[status] || 'без описания'}`);
+      error.providerStatus = status;
+      throw error;
     }
     return { id, phone: providerPhone, accepted: status === '0', test, smsCount: Number(getTag(body, 'smscnt') || 0) };
   }

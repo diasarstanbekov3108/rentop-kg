@@ -547,8 +547,18 @@ export default async function handler(request, response) {
       const recent = await database.getRecentCabinetChallenge(phone);
       if (recent && new Date(recent.created_at).getTime() > Date.now() - 60_000) return json(response, 429, { error:'Код уже отправлен. Подождите минуту перед повторной отправкой.' });
       const otp = code();
-      await database.createCabinetChallenge({ phone, code_hash:hash(secret, `${phone}:${otp}`), expires_at:new Date(Date.now()+OTP_TTL_MS).toISOString() });
-      await createNikitaSmsClient(config.nikitaSms).send({ phone, text:`RENTOP.KG: код входа ${otp}. Никому не сообщайте код. Он действует 10 минут.` });
+      const challenge = await database.createCabinetChallenge({ phone, code_hash:hash(secret, `${phone}:${otp}`), expires_at:new Date(Date.now()+OTP_TTL_MS).toISOString() });
+      try {
+        await createNikitaSmsClient(config.nikitaSms).send({ phone, text:`RENTOP.KG: код входа ${otp}. Никому не сообщайте код. Он действует 10 минут.` });
+      } catch (error) {
+        // A failed provider request must never make a customer wait for a code
+        // that was never sent, or block their next retry for the cooldown.
+        if (challenge?.id) await database.consumeCabinetChallenge(challenge.id).catch(() => {});
+        if (error?.providerStatus === '4') {
+          return json(response, 503, { error:'Временный сбой отправки SMS: пополняем баланс сервиса. Напишите нам в WhatsApp — поможем оформить заявку.' });
+        }
+        throw error;
+      }
       return json(response, 200, { ok:true, deliveryChannel:config.nikitaOtpChannel });
     }
     if (payload.action === 'verify_code') {
