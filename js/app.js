@@ -555,6 +555,15 @@ function laptopShareUrl(laptopId) {
   return url.toString();
 }
 
+function clearSharedModelFromUrl() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has('model')) return false;
+  url.searchParams.delete('model');
+  url.hash = 'catalog';
+  window.history.replaceState({}, '', url);
+  return true;
+}
+
 function openCatalogForLaptop(laptopId, { keepShareLink = true } = {}) {
   const selected = laptops.find(laptop => String(laptop.id) === String(laptopId));
   if (!selected) {
@@ -1472,7 +1481,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     modal?.classList.remove('active');
     document.body.style.overflow = '';
     resetOrderSubmit();
+    if (clearSharedModelFromUrl()) document.getElementById('catalog')?.scrollIntoView({ behavior:'smooth', block:'start' });
   }
+
+  // Safari can restore the page from its back/forward cache after a customer
+  // leaves an unregistered deep link for the SMS screen. That snapshot used to
+  // retain the `model` URL but an empty catalogue. Return to a normal catalogue
+  // instead: close the old form, clear the direct-booking trigger and rehydrate
+  // the live list before the customer chooses another model.
+  window.addEventListener('pageshow', async (event) => {
+    if (!event.persisted || !new URLSearchParams(window.location.search).has('model')) return;
+    closeModal();
+    if (catalogPreviewGrid) catalogPreviewGrid.innerHTML = '<p class="catalog-loading" role="status"><span aria-hidden="true"></span>Возвращаем каталог…</p>';
+    try {
+      const freshLaptops = await fetchLaptops();
+      if (freshLaptops.length) {
+        laptops = freshLaptops;
+        filteredLaptops = [...freshLaptops];
+        catalogReady = true;
+        filterAndSearch();
+      } else {
+        renderCatalogPreview([]);
+      }
+    } catch {
+      renderCatalogPreview([]);
+    }
+    document.getElementById('catalog')?.scrollIntoView({ behavior:'auto', block:'start' });
+  });
 
   // FAQ Accordion
   document.querySelectorAll('.faq-question').forEach(question => {
