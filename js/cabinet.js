@@ -557,11 +557,6 @@ function topikGuideContent(order) {
     completed: ['Топик: аренда завершена', 'Спасибо! Квитанция и история заявки остаются доступны в этом кабинете.']
   }[order.status] || ['Топик: статус заявки', 'Откройте следующий доступный шаг в заявке или напишите менеджеру, если нужна помощь.'];
 }
-function topikGuide(order) {
-  const guide = topikGuideContent(order);
-  const whatsapp = supportWhatsappUrl ? `<a class="cabinet-action ghost cabinet-whatsapp" href="${escape(supportWhatsappUrl)}?text=${encodeURIComponent(`Здравствуйте! Нужна помощь по заявке ${order.reference}.`)}" target="_blank" rel="noopener">Написать в WhatsApp</a>` : '';
-  return `<aside class="cabinet-topik-guide" aria-label="Подсказка Топика"><img src="/assets/rentop-mini-mascot.png" alt="Топик, помощник Rentop"><div><span>ПОМОЩНИК RENTOP</span><strong>${guide[0]}</strong><p>${guide[1]}</p><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${escape(order.id)}">Задать вопрос менеджеру</button>${whatsapp}</div></div></aside>`;
-}
 function activeTopikOrder() {
   const activeId = activeWorkspaceOrderId();
   return cabinetOrders.find(order => String(order.id) === activeId)
@@ -787,7 +782,6 @@ function orderDetailsMarkup(order) {
   const journey = isCompleted ? ['Заявка', 'Оплата', 'Получение', 'Завершено'] : ['Заявка', 'Оплата', 'Подготовка', order.delivery_type === 'arca_locker' ? 'Выдача' : 'Доставка'];
   const activeJourneyStep = isCompleted ? 4 : Math.max(1, Math.min(4, state.step || 1));
   let journeyMarkup = `<div class="cabinet-stage-progress" aria-label="Текущий этап: ${escape(state.title)}">${journey.map((label, index) => { const done = isCompleted || index + 1 < activeJourneyStep; return `<div class="${done ? 'is-done' : index + 1 === activeJourneyStep ? 'is-active' : ''}"><i>${done ? '✓' : index + 1}</i><span>${label}</span></div>`; }).join('')}</div>`;
-  journeyMarkup += topikGuide(order);
   if (isCompleted) {
     const lastPayment = order.extensionPayment?.status === 'paid' ? order.extensionPayment : order.payment?.status === 'paid' ? order.payment : null;
     const paidAmount = lastPayment ? Number(lastPayment.amount || 0).toLocaleString('ru-RU') : '';
