@@ -350,9 +350,12 @@ function renderLaptops(items, append = false, target = catalogGrid) {
         <span class="availability-status ${statusClass}">
           ${availability.label}
         </span>
-        <button class="save-laptop ${isSaved ? 'is-saved' : ''}" data-id="${laptop.id}" type="button" aria-label="${isSaved ? 'Убрать из избранного' : 'Сохранить ноутбук'}" aria-pressed="${isSaved}">
-          ${isSaved ? '♥' : '♡'}
-        </button>
+        <div class="card-topline-actions">
+          <button class="catalog-share-button" data-share-laptop="${laptop.id}" type="button" aria-label="Скопировать ссылку на ${laptop.title}" title="Скопировать ссылку">↗</button>
+          <button class="save-laptop ${isSaved ? 'is-saved' : ''}" data-id="${laptop.id}" type="button" aria-label="${isSaved ? 'Убрать из избранного' : 'Сохранить ноутбук'}" aria-pressed="${isSaved}">
+            ${isSaved ? '♥' : '♡'}
+          </button>
+        </div>
       </div>
       <img 
         src="${laptop.image}" 
@@ -412,6 +415,25 @@ function renderLaptops(items, append = false, target = catalogGrid) {
       }
       saveSavedLaptops();
       filterAndSearch();
+    };
+  });
+
+  target.querySelectorAll('[data-share-laptop]').forEach(button => {
+    button.onclick = async () => {
+      const shareUrl = laptopShareUrl(button.dataset.shareLaptop);
+      const initialText = button.textContent;
+      try {
+        if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+        await navigator.clipboard.writeText(shareUrl);
+        button.textContent = '✓';
+        button.setAttribute('aria-label', 'Ссылка скопирована');
+      } catch {
+        window.prompt('Скопируйте ссылку на эту модель:', shareUrl);
+      }
+      window.setTimeout(() => {
+        button.textContent = initialText;
+        button.setAttribute('aria-label', 'Скопировать ссылку на модель');
+      }, 1800);
     };
   });
 
@@ -510,7 +532,14 @@ function setCatalogBrowser(open) {
   }
 }
 
-function openCatalogForLaptop(laptopId) {
+function laptopShareUrl(laptopId) {
+  const url = new URL('/', window.location.origin);
+  url.searchParams.set('model', String(laptopId));
+  url.hash = 'catalog';
+  return url.toString();
+}
+
+function openCatalogForLaptop(laptopId, { keepShareLink = true } = {}) {
   const selected = laptops.find(laptop => String(laptop.id) === String(laptopId));
   if (!selected) {
     setCatalogBrowser(true);
@@ -523,6 +552,7 @@ function openCatalogForLaptop(laptopId) {
   activeCategoryFilter = selected.category || 'rent';
   activeUseFilter = 'all';
   savedOnly = false;
+  if (keepShareLink) window.history.replaceState({}, '', laptopShareUrl(selected.id));
   categoryFilterButtons.forEach(button => button.classList.toggle('active', button.dataset.filter === activeCategoryFilter));
   useFilterButtons.forEach(button => button.classList.toggle('active', button.dataset.use === 'all'));
   filterAndSearch();
@@ -1299,6 +1329,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   availabilityLoaded = availability.ok;
   await getCabinetSession();
   updateOrderAuthUi();
+  const linkedLaptopId = new URLSearchParams(window.location.search).get('model');
+  if (linkedLaptopId && laptops.some(laptop => String(laptop.id) === String(linkedLaptopId))) {
+    openCatalogForLaptop(linkedLaptopId, { keepShareLink:false });
+  }
   const returnToBooking = new URLSearchParams(window.location.search).get('resume_booking') === '1';
   if (returnToBooking && cabinetSession) {
     try {

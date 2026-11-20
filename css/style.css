@@ -502,6 +502,10 @@ section {
   background: var(--accent-soft);
 }
 
+/* A manager can send a customer directly to one exact catalogue model. */
+.card-topline-actions{display:flex;align-items:center;gap:7px}.catalog-share-button{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:50%;background:rgba(15,23,42,.72);color:var(--text-muted);font-size:18px;line-height:1;cursor:pointer;transition:.2s ease}.catalog-share-button:hover{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+@media(min-width:350px) and (max-width:768px){.catalog-browser .card-topline .catalog-share-button{position:absolute;right:42px;pointer-events:auto}}
+
 .card:hover {
   transform: translateY(-4px);
   border-color: rgba(0, 212, 255, 0.4);
