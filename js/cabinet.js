@@ -3,6 +3,8 @@ const loading = document.getElementById('cabinet-loading');
 const dashboard = document.getElementById('cabinet-dashboard');
 const phoneForm = document.getElementById('phone-form');
 const codeForm = document.getElementById('code-form');
+const loginTitle = document.getElementById('cabinet-login-title');
+const loginCopy = document.getElementById('cabinet-login-copy');
 const phoneInput = document.getElementById('cabinet-phone');
 const codeInput = document.getElementById('cabinet-code');
 const statusEl = document.getElementById('cabinet-status');
@@ -180,6 +182,17 @@ function pendingBooking() {
 }
 function shouldResumeBooking() {
   return new URLSearchParams(window.location.search).get('return') === 'booking' && Boolean(pendingBooking()?.laptopId);
+}
+function syncBookingReturnLoginCopy() {
+  const saved = shouldResumeBooking() ? pendingBooking() : null;
+  if (!saved) {
+    if (loginTitle) loginTitle.textContent = 'Войти по номеру';
+    if (loginCopy) loginCopy.textContent = 'Мы отправим одноразовый код. Пароль не нужен.';
+    return;
+  }
+  const title = String(saved.laptopTitle || 'выбранный ноутбук').trim();
+  if (loginTitle) loginTitle.textContent = 'Подтвердите номер';
+  if (loginCopy) loginCopy.textContent = `Вы выбрали «${title}». После SMS-кода продолжим оформление этой же заявки.`;
 }
 const archaLocation = (value) => ARCHA_LOCATIONS.find(location => location.value === value) || null;
 const isValidFullName = (value) => String(value || '').trim().split(/\s+/).filter(Boolean).filter(part => part.length >= 2).length >= 3;
@@ -893,6 +906,7 @@ function showLogin() {
   if (cabinetHero) cabinetHero.hidden = false;
   loading.hidden = true;
   login.hidden = false;
+  syncBookingReturnLoginCopy();
 }
 async function loadSession() {
   const epoch = ++sessionViewEpoch;
