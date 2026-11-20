@@ -48,6 +48,7 @@ function persistHiddenCompletions() { localStorage.setItem(HIDDEN_COMPLETIONS_KE
 let showingArchivedOrders = false;
 const canArchiveOrder = order => ['completed', 'cancelled', 'rejected'].includes(String(order?.status || ''));
 const activeWorkspaceOrderId = () => String(rentalsEl?.querySelector('#cabinet-order-workspace')?.dataset.orderWorkspace || '');
+const PENDING_BOOKING_KEY = 'rentop-pending-booking-v1';
 // Prevent an older "check session" response from replacing a newer SMS login.
 let sessionViewEpoch = 0;
 const ARCHA_LOCATIONS = [
@@ -168,6 +169,18 @@ function rentalDeadline(order) {
   return null;
 }
 const escape = (value) => String(value || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+function pendingBooking() {
+  for (const storage of [window.sessionStorage, window.localStorage]) {
+    try {
+      const saved = JSON.parse(storage.getItem(PENDING_BOOKING_KEY) || 'null');
+      if (saved?.laptopId) return saved;
+    } catch { /* The return flow still works without a locally stored draft. */ }
+  }
+  return null;
+}
+function shouldResumeBooking() {
+  return new URLSearchParams(window.location.search).get('return') === 'booking' && Boolean(pendingBooking()?.laptopId);
+}
 const archaLocation = (value) => ARCHA_LOCATIONS.find(location => location.value === value) || null;
 const isValidFullName = (value) => String(value || '').trim().split(/\s+/).filter(Boolean).filter(part => part.length >= 2).length >= 3;
 const contentTypeForFile = (file) => {
@@ -816,11 +829,13 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   loading.hidden = true; login.hidden = true; dashboard.hidden = false;
   const fullName = String(profile?.full_name || '').trim();
   const hasValidProfileName = isValidFullName(fullName);
+  const returningToBooking = shouldResumeBooking();
+  const selectedBooking = returningToBooking ? pendingBooking() : null;
+  const selectedLaptopTitle = String(selectedBooking?.laptopTitle || 'выбранному ноутбуку').trim();
   document.getElementById('cabinet-greeting').textContent = fullName ? `Здравствуйте, ${fullName.split(' ')[1] || fullName}!` : 'Здравствуйте!';
-  const returningToBooking = new URLSearchParams(window.location.search).get('return') === 'booking';
   profileEl.innerHTML = hasValidProfileName
     ? `<div class="cabinet-profile-name"><span class="cabinet-profile-avatar" aria-hidden="true">${escape(fullName.split(' ').filter(Boolean).slice(0,2).map(part => part[0]).join('').toUpperCase() || 'R')}</span><p><strong>${escape(fullName)}</strong><span>Номер подтверждён · ${escape(phone)}</span></p></div>`
-    : `<form class="cabinet-profile-form" id="profile-form"><label for="profile-full-name">${returningToBooking ? 'Создайте профиль для оформления заявки' : 'Заполните ФИО для договора'}</label><div><input id="profile-full-name" name="fullName" autocomplete="name" placeholder="Фамилия Имя Отчество" required><button class="cabinet-action" type="submit">${returningToBooking ? 'Сохранить и продолжить' : 'Сохранить'}</button></div><p>Указывайте данные так же, как в документе. Номер уже подтверждён по SMS.</p></form>`;
+    : `<form class="cabinet-profile-form" id="profile-form"><label for="profile-full-name">${returningToBooking ? `Последний шаг для ${escape(selectedLaptopTitle)}` : 'Заполните ФИО для договора'}</label><div><input id="profile-full-name" name="fullName" autocomplete="name" placeholder="Фамилия Имя Отчество" required><button class="cabinet-action" type="submit">${returningToBooking ? 'Продолжить к заявке' : 'Сохранить'}</button></div><p>${returningToBooking ? 'Номер уже подтверждён по SMS. Укажите ФИО как в документе — и сразу вернём вас к выбранному ноутбуку.' : 'Указывайте данные так же, как в документе. Номер уже подтверждён по SMS.'}</p></form>`;
   const created = new URLSearchParams(window.location.search).get('created');
   dashboardNotice.hidden = !created;
   if (created) {
@@ -1443,6 +1458,11 @@ profileEl?.addEventListener('submit', async event => {
   const form = event.target; const button = form.querySelector('button'); button.disabled = true;
   try {
     await request('POST', { action:'save_profile', fullName:new FormData(form).get('fullName') });
+    if (shouldResumeBooking()) {
+      button.textContent = 'Возвращаемся к заявке…';
+      window.location.assign('/?resume_booking=1');
+      return;
+    }
     const fresh = await request('GET');
     if (fresh.authenticated) {
       showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos, fresh.benefits);

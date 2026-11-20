@@ -33,6 +33,30 @@ let archaSelectionMode = false;
 let cabinetSession = null;
 const CABINET_BOOKING_KEY = 'rentop-pending-booking-v1';
 
+// A new customer leaves the storefront briefly to confirm their phone. Keep
+// the selected model in both session and local storage: some mobile browsers
+// can discard one of them while handling an SMS or switching back to Safari.
+function persistPendingBooking(booking) {
+  const value = JSON.stringify(booking);
+  [window.sessionStorage, window.localStorage].forEach((storage) => {
+    try { storage.setItem(CABINET_BOOKING_KEY, value); } catch { /* Storage can be unavailable in private mode. */ }
+  });
+}
+function readPendingBooking() {
+  for (const storage of [window.sessionStorage, window.localStorage]) {
+    try {
+      const saved = JSON.parse(storage.getItem(CABINET_BOOKING_KEY) || 'null');
+      if (saved?.laptopId) return saved;
+    } catch { /* Try the other storage before treating the draft as absent. */ }
+  }
+  return null;
+}
+function clearPendingBooking() {
+  [window.sessionStorage, window.localStorage].forEach((storage) => {
+    try { storage.removeItem(CABINET_BOOKING_KEY); } catch { /* no-op */ }
+  });
+}
+
 // Каталог показывает небольшой набор за раз: это избавляет мобильный экран
 // от бесконечной ленты, но сохраняет доступ ко всем моделям.
 // On phones the storefront is a swipeable three-model carousel: the central
@@ -727,13 +751,14 @@ navAccountLogout?.addEventListener('click', async () => {
 function savePendingBooking() {
   if (!currentLaptop) return;
   const draft = currentLaptop.category === 'rent' ? currentRentalDraft() : {};
-  sessionStorage.setItem(CABINET_BOOKING_KEY, JSON.stringify({
+  persistPendingBooking({
     laptopId: currentLaptop.id,
+    laptopTitle: currentLaptop.title || '',
     deliveryType: deliveryTypeInput?.value || 'delivery',
     lockerAddress: selectedArchaLocation(),
     startDate: draft.startDate || '',
     endDate: draft.endDate || ''
-  }));
+  });
 }
 
 function redirectToCabinet() {
@@ -752,12 +777,13 @@ async function openOrderModal(id, { deliveryType = 'delivery' } = {}) {
     await getCabinetSession();
     if (!cabinetSession) {
       const today = todayIso();
-      sessionStorage.setItem(CABINET_BOOKING_KEY, JSON.stringify({
+      persistPendingBooking({
         laptopId: selectedLaptop.id,
+        laptopTitle: selectedLaptop.title || '',
         deliveryType,
         startDate: today,
         endDate: addDays(today, 2)
-      }));
+      });
       window.location.assign('/account?return=booking');
       return;
     }
@@ -1276,7 +1302,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const returnToBooking = new URLSearchParams(window.location.search).get('resume_booking') === '1';
   if (returnToBooking && cabinetSession) {
     try {
-      const saved = JSON.parse(sessionStorage.getItem(CABINET_BOOKING_KEY) || 'null');
+      const saved = readPendingBooking();
       if (saved?.laptopId) {
         openOrderModal(Number(saved.laptopId), { deliveryType: saved.deliveryType });
         if (rentalStartInput && saved.startDate) rentalStartInput.value = saved.startDate;
@@ -1285,7 +1311,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateCalculator();
       }
     } catch {
-      sessionStorage.removeItem(CABINET_BOOKING_KEY);
+      clearPendingBooking();
     }
     window.history.replaceState({}, '', window.location.pathname);
   }
@@ -1521,7 +1547,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           return;
         }
         if (!response.ok || !result.accountUrl) throw new Error(result.error || 'Не удалось создать заявку.');
-        sessionStorage.removeItem(CABINET_BOOKING_KEY);
+        clearPendingBooking();
         window.location.assign(result.accountUrl);
         return;
       } catch (error) {
