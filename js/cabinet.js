@@ -605,17 +605,27 @@ function updateCabinetTopik() {
   }
   if (cabinetTopikSupport) cabinetTopikSupport.dataset.orderId = String(order.id);
 }
-function celebrateTopikPayment(order) {
-  const payment = order?.extensionPayment || order?.payment;
-  if (!payment || payment.status !== 'paid' || !cabinetTopikConfetti) return;
-  const key = `rentop_topik_payment_celebrated_${order.id}_${payment.id || payment.payment_reference || 'paid'}`;
-  if (localStorage.getItem(key) === '1') return;
-  localStorage.setItem(key, '1');
-  cabinetTopikConfetti.replaceChildren(...Array.from({ length: 22 }, () => document.createElement('i')));
+function celebrateTopikMoment(order, moment, token = '') {
+  if (!order || !cabinetTopikConfetti) return;
+  // Keep the effect once per browser session rather than forever. A customer
+  // returning to the cabinet after a slow bank update should still see it.
+  const key = `rentop_topik_${moment}_shown_v2_${order.id}_${token || order.updated_at || 'event'}`;
+  try {
+    if (sessionStorage.getItem(key) === '1') return;
+    sessionStorage.setItem(key, '1');
+  } catch { /* The celebration can still play when storage is unavailable. */ }
+  cabinetTopikConfetti.replaceChildren(...Array.from({ length: 46 }, () => document.createElement('i')));
   cabinetTopikConfetti.hidden = false;
   cabinetTopikConfetti.classList.remove('is-running');
   window.requestAnimationFrame(() => cabinetTopikConfetti.classList.add('is-running'));
-  window.setTimeout(() => { cabinetTopikConfetti.hidden = true; cabinetTopikConfetti.classList.remove('is-running'); }, 2100);
+  window.setTimeout(() => { cabinetTopikConfetti.hidden = true; cabinetTopikConfetti.classList.remove('is-running'); }, 2600);
+}
+function celebrateTopikPayment(order) {
+  const payment = order?.extensionPayment || order?.payment;
+  if (payment?.status === 'paid') celebrateTopikMoment(order, 'payment', payment.id || payment.payment_reference || 'paid');
+}
+function celebrateTopikCompletion(order) {
+  if (order?.status === 'completed') celebrateTopikMoment(order, 'completion', order.returned_at || order.updated_at || 'completed');
 }
 function actionPanel(order) {
   const canAct = order.status === 'in_use';
@@ -850,6 +860,7 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   paymentByOrder = new Map(cabinetOrders.filter(order => order.payment || order.extensionPayment).map(order => [String(order.id), order.extensionPayment || order.payment]));
   updateCabinetTopik();
   cabinetOrders.filter(order => (order.extensionPayment || order.payment)?.status === 'paid').slice(0, 1).forEach(celebrateTopikPayment);
+  cabinetOrders.filter(order => order.status === 'completed').slice(0, 1).forEach(celebrateTopikCompletion);
   if (activePaymentOrderId) {
     const activePayment = paymentByOrder.get(activePaymentOrderId);
     if (!activePayment || activePayment.status !== 'awaiting_payment') {

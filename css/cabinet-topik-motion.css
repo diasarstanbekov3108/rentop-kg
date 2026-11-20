@@ -5,3 +5,6 @@
 .cabinet-topik.is-happy .cabinet-topik-happy,.cabinet-topik.is-farewell .cabinet-topik-happy{opacity:1;animation:topik-farewell .9s ease-in-out 2}
 @keyframes topik-think{0%,100%{transform:translateY(0) rotate(0)}45%{transform:translateY(-5px) rotate(-3deg)}}
 @media(prefers-reduced-motion:reduce){.cabinet-topik.is-farewell .cabinet-topik-happy,.cabinet-topik.is-thinking .cabinet-topik-think{animation:none}}
+
+/* Celebration must sit above the active rental card, browser-safe dialogs and Topik. */
+.cabinet-topik-confetti{z-index:3200}.cabinet-topik-confetti i{width:9px;height:14px}.cabinet-topik-confetti.is-running i:nth-child(6n){--x:-42vw;--y:30vh;animation-delay:.16s}.cabinet-topik-confetti.is-running i:nth-child(8n){--x:39vw;--y:27vh;animation-delay:.11s}.cabinet-topik-confetti.is-running i:nth-child(9n){--x:-9vw;--y:58vh;animation-delay:.27s}
