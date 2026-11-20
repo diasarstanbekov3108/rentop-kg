@@ -2279,6 +2279,7 @@ html.catalog-showcase-compact #catalog .catalog-showcase-featured .catalog-open-
   font-size: 14px;
   text-align: center;
 }
+.catalog-loading span{display:inline-block;width:17px;height:17px;margin:0 9px -4px 0;border:2px solid rgba(121,224,251,.26);border-top-color:#72e2ff;border-radius:50%;animation:catalog-loading-spin .72s linear infinite}@keyframes catalog-loading-spin{to{transform:rotate(360deg)}}
 
 /* A model opened from the storefront is centered and briefly outlined in the
    full catalogue, so the customer can immediately see the exact selection. */

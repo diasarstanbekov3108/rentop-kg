@@ -29,6 +29,7 @@ let submitInFlight = false;
 let catalogReady = false;
 let catalogRenderVersion = 0;
 let pendingFilterFrame = null;
+let catalogOpening = false;
 let archaSelectionMode = false;
 let cabinetSession = null;
 const CABINET_BOOKING_KEY = 'rentop-pending-booking-v1';
@@ -522,14 +523,29 @@ function syncCatalogShowcaseLayout() {
   document.documentElement.classList.toggle('catalog-showcase-compact', isCompact);
 }
 
-function setCatalogBrowser(open) {
+function setCatalogBrowser(open, { render = true } = {}) {
   if (!catalogBrowser) return;
   catalogBrowser.hidden = !open;
   document.body.style.overflow = open ? 'hidden' : '';
-  if (open) {
+  if (open && render) {
     renderLaptops(filteredLaptops, false, catalogGrid);
     catalogBrowser.querySelector('.catalog-browser-dialog')?.focus();
   }
+}
+
+function openCatalogWithLoading() {
+  if (!catalogBrowser || catalogOpening) return;
+  catalogOpening = true;
+  setCatalogBrowser(true, { render:false });
+  if (catalogGrid) {
+    catalogGrid.innerHTML = '<p class="catalog-loading" role="status"><span aria-hidden="true"></span>Открываем каталог…</p>';
+  }
+  catalogBrowser.querySelector('.catalog-browser-dialog')?.focus();
+  // Yield one frame so the spinner appears before a large catalogue is drawn.
+  window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+    if (!catalogBrowser.hidden) renderLaptops(filteredLaptops, false, catalogGrid);
+    catalogOpening = false;
+  }));
 }
 
 function laptopShareUrl(laptopId) {
@@ -542,7 +558,7 @@ function laptopShareUrl(laptopId) {
 function openCatalogForLaptop(laptopId, { keepShareLink = true } = {}) {
   const selected = laptops.find(laptop => String(laptop.id) === String(laptopId));
   if (!selected) {
-    setCatalogBrowser(true);
+    openCatalogWithLoading();
     return;
   }
 
@@ -556,7 +572,7 @@ function openCatalogForLaptop(laptopId, { keepShareLink = true } = {}) {
   categoryFilterButtons.forEach(button => button.classList.toggle('active', button.dataset.filter === activeCategoryFilter));
   useFilterButtons.forEach(button => button.classList.toggle('active', button.dataset.use === 'all'));
   filterAndSearch();
-  setCatalogBrowser(true);
+  openCatalogWithLoading();
 
   let attempts = 0;
   const focusSelectedCard = () => {
@@ -571,7 +587,7 @@ function openCatalogForLaptop(laptopId, { keepShareLink = true } = {}) {
     card.classList.add('catalog-card-target');
     window.setTimeout(() => card.classList.remove('catalog-card-target'), 2200);
   };
-  window.requestAnimationFrame(focusSelectedCard);
+  window.setTimeout(() => window.requestAnimationFrame(focusSelectedCard), 40);
 }
 
 // ========== PAGINATION & RENDER CONTROLLER ==========
@@ -1357,7 +1373,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   catalogPageNext?.addEventListener('click', () => changeCatalogPage(1));
   catalogShowcasePrev?.addEventListener('click', () => changeCatalogPage(-1));
   catalogShowcaseNext?.addEventListener('click', () => changeCatalogPage(1));
-  openFullCatalog?.addEventListener('click', () => setCatalogBrowser(true));
+  openFullCatalog?.addEventListener('click', () => openCatalogWithLoading());
   // Preview cards are rendered repeatedly after every filter change. Delegation
   // keeps the “Подробнее” action reliable for every current and future card.
   catalogPreviewGrid?.addEventListener('click', (event) => {
