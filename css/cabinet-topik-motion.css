@@ -1,0 +1,7 @@
+/* Stateful expressions for the draggable cabinet version of Topik. */
+.cabinet-topik-think,.cabinet-topik-happy{opacity:0}
+.cabinet-topik.is-thinking .cabinet-topik-work,.cabinet-topik.is-happy .cabinet-topik-work,.cabinet-topik.is-farewell .cabinet-topik-work{opacity:0}
+.cabinet-topik.is-thinking .cabinet-topik-think{opacity:1;animation:topik-think 1.1s ease-in-out 1}
+.cabinet-topik.is-happy .cabinet-topik-happy,.cabinet-topik.is-farewell .cabinet-topik-happy{opacity:1;animation:topik-farewell .9s ease-in-out 2}
+@keyframes topik-think{0%,100%{transform:translateY(0) rotate(0)}45%{transform:translateY(-5px) rotate(-3deg)}}
+@media(prefers-reduced-motion:reduce){.cabinet-topik.is-farewell .cabinet-topik-happy,.cabinet-topik.is-thinking .cabinet-topik-think{animation:none}}

@@ -48,6 +48,7 @@ let customerProfile = null;
 let orderRefreshInFlight = false;
 const HIDDEN_COMPLETIONS_KEY = 'rentop_hidden_completions_v1';
 const HIDDEN_CABINET_TOPIK_KEY = 'rentop_cabinet_topik_hidden_v1';
+const CABINET_TOPIK_POSITION_KEY = 'rentop_cabinet_topik_position_v1';
 const hiddenCompletionOrders = new Set((() => { try { return JSON.parse(localStorage.getItem(HIDDEN_COMPLETIONS_KEY) || '[]'); } catch { return []; } })());
 function persistHiddenCompletions() { localStorage.setItem(HIDDEN_COMPLETIONS_KEY, JSON.stringify([...hiddenCompletionOrders].slice(-100))); }
 let showingArchivedOrders = false;
@@ -304,10 +305,9 @@ function watchPayment(orderId) {
   paymentPollingTimer = window.setInterval(checkPayment, 3000);
 }
 async function refreshAccountIfSafe() {
-  // Never redraw an opened application in the background. On mobile a redraw
-  // can interrupt typing, a file picker or the reader's scroll position.
-  // Explicit submitted actions still refresh their result immediately.
-  if (hasOpenCabinetForm() || hasOpenOrderWorkspace() || orderRefreshInFlight) return;
+  // A form with selected files must never be redrawn. An opened read-only
+  // application is safe: showRentals restores it and the exact scroll position.
+  if (hasOpenCabinetForm() || orderRefreshInFlight) return;
   orderRefreshInFlight = true;
   const epoch = sessionViewEpoch;
   try {
@@ -330,7 +330,7 @@ function watchOrderUpdates(orders) {
   const epoch = sessionViewEpoch;
   orderPollingTimer = window.setInterval(async () => {
     if (epoch === sessionViewEpoch) await refreshAccountIfSafe();
-  }, 90000);
+  }, 15000);
 }
 
 function requestLabel(request) {
@@ -572,6 +572,14 @@ function setCabinetTopikOpen(open) {
   cabinetTopikPanel.hidden = !open;
   cabinetTopikToggle.setAttribute('aria-expanded', String(open));
 }
+let cabinetTopikMoodTimer;
+function setCabinetTopikMood(mood, duration = 1200) {
+  if (!cabinetTopik) return;
+  cabinetTopik.classList.remove('is-thinking', 'is-happy');
+  if (mood) cabinetTopik.classList.add(`is-${mood}`);
+  window.clearTimeout(cabinetTopikMoodTimer);
+  if (mood && duration) cabinetTopikMoodTimer = window.setTimeout(() => cabinetTopik?.classList.remove(`is-${mood}`), duration);
+}
 function setCabinetTopikHidden(hidden) {
   cabinetTopik?.toggleAttribute('hidden', hidden);
   if (cabinetTopikRestore) cabinetTopikRestore.hidden = !hidden;
@@ -589,6 +597,7 @@ function updateCabinetTopik() {
   const guide = topikGuideContent(order);
   cabinetTopikMessage.textContent = `${guide[0]}. ${guide[1]}`;
   cabinetTopik.classList.toggle('is-farewell', order.status === 'completed');
+  if (!cabinetTopikPanel?.hidden) setCabinetTopikMood(order.status === 'completed' ? 'happy' : 'thinking');
   if (cabinetTopikOpenOrder) {
     cabinetTopikOpenOrder.hidden = false;
     cabinetTopikOpenOrder.textContent = activeWorkspaceOrderId() ? 'Показать следующий шаг' : 'Открыть текущую заявку';
@@ -681,11 +690,16 @@ function actionPanel(order) {
     return `${documents}<section class="cabinet-completion"><strong>Спасибо, что выбрали Rentop!</strong><p>Мы благодарим вас за аренду и будем рады помочь снова. Менеджер может выдать персональный промокод на следующую аренду — он появится в разделе «Скидки и промокоды».</p>${feedbackActions}<div class="cabinet-actions"><button class="cabinet-action ghost" data-close-completion="${order.id}">Скрыть</button></div></section>`;
   }
   if (order.status === 'awaiting_return_collection') {
-    const destination = order.return_destination_address ? `Адрес приёма: ${escape(order.return_destination_address)}${order.return_destination_note ? ` · ${escape(order.return_destination_note)}` : ''}.` : 'Адрес приёма и дальнейшие инструкции сообщит менеджер после согласования.';
-    const awaitingExactDetails = !order.return_destination_address && ['customer_courier','self_delivery'].includes(returnMethod);
+    // A manager writes handoff details to both records. The request fallback
+    // supports older active orders where only one row received the update.
+    const handoffAddress = order.return_destination_address || openReturn?.return_destination_address || '';
+    const handoffNote = order.return_destination_note || openReturn?.return_destination_note || '';
+    const destination = handoffAddress ? `Адрес приёма: ${escape(handoffAddress)}${handoffNote ? ` · ${escape(handoffNote)}` : ''}.` : 'Адрес приёма и дальнейшие инструкции сообщит менеджер после согласования.';
+    const awaitingExactDetails = !handoffAddress && ['customer_courier','self_delivery'].includes(returnMethod);
     const methodText = returnMethod === 'rentop_courier' ? `Курьер Rentop: платная услуга для клиента. Адрес забора и желаемое время: ${escape(order.return_collection_address || 'уточняется')} · ${escape(order.return_preferred_time || 'по согласованию')}. Менеджер подтвердит стоимость и точный интервал до выезда.` : returnMethod === 'customer_courier' ? `Вызываете курьерскую службу сами и оплачиваете её напрямую. ${destination}` : `Самопривоз по согласованию. ${destination}`;
     const exactDetailsNotice = awaitingExactDetails ? '<div class="cabinet-request-state is-warning"><strong>Не вызывайте курьера пока</strong><p>Сначала дождитесь здесь точного адреса и времени приёма от Rentop. Только после этого оформляйте Яндекс или другую курьерскую службу.</p></div>' : '';
-    return `${documents}<section class="cabinet-pickup-flow"><strong>Возврат согласовывается</strong><p>${methodText}</p>${exactDetailsNotice}<p>Видео не завершает аренду: Rentop должен физически получить и осмотреть ноутбук.</p><div class="cabinet-actions">${returnVideo ? '<span class="cabinet-request-state is-success">✓ Видео отправлено. Ожидайте согласования передачи и фактической приёмки.</span>' : `<button class="cabinet-action secondary" data-panel="return-video" data-order="${order.id}">Прикрепить видео возврата</button>`}<button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Проблема с возвратом</button>${whatsapp}</div></section>`;
+    const title = handoffAddress ? 'Адрес для возврата готов' : 'Возврат согласовывается';
+    return `${documents}<section class="cabinet-pickup-flow"><strong>${title}</strong><p>${methodText}</p>${exactDetailsNotice}<p>Видео не завершает аренду: Rentop должен физически получить и осмотреть ноутбук.</p><div class="cabinet-actions">${returnVideo ? '<span class="cabinet-request-state is-success">✓ Видео отправлено. Ожидайте согласования передачи и фактической приёмки.</span>' : `<button class="cabinet-action secondary" data-panel="return-video" data-order="${order.id}">Прикрепить видео возврата</button>`}<button class="cabinet-action ghost" data-refresh-order-workspace="${order.id}">Обновить статус возврата</button><button class="cabinet-action ghost" data-change-return-method="${order.id}">Изменить способ возврата</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Проблема с возвратом</button>${whatsapp}</div></section>`;
   }
   if (rejectedExtension) {
     return `${documents}<div class="cabinet-request-state is-error"><strong>Продление не согласовано</strong><p>${escape(rejectedExtension.customer_message || 'Ноутбук недоступен на запрошенные даты. Выберите другой вариант или свяжитесь с менеджером.')}</p></div><section class="cabinet-active-actions"><strong>Что сделать дальше</strong><p>Можно повторить запрос с другим сроком либо подобрать свободную модель. Документы и текущая аренда сохранятся.</p><div class="cabinet-actions"><button class="cabinet-action" data-panel="extend" data-order="${order.id}" data-extension-days="${Number(rejectedExtension.requested_days || 3)}">Подобрать замену / повторить</button><button class="cabinet-action secondary" data-panel="return" data-order="${order.id}">Оформить возврат</button><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Уточнить у менеджера</button>${whatsapp}</div></section>`;
@@ -1178,6 +1192,21 @@ rentalsEl?.addEventListener('click', event => {
       .catch(error => { message(error.message, 'error'); returnAccessReceived.disabled = false; returnAccessReceived.textContent = originalText; });
     return;
   }
+  const changeReturnMethod = event.target.closest('[data-change-return-method]');
+  if (changeReturnMethod) {
+    if (!window.confirm('Изменить способ возврата? Предыдущие инструкции будут отменены. Нажимайте, только пока ноутбук ещё не передан курьеру или Rentop.')) return;
+    const originalText = changeReturnMethod.textContent;
+    changeReturnMethod.disabled = true;
+    changeReturnMethod.textContent = 'Открываем выбор…';
+    request('POST', { action:'change_return_method', orderId:changeReturnMethod.dataset.changeReturnMethod })
+      .then(async result => {
+        message(result.message, 'success');
+        const fresh = await request('GET');
+        if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos, fresh.benefits);
+      })
+      .catch(error => { message(error.message, 'error'); changeReturnMethod.disabled = false; changeReturnMethod.textContent = originalText; });
+    return;
+  }
   const refreshWorkspace = event.target.closest('[data-refresh-order-workspace]');
   if (refreshWorkspace) {
     const originalText = refreshWorkspace.textContent;
@@ -1500,9 +1529,11 @@ archiveToggle?.addEventListener('click', () => {
   showRentals(cabinetOrders, '', customerProfile, supportWhatsappUrl, offerSmsConsentRequired, customerPromos, customerBenefits);
 });
 cabinetTopikToggle?.addEventListener('click', () => {
+  if (cabinetTopikToggle.dataset.dragged === '1') { cabinetTopikToggle.dataset.dragged = ''; return; }
   const opening = cabinetTopikPanel?.hidden !== false;
   updateCabinetTopik();
   setCabinetTopikOpen(opening);
+  setCabinetTopikMood('happy', 1300);
 });
 cabinetTopikClose?.addEventListener('click', () => setCabinetTopikOpen(false));
 if (localStorage.getItem(HIDDEN_CABINET_TOPIK_KEY) === '1') setCabinetTopikHidden(true);
@@ -1511,6 +1542,45 @@ cabinetTopikRestore?.addEventListener('click', () => {
   setCabinetTopikHidden(false);
   updateCabinetTopik();
   setCabinetTopikOpen(true);
+});
+let cabinetTopikDrag = null;
+function setCabinetTopikPosition(left, top, persist = false) {
+  if (!cabinetTopik) return;
+  const width = cabinetTopik.offsetWidth || 84;
+  const height = cabinetTopik.offsetHeight || 84;
+  const nextLeft = Math.max(8, Math.min(window.innerWidth - width - 8, left));
+  const nextTop = Math.max(70, Math.min(window.innerHeight - height - 8, top));
+  cabinetTopik.style.left = `${Math.round(nextLeft)}px`;
+  cabinetTopik.style.top = `${Math.round(nextTop)}px`;
+  cabinetTopik.style.right = 'auto';
+  cabinetTopik.style.bottom = 'auto';
+  if (persist) {
+    try { localStorage.setItem(CABINET_TOPIK_POSITION_KEY, JSON.stringify({ left:nextLeft, top:nextTop })); } catch { /* Position remains usable for this visit. */ }
+  }
+}
+try {
+  const savedTopikPosition = JSON.parse(localStorage.getItem(CABINET_TOPIK_POSITION_KEY) || 'null');
+  if (Number.isFinite(savedTopikPosition?.left) && Number.isFinite(savedTopikPosition?.top)) setCabinetTopikPosition(savedTopikPosition.left, savedTopikPosition.top);
+} catch { localStorage.removeItem(CABINET_TOPIK_POSITION_KEY); }
+cabinetTopikToggle?.addEventListener('pointerdown', event => {
+  if (event.button !== 0 || !cabinetTopik) return;
+  const rect = cabinetTopik.getBoundingClientRect();
+  cabinetTopikDrag = { pointerId:event.pointerId, startX:event.clientX, startY:event.clientY, left:rect.left, top:rect.top, moved:false };
+  try { cabinetTopikToggle.setPointerCapture(event.pointerId); } catch { /* Window events finish dragging if capture is rejected. */ }
+});
+window.addEventListener('pointermove', event => {
+  if (!cabinetTopikDrag || event.pointerId !== cabinetTopikDrag.pointerId) return;
+  const dx = event.clientX - cabinetTopikDrag.startX;
+  const dy = event.clientY - cabinetTopikDrag.startY;
+  if (Math.abs(dx) + Math.abs(dy) < 4) return;
+  cabinetTopikDrag.moved = true;
+  setCabinetTopikOpen(false);
+  setCabinetTopikPosition(cabinetTopikDrag.left + dx, cabinetTopikDrag.top + dy, true);
+}, { passive:true });
+window.addEventListener('pointerup', event => {
+  if (!cabinetTopikDrag || event.pointerId !== cabinetTopikDrag.pointerId) return;
+  if (cabinetTopikDrag.moved && cabinetTopikToggle) cabinetTopikToggle.dataset.dragged = '1';
+  cabinetTopikDrag = null;
 });
 cabinetTopikOpenOrder?.addEventListener('click', () => {
   const orderId = cabinetTopikOpenOrder.dataset.orderId;

@@ -186,7 +186,7 @@ export default async function handler(request, response) {
       response.setHeader('Set-Cookie', [sessionCookie(COOKIE, '', 0), sessionCookie(COMPAT_COOKIE, '', 0)]);
       return json(response, 200, { ok:true });
     }
-    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'delete_draft_document' || payload.action === 'create_document_download' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'request_offer_sms_consent' || payload.action === 'verify_offer_sms_consent' || payload.action === 'save_profile' || payload.action === 'save_residence_address' || payload.action === 'save_delivery_preferences' || payload.action === 'extension_request' || payload.action === 'replacement_request' || payload.action === 'cancel_extension_request' || payload.action === 'early_return_request' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup_access_received' || payload.action === 'confirm_pickup' || payload.action === 'confirm_return_access_received' || payload.action === 'confirm_return_dropoff' || payload.action === 'submit_feedback') {
+    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'delete_draft_document' || payload.action === 'create_document_download' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'request_offer_sms_consent' || payload.action === 'verify_offer_sms_consent' || payload.action === 'save_profile' || payload.action === 'save_residence_address' || payload.action === 'save_delivery_preferences' || payload.action === 'extension_request' || payload.action === 'replacement_request' || payload.action === 'cancel_extension_request' || payload.action === 'early_return_request' || payload.action === 'change_return_method' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup_access_received' || payload.action === 'confirm_pickup' || payload.action === 'confirm_return_access_received' || payload.action === 'confirm_return_dropoff' || payload.action === 'submit_feedback') {
       const session = await verifySession();
       if (!session) return json(response, 401, { error:'Сессия истекла. Войдите в кабинет снова.', code:'AUTH_REQUIRED' });
       if (payload.action === 'save_profile') {
@@ -492,6 +492,16 @@ export default async function handler(request, response) {
         await database.createEvent({ order_id:order.id, event_type:'customer_cancelled_extension_from_cabinet', actor_type:'customer', metadata:{ request_id:extension.id } });
         await notifyManager(`↩️ Клиент отменил запрос продления\n\nЗаявка ${orderRef(order)} · ${laptop?.title || 'Ноутбук'}\nТеперь можно оформить возврат, если он нужен.`);
         return json(response, 200, { ok:true, message:'Запрос продления отменён. Теперь можно выбрать возврат ноутбука.' });
+      }
+      if (payload.action === 'change_return_method') {
+        if (order.status !== 'awaiting_return_collection' || !['rentop_courier','customer_courier','self_delivery'].includes(order.return_method)) return json(response, 409, { error:'Способ возврата можно изменить только до передачи ноутбука курьеру или Rentop.' });
+        const activeReturn = (await database.listCustomerRequests(order.id)).find(item => item.kind === 'early_return' && ['open','in_progress'].includes(item.status));
+        if (activeReturn) await database.updateCustomerRequest(activeReturn.id, { status:'cancelled' });
+        const nextStatus = order.rental_started_at ? 'in_use' : 'issued';
+        await database.updateOrder(order.id, { status:nextStatus, return_method:null, return_locker_address:null, return_collection_address:null, return_contact_name:null, return_contact_phone:null, return_preferred_time:null, return_delivery_payer:null, return_destination_address:null, return_destination_note:null });
+        await database.createEvent({ order_id:order.id, event_type:'customer_changed_return_method_from_cabinet', actor_type:'customer', metadata:{ previous_return_method:order.return_method } });
+        await notifyManager(`↩️ Клиент изменяет способ возврата\n\nЗаявка ${orderRef(order)} · ${laptop?.title || 'Ноутбук'}\nПредыдущий способ: ${order.return_method}\nКлиент вернулся к выбору. Не направляйте курьера и не выдавайте код до нового запроса.`);
+        return json(response, 200, { ok:true, message:'Предыдущий способ возврата отменён. Выберите новый способ передачи ноутбука.' });
       }
       if (payload.action === 'early_return_request') {
         const note = String(payload.message || '').trim().slice(0, 500);
