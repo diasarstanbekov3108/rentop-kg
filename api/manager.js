@@ -108,13 +108,14 @@ export default async function handler(request, response) {
       // dashboard made seven database reads for each order on every 5-second
       // refresh, which could starve the panel right after a document upload.
       const orderIds = orders.map(order => order.id);
-      const [laptops, allDocuments, allRequests, allPayments, allSupportCases, returnHandoffEvents, allBenefits] = await Promise.all([
+      const [laptops, allDocuments, allRequests, allPayments, allSupportCases, returnHandoffEvents, testOrderEvents, allBenefits] = await Promise.all([
         database.listLaptopsByIds(orders.map(order => order.laptop_id)).catch(() => []),
         database.listOrderDocumentsForOrders(orderIds).catch(() => []),
         database.listCustomerRequestsForOrders(orderIds).catch(() => []),
         database.listOrderPaymentsForOrders(orderIds).catch(() => []),
         database.listOrderSupportCasesForOrders(orderIds).catch(() => []),
         database.listOrdersWithEvent(orderIds, 'manager_prepared_archa_return_handoff_from_web').catch(() => []),
+        database.listOrdersWithEvent(orderIds, 'chief_admin_marked_test_order_from_web').catch(() => []),
         database.listBenefitVerificationsForPhones(orders.map(order => order.customer_phone)).catch(() => [])
       ]);
       const by = (items, key) => (items || []).reduce((map, item) => {
@@ -130,6 +131,7 @@ export default async function handler(request, response) {
       const supportCasesByOrder = by(allSupportCases, 'order_id');
       const benefitsByPhone = by(allBenefits, 'phone');
       const returnHandoffOrders = new Set((returnHandoffEvents || []).map(event => String(event.order_id)));
+      const testOrderIds = new Set((testOrderEvents || []).map(event => String(event.order_id)));
       const hydrated = orders.map(order => {
         const laptop = laptopById.get(String(order.laptop_id));
         const documents = documentsByOrder.get(String(order.id)) || [];
@@ -148,6 +150,7 @@ export default async function handler(request, response) {
           payments,
           benefits,
           supportCases,
+          is_test:testOrderIds.has(String(order.id)),
           returnHandoffPrepared:returnHandoffOrders.has(String(order.id))
         };
       });
@@ -424,8 +427,29 @@ export default async function handler(request, response) {
       await database.createEvent({ order_id:order.id, event_type:'manager_rejected_all_documents_from_web', actor_type:'manager', metadata:{ count:pending.length, reviewer_note:note } }).catch(error => console.error('Manager rejection audit event failed:', error.message));
       return reply(response, 200, { ok:true, documents:reviewed, note });
     }
-    if (payload.action === 'delete_test_order') return reply(response, 403, { error:'Удаление заявок из рабочей панели отключено. Для отмены используйте штатный статус, чтобы история и документы остались в учёте.' });
-    if (payload.action === 'clear_test_orders') return reply(response, 403, { error:'Массовое удаление заявок из рабочей панели отключено. Историю аренды нужно сохранять для контроля и разборов.' });
+    if (payload.action === 'mark_test_order') {
+      if (!isChiefAdmin) return reply(response, 403, { error:'Помечать тестовые заявки может только главный администратор.' });
+      const order = await database.getOrder(String(payload.orderId || ''));
+      if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
+      if (['awaiting_pickup','issued','in_use','awaiting_return_reservation','awaiting_return_dropoff','awaiting_return_collection','returned'].includes(order.status)) return reply(response, 409, { error:'Нельзя пометить как тестовую заявку с выданным или активным ноутбуком.' });
+      const alreadyMarked = await database.hasOrderEvent(order.id, 'chief_admin_marked_test_order_from_web');
+      if (!alreadyMarked) await database.createEvent({ order_id:order.id, event_type:'chief_admin_marked_test_order_from_web', actor_type:'chief_admin', metadata:{ manager_phone:session.phone } });
+      return reply(response, 200, { ok:true, message:'Заявка помечена как тестовая. Теперь её можно удалить отдельным действием.' });
+    }
+    if (payload.action === 'delete_test_order') {
+      if (!isChiefAdmin) return reply(response, 403, { error:'Удалять тестовые заявки может только главный администратор.' });
+      const order = await database.getOrder(String(payload.orderId || ''));
+      if (!order) return reply(response, 404, { error:'Заявка уже удалена или не найдена.' });
+      const expectedReference = String(order.id).slice(0, 8).toUpperCase();
+      if (String(payload.confirmation || '').trim().toUpperCase() !== expectedReference) return reply(response, 400, { error:`Для удаления введите номер заявки: ${expectedReference}` });
+      const markedTest = await database.hasOrderEvent(order.id, 'chief_admin_marked_test_order_from_web');
+      if (!markedTest) return reply(response, 409, { error:'Сначала явно пометьте эту заявку как тестовую.' });
+      if (['awaiting_pickup','issued','in_use','awaiting_return_reservation','awaiting_return_dropoff','awaiting_return_collection','returned'].includes(order.status)) return reply(response, 409, { error:'Нельзя удалить заявку с выданным или активным ноутбуком.' });
+      const documents = await database.listOrderDocuments(order.id);
+      await Promise.all(documents.map(document => document.storage_path ? database.deleteDocumentFile(document.storage_path).catch(error => console.error('Test document storage cleanup failed:', error.message)) : Promise.resolve()));
+      await database.deleteOrder(order.id);
+      return reply(response, 200, { ok:true, message:'Тестовая заявка и её прикреплённые файлы удалены.' });
+    }
     if (payload.action === 'check_bakai_connection') {
       await verifyBakaiToken(config);
       return reply(response, 200, { ok:true, message:'Токен Bakai сохранён. Для проверки доступа создайте тестовый QR на 1 сом.' });

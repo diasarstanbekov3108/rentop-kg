@@ -33,6 +33,10 @@ const cabinetTopikSupport = document.getElementById('cabinet-topik-support');
 const cabinetTopikHide = document.getElementById('cabinet-topik-hide');
 const cabinetTopikRestore = document.getElementById('cabinet-topik-restore');
 const cabinetTopikConfetti = document.getElementById('cabinet-topik-confetti');
+const FORM_TARGET_LABELS = Object.freeze({
+  identity_front:'лицевую сторону ID', identity_back:'обратную сторону ID', selfie:'селфи с документом', supporting:'подтверждающий документ', benefit_proof:'документ для льготы', issue_video:'видео получения', return_video:'видео возврата',
+  fullName:'ФИО', deliveryAddress:'адрес доставки', deliveryPreferredTime:'время доставки', lockerAddress:'точку ARCHA POINT', residenceAddress:'адрес проживания', supportingType:'тип подтверждающего документа', documentConsent:'согласие на передачу документов', offerConsent:'согласие с офертой', offerSms:'подтверждение оферты по SMS'
+});
 let pendingPhone = '';
 let currentPreviewUrl = '';
 let paymentByOrder = new Map();
@@ -81,6 +85,18 @@ const formatPhone = (value, masked = false) => {
 };
 function bindPhoneMask(input) { if (!input) return; const update = () => { input.value = formatPhone(input.value, true); }; input.addEventListener('focus', update); input.addEventListener('input', update); input.addEventListener('keydown', event => { if (input.selectionStart <= 4 && ['Backspace', 'Delete'].includes(event.key)) event.preventDefault(); }); update(); }
 const message = (text = '', kind = '') => { statusEl.textContent = text; statusEl.className = `cabinet-status${kind ? ` is-${kind}` : ''}`; };
+function focusDocumentFormTarget(form, targetName) {
+  if (!form || !targetName) return;
+  const target = targetName === 'offerSms'
+    ? form.querySelector('[data-request-offer-sms]')
+    : form.elements[targetName];
+  if (!target) return;
+  const holder = target.closest('.cabinet-file-control, .cabinet-offer-sms, .cabinet-document-consent, .cabinet-delivery-inline, .cabinet-benefit-inline, label') || target;
+  holder.classList.add('is-attention');
+  holder.scrollIntoView({ behavior:'smooth', block:'center' });
+  window.setTimeout(() => holder.classList.remove('is-attention'), 1800);
+  if (target.type !== 'file' && typeof target.focus === 'function') window.setTimeout(() => target.focus({ preventScroll:true }), 280);
+}
 const request = async (method, payload, timeoutMs = 20000) => {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -1368,6 +1384,12 @@ rentalsEl?.addEventListener('change', event => {
     video.src = objectUrl;
   }
 });
+rentalsEl?.addEventListener('click', event => {
+  const targetButton = event.target.closest('[data-form-error-target]');
+  if (!targetButton) return;
+  event.preventDefault();
+  focusDocumentFormTarget(targetButton.closest('[data-document-upload]'), targetButton.dataset.formErrorTarget);
+});
 rentalsEl?.addEventListener('submit', async event => {
   const documentForm = event.target.closest('[data-document-upload]');
   if (documentForm) {
@@ -1377,25 +1399,27 @@ rentalsEl?.addEventListener('submit', async event => {
     const files = ['identity_front', 'identity_back', 'selfie', 'supporting', 'benefit_proof', 'issue_video', 'return_video'].map(kind => ({ kind, file:documentForm.elements[kind]?.files?.[0] })).filter(item => item.file);
     const isReplacement = documentForm.dataset.documentReplacement === '1';
     const isEvidence = documentForm.dataset.evidenceUpload === 'true';
-    const formError = (text, fieldName = '') => {
+    const formError = (text, fieldNames = []) => {
       documentForm.querySelectorAll('[aria-invalid="true"]').forEach(field => { field.removeAttribute('aria-invalid'); field.classList.remove('is-invalid'); });
       const output = documentForm.querySelector('.cabinet-form-error') || document.createElement('p');
-      output.className = 'cabinet-form-error'; output.textContent = text;
+      const targets = (Array.isArray(fieldNames) ? fieldNames : [fieldNames]).filter(Boolean);
+      output.className = 'cabinet-form-error';
+      output.innerHTML = `<span>${escape(text)}</span>${targets.length ? `<span class="cabinet-form-error-actions">${targets.map(name => `<button type="button" data-form-error-target="${escape(name)}">Перейти: ${escape(FORM_TARGET_LABELS[name] || 'к полю')}</button>`).join('')}</span>` : ''}`;
       if (!output.parentElement) documentForm.append(output);
-      const field = fieldName ? documentForm.elements[fieldName] : null;
+      const field = targets[0] ? documentForm.elements[targets[0]] : null;
       if (field) { field.setAttribute('aria-invalid', 'true'); field.classList.add('is-invalid'); }
       output.scrollIntoView({ behavior:'auto', block:'nearest' });
     };
     const titles = { identity_front:'лицевую сторону паспорта / ID', identity_back:'обратную сторону паспорта / ID', selfie:'селфи с документом', supporting:'официальное подтверждение', benefit_proof:'подтверждение льготы', issue_video:'видео получения', return_video:'видео возврата' };
     const missingKinds = requiredKinds.filter(kind => !files.some(item => item.kind === kind));
-    if (missingKinds.length) return formError(`Выберите: ${missingKinds.map(kind => titles[kind] || kind).join(', ')}.`);
-    if (!isEvidence && !documentForm.elements.documentConsent?.checked) return formError('Отметьте согласие на передачу документов Rentop.');
-    if (!isEvidence && !isReplacement && !documentForm.elements.offerConsent?.checked) return formError('Отметьте согласие с публичной офертой.');
-    if (!isEvidence && !isReplacement && offerSmsConsentRequired && documentForm.dataset.offerSmsVerified !== '1') return formError('Подтвердите оферту кодом из SMS — нажмите «Получить код согласия» и введите 6 цифр.');
+    if (missingKinds.length) return formError(`Выберите: ${missingKinds.map(kind => titles[kind] || kind).join(', ')}. Нажмите нужную кнопку ниже — покажем место загрузки.`, missingKinds);
+    if (!isEvidence && !documentForm.elements.documentConsent?.checked) return formError('Отметьте согласие на передачу документов Rentop.', 'documentConsent');
+    if (!isEvidence && !isReplacement && !documentForm.elements.offerConsent?.checked) return formError('Отметьте согласие с публичной офертой.', 'offerConsent');
+    if (!isEvidence && !isReplacement && offerSmsConsentRequired && documentForm.dataset.offerSmsVerified !== '1') return formError('Подтвердите оферту кодом из SMS — нажмите «Получить код согласия» и введите 6 цифр.', 'offerSms');
     const supporting = files.find(item => item.kind === 'supporting');
-    if (supporting && !documentForm.elements.supportingType?.value) return formError('Выберите тип официального подтверждающего документа.');
+    if (supporting && !documentForm.elements.supportingType?.value) return formError('Выберите тип официального подтверждающего документа.', 'supportingType');
     const benefitProof = files.find(item => item.kind === 'benefit_proof');
-    if (!isEvidence && !isReplacement && documentForm.elements.benefitType?.value && !benefitProof) return formError('Для социальной скидки приложите подтверждающий документ или выберите «Не использовать социальную скидку».');
+    if (!isEvidence && !isReplacement && documentForm.elements.benefitType?.value && !benefitProof) return formError('Для социальной скидки приложите подтверждающий документ или выберите «Не использовать социальную скидку».', 'benefit_proof');
     const deliveryAddress = String(documentForm.elements.deliveryAddress?.value || '').trim();
     const deliveryPreferredTime = String(documentForm.elements.deliveryPreferredTime?.value || '').trim();
     const lockerAddress = String(documentForm.elements.lockerAddress?.value || '').trim();
@@ -1405,7 +1429,7 @@ rentalsEl?.addEventListener('submit', async event => {
     const residenceAddress = String(documentForm.elements.residenceAddress?.value || '').trim();
     if (!isEvidence && !isReplacement && (residenceAddress.length < 15 || !/\d/.test(residenceAddress))) return formError('Укажите полный адрес проживания: город, район, улицу, номер дома и квартиру.', 'residenceAddress');
     const fullName = String(documentForm.elements.fullName?.value || '').trim();
-    if (!isEvidence && !isReplacement && !isValidFullName(customerProfile?.full_name) && !isValidFullName(fullName)) return formError('Укажите фамилию, имя и отчество — как в документе.');
+    if (!isEvidence && !isReplacement && !isValidFullName(customerProfile?.full_name) && !isValidFullName(fullName)) return formError('Укажите фамилию, имя и отчество — как в документе.', 'fullName');
     const unsupported = files.find(({ file }) => !['image/jpeg', 'image/png', 'application/pdf', 'video/mp4', 'video/quicktime'].includes(contentTypeForFile(file)));
     if (unsupported) return formError(`Файл «${unsupported.file.name}» имеет неподдерживаемый формат. Нужен JPG, PNG или PDF.`);
     button.disabled = true;
