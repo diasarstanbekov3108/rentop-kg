@@ -74,7 +74,7 @@ export function loadConfig(env = process.env) {
     // Keep direct support available even if the optional Vercel variable was
     // not configured yet. It may still be overridden without a code change.
     rentopWhatsappPhone: String(env.RENTOP_WHATSAPP_PHONE || '996707880857').replace(/\D/g, ''),
-    offerVersion: env.OFFER_VERSION || 'draft-2026-09-25',
+    offerVersion: env.OFFER_VERSION || '2026-11-22',
     offerUrl: env.OFFER_URL || '',
     // Для новых заявок SMS-подтверждение оферты обязательно. Временно
     // отключить его можно только явным OFFER_SMS_CONSENT_REQUIRED=false.

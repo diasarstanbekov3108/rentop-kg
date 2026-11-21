@@ -16,7 +16,8 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const SHORT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const EXTENDABLE_STATUSES = new Set(['issued', 'in_use']);
 const RETURNABLE_STATUSES = new Set(['issued', 'in_use']);
-const DOCUMENT_TYPES = new Set(['identity', 'identity_front', 'identity_back', 'selfie', 'supporting', 'issue_video', 'return_video', 'benefit_proof']);
+const DOCUMENT_TYPES = new Set(['identity', 'identity_front', 'identity_back', 'selfie', 'supporting', 'issue_video', 'return_video', 'benefit_proof', 'alternative_security_video', 'alternative_security_address', 'alternative_security_work', 'alternative_security_study']);
+const ALTERNATIVE_SECURITY_TYPES = new Set(['alternative_security_video', 'alternative_security_address', 'alternative_security_work', 'alternative_security_study']);
 const BENEFIT_TYPES = new Set(['student', 'pensioner', 'disability']);
 const DOCUMENT_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'application/pdf', 'video/mp4', 'video/quicktime']);
 const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024;
@@ -36,7 +37,7 @@ function discountForTerm(days, benefits = []) {
   return Math.min(40, tariff + benefit);
 }
 function orderRef(order) { return String(order.id || '').slice(0, 8).toUpperCase(); }
-function documentLabel(kind) { return ({ identity:'Паспорт или ID-карта', identity_front:'Паспорт или ID-карта — лицевая сторона', identity_back:'Паспорт или ID-карта — обратная сторона', selfie:'Селфи с документом', supporting:'Официальный подтверждающий документ', issue_video:'Видео до получения', return_video:'Видео возврата', benefit_proof:'Документ для социальной скидки' }[kind] || 'Документ'); }
+function documentLabel(kind) { return ({ identity:'Паспорт или ID-карта', identity_front:'Паспорт или ID-карта — лицевая сторона', identity_back:'Паспорт или ID-карта — обратная сторона', selfie:'Селфи с документом', supporting:'Официальный подтверждающий документ', issue_video:'Видео до получения', return_video:'Видео возврата', benefit_proof:'Документ для социальной скидки', alternative_security_video:'Видеообращение арендатора', alternative_security_address:'Подтверждение адреса проживания', alternative_security_work:'Справка с места работы', alternative_security_study:'Справка с места учёбы' }[kind] || 'Документ'); }
 function printableMoment(value) { return new Intl.DateTimeFormat('ru-RU', { timeZone:'Asia/Bishkek', day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' }).format(new Date(value)); }
 function jsonObject(value) {
   if (value && typeof value === 'object' && !Array.isArray(value)) return value;
@@ -186,7 +187,7 @@ export default async function handler(request, response) {
       response.setHeader('Set-Cookie', [sessionCookie(COOKIE, '', 0), sessionCookie(COMPAT_COOKIE, '', 0)]);
       return json(response, 200, { ok:true });
     }
-    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'delete_draft_document' || payload.action === 'create_document_download' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'request_offer_sms_consent' || payload.action === 'verify_offer_sms_consent' || payload.action === 'save_profile' || payload.action === 'save_residence_address' || payload.action === 'save_delivery_preferences' || payload.action === 'extension_request' || payload.action === 'replacement_request' || payload.action === 'cancel_extension_request' || payload.action === 'early_return_request' || payload.action === 'change_return_method' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup_access_received' || payload.action === 'confirm_pickup' || payload.action === 'confirm_return_access_received' || payload.action === 'confirm_return_dropoff' || payload.action === 'submit_feedback') {
+    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'delete_draft_document' || payload.action === 'create_document_download' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'request_offer_sms_consent' || payload.action === 'verify_offer_sms_consent' || payload.action === 'save_profile' || payload.action === 'save_residence_address' || payload.action === 'save_delivery_preferences' || payload.action === 'save_alternative_security_contact' || payload.action === 'extension_request' || payload.action === 'replacement_request' || payload.action === 'cancel_extension_request' || payload.action === 'early_return_request' || payload.action === 'change_return_method' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup_access_received' || payload.action === 'confirm_pickup' || payload.action === 'confirm_return_access_received' || payload.action === 'confirm_return_dropoff' || payload.action === 'submit_feedback') {
       const session = await verifySession();
       if (!session) return json(response, 401, { error:'Сессия истекла. Войдите в кабинет снова.', code:'AUTH_REQUIRED' });
       if (payload.action === 'save_profile') {
@@ -241,13 +242,36 @@ export default async function handler(request, response) {
         await database.createEvent({ order_id:order.id, event_type:'customer_saved_delivery_preferences_from_cabinet', actor_type:'customer', metadata:{ address_length:deliveryAddress.length, preferred_time:deliveryPreferredTime } });
         return json(response, 200, { ok:true, order:updated });
       }
+      if (payload.action === 'save_alternative_security_contact') {
+        if (order.alternative_security_status !== 'requested') return json(response, 409, { error:'Дополнительная проверка сейчас не ожидается.' });
+        const name = String(payload.name || '').trim().replace(/\s+/g, ' ').slice(0, 160);
+        const relationship = String(payload.relationship || '');
+        const digits = normalizeKyrgyzPhone(payload.phone);
+        const operationCity = String(payload.operationCity || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+        const representativeName = String(payload.representativeName || '').trim().replace(/\s+/g, ' ').slice(0, 160);
+        const representativePhoneRaw = String(payload.representativePhone || '').trim();
+        const representativeDigits = representativePhoneRaw ? normalizeKyrgyzPhone(representativePhoneRaw) : '';
+        if (name.length < 5 || !['mother','father','spouse','sibling','relative'].includes(relationship) || !/^996\d{9}$/.test(digits) || payload.contactConsent !== true) return json(response, 400, { error:'Укажите близкого родственника, его номер +996 и подтвердите, что он согласен на экстренную связь по вашей заявке.' });
+        if (operationCity.length < 2) return json(response, 400, { error:'Укажите город, где будет использоваться ноутбук.' });
+        if (representativePhoneRaw && !/^996\d{9}$/.test(representativeDigits)) return json(response, 400, { error:'Проверьте номер представителя.' });
+        const updated = await database.updateOrder(order.id, {
+          emergency_contact_name:name, emergency_contact_relationship:relationship, emergency_contact_phone:`+${digits}`,
+          emergency_contact_consent_at:new Date().toISOString(), operation_city:operationCity,
+          representative_name:representativeName || null, representative_phone:representativeDigits ? `+${representativeDigits}` : null
+        });
+        await database.createEvent({ order_id:order.id, event_type:'customer_saved_emergency_contact_for_alternative_security', actor_type:'customer', metadata:{ relationship, operation_city:operationCity, has_representative:Boolean(representativeName) } });
+        return json(response, 200, { ok:true, order:updated });
+      }
       if (payload.action === 'accept_offer') {
         const profile = await database.getCustomerProfile(session.phone).catch(() => null);
         const nameParts = String(profile?.full_name || '').trim().split(/\s+/).filter(Boolean);
         if (nameParts.length < 3 || nameParts.some((part) => part.length < 2)) return json(response, 409, { error:'Перед отправкой документов заполните ФИО в верхней части личного кабинета.' });
         if (order.offer_accepted_at) return json(response, 200, { ok:true, acceptedAt:order.offer_accepted_at, offerVersion:order.offer_version, smsRequired:config.offerSmsConsentRequired, smsVerified:Boolean(order.offer_otp_verified_at) });
         const acceptedAt = new Date().toISOString();
-        const offerVersion = String(config.offerVersion || '2026-09-30').slice(0, 80);
+        // Web applications are bound to the published page in this release.
+        // Keep this immutable here so a stale hosting environment variable
+        // cannot accidentally attach the previous edition to a new order.
+        const offerVersion = '2026-11-22';
         await database.updateOrder(order.id, { offer_version:offerVersion, offer_accepted_at:acceptedAt });
         await database.createEvent({ order_id:order.id, event_type:'offer_accepted_from_cabinet', actor_type:'customer', metadata:{ offer_version:offerVersion, ip:clientIp(request) || null, user_agent:String(request.headers['user-agent'] || '').slice(0, 300) } });
         return json(response, 200, { ok:true, acceptedAt, offerVersion, smsRequired:config.offerSmsConsentRequired, smsVerified:false });
@@ -309,6 +333,7 @@ export default async function handler(request, response) {
         const contentType = String(payload.contentType || '').toLowerCase();
         const byteSize = Number(payload.byteSize);
         const rawName = String(payload.fileName || '').slice(0, 180);
+        if (ALTERNATIVE_SECURITY_TYPES.has(kind) && order.alternative_security_status !== 'requested') return json(response, 409, { error:'Загрузка дополнительной проверки сейчас недоступна.' });
         if (!DOCUMENT_TYPES.has(kind) || !DOCUMENT_MIME_TYPES.has(contentType) || !Number.isInteger(byteSize) || byteSize < 1 || byteSize > MAX_DOCUMENT_BYTES) {
           return json(response, 400, { error:'Допустимы JPG, PNG, PDF, MP4 или MOV. Фото/документы — до 8 МБ, короткое видео — до 50 МБ.' });
         }
@@ -326,6 +351,7 @@ export default async function handler(request, response) {
         const contentType = String(payload.contentType || '').toLowerCase();
         const byteSize = Number(payload.byteSize);
         const fileName = String(payload.fileName || 'document').replace(/[\\/\0]/g, '_').slice(0, 180);
+        if (ALTERNATIVE_SECURITY_TYPES.has(kind) && order.alternative_security_status !== 'requested') return json(response, 409, { error:'Этап дополнительной проверки закрыт или ещё не открыт менеджером.' });
         if (kind !== 'benefit_proof' && !order.offer_accepted_at) return json(response, 409, { error:'Перед отправкой документов ознакомьтесь и согласитесь с публичной офертой.' });
         if (kind !== 'benefit_proof' && config.offerSmsConsentRequired && !order.offer_otp_verified_at) return json(response, 409, { error:'Подтвердите согласие с офертой одноразовым кодом.' });
         if (!DOCUMENT_TYPES.has(kind) || !path.startsWith(`${order.id}/${kind}/`) || !DOCUMENT_MIME_TYPES.has(contentType) || !Number.isInteger(byteSize) || byteSize < 1 || byteSize > MAX_DOCUMENT_BYTES) {
@@ -353,6 +379,14 @@ export default async function handler(request, response) {
         const hasFront = latestKinds.has('identity_front') || latestKinds.has('identity');
         if (hasFront && ['identity_back', 'selfie', 'supporting'].every(requiredKind => latestKinds.has(requiredKind)) && String(order.residence_address || '').trim().length >= 8 && String(order.supporting_document_type || '').trim().length >= 3 && order.status === 'draft') {
           await database.updateOrder(order.id, { status:'pending_review' });
+        }
+        if (ALTERNATIVE_SECURITY_TYPES.has(kind)) {
+          const requirements = Array.isArray(order.alternative_security_requirements) ? order.alternative_security_requirements : [];
+          const latestSecurity = new Map(); for (const item of uploaded) if (!latestSecurity.has(item.kind)) latestSecurity.set(item.kind, item);
+          if (requirements.length && requirements.every(required => latestSecurity.has(required) && latestSecurity.get(required)?.status !== 'rejected')) {
+            await database.updateOrder(order.id, { alternative_security_status:'submitted' });
+            await database.createEvent({ order_id:order.id, event_type:'customer_submitted_alternative_security_from_cabinet', actor_type:'customer', metadata:{ requirements } });
+          }
         }
         await notifyDocumentManager(order, document);
         return json(response, 201, { ok:true, document, benefit, message:kind === 'benefit_proof' ? 'Документ отправлен. После проверки льготная скидка появится в кабинете и будет применяться вместо меньшей тарифной скидки.' : undefined });

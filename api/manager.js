@@ -9,6 +9,7 @@ const allowedDocumentStates = new Set(['accepted', 'rejected']);
 const statusTransitions = Object.freeze({
   pending_review:['awaiting_payment']
 });
+const ALTERNATIVE_SECURITY_REQUIREMENTS = new Set(['alternative_security_video', 'alternative_security_address', 'alternative_security_work', 'alternative_security_study']);
 const TIME_ZONE = 'Asia/Bishkek';
 function readCookie(request, name) { const source = String(request.headers.cookie || ''); return source.split(';').map(value => value.trim()).find(value => value.startsWith(`${name}=`))?.slice(name.length + 1) || ''; }
 function hash(secret, value) { return createHmac('sha256', secret).update(value).digest('hex'); }
@@ -248,6 +249,53 @@ export default async function handler(request, response) {
       await database.createEvent({ order_id:order.id, event_type:'manager_resolved_support_case_from_web', actor_type:'manager', metadata:{ kind } }).catch(error => console.error('Manager support audit event failed:', error.message));
       return reply(response, 200, { ok:true, supportCase:resolved, message:'Обращение отмечено как решённое.' });
     }
+    if (payload.action === 'offer_alternative_security' || payload.action === 'decide_alternative_security' || payload.action === 'settle_early_return') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
+      if (payload.action === 'offer_alternative_security') {
+        if (!['pending_review', 'draft'].includes(order.status)) return reply(response, 409, { error:'Дополнительную проверку можно запросить только до выставления счёта.' });
+        const requested = Array.isArray(payload.requirements) ? payload.requirements.map(value => String(value || '')).filter(value => ALTERNATIVE_SECURITY_REQUIREMENTS.has(value)) : [];
+        const requirements = [...new Set(['alternative_security_video', ...requested])];
+        const note = String(payload.note || '').trim().replace(/\s+/g, ' ').slice(0, 700);
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        const updated = await database.updateOrder(order.id, {
+          alternative_security_status:'requested', alternative_security_requirements:requirements,
+          alternative_security_note:note || null, alternative_security_expires_at:expiresAt,
+          alternative_security_decided_at:null, alternative_security_decided_by:null
+        });
+        await database.createEvent({ order_id:order.id, event_type:'manager_requested_alternative_security_from_web', actor_type:'manager', metadata:{ requirements, expires_at:expiresAt, note:note || null, manager_phone:session.phone } });
+        return reply(response, 200, { ok:true, order:updated, message:'Клиенту открыт защищённый этап дополнительной проверки на 24 часа.' });
+      }
+      if (payload.action === 'decide_alternative_security') {
+        if (!['requested', 'submitted'].includes(order.alternative_security_status)) return reply(response, 409, { error:'По этой заявке сейчас нет активной дополнительной проверки.' });
+        if (order.status !== 'pending_review') return reply(response, 409, { error:'Решение по залогу принимается до выставления счёта.' });
+        const decision = String(payload.decision || '');
+        const note = String(payload.note || '').trim().replace(/\s+/g, ' ').slice(0, 700);
+        if (!['approved', 'rejected'].includes(decision) || note.length < 3) return reply(response, 400, { error:'Выберите решение и укажите короткий комментарий для журнала.' });
+        if (decision === 'approved') {
+          const requirements = Array.isArray(order.alternative_security_requirements) ? order.alternative_security_requirements : [];
+          const documents = await database.listOrderDocuments(order.id);
+          const latest = new Map(); for (const item of documents) if (!latest.has(item.kind)) latest.set(item.kind, item);
+          const missing = requirements.filter(kind => latest.get(kind)?.status !== 'accepted');
+          if (missing.length) return reply(response, 409, { error:'Сначала примите все запрошенные видео и документы дополнительной проверки.' });
+        }
+        const updated = await database.updateOrder(order.id, {
+          alternative_security_status:decision, alternative_security_note:note,
+          alternative_security_decided_at:new Date().toISOString(), alternative_security_decided_by:session.phone,
+          ...(decision === 'approved' ? { deposit_amount:0 } : {})
+        });
+        await database.createEvent({ order_id:order.id, event_type:`manager_${decision}_alternative_security_from_web`, actor_type:'manager', metadata:{ note, manager_phone:session.phone, deposit_amount:decision === 'approved' ? 0 : order.deposit_amount } });
+        return reply(response, 200, { ok:true, order:updated, message:decision === 'approved' ? 'Аренда без денежного залога одобрена. Теперь можно выставить счёт только за аренду и согласованные услуги.' : 'Дополнительная проверка отклонена. Согласуйте с клиентом обычный залог или иной вариант.' });
+      }
+      if (order.status !== 'completed') return reply(response, 409, { error:'Итог досрочного возврата фиксируется после физической приёмки и завершения аренды.' });
+      const type = String(payload.settlementType || '');
+      const amount = Number(payload.amount || 0);
+      const note = String(payload.note || '').trim().replace(/\s+/g, ' ').slice(0, 1000);
+      if (!['freeze_days', 'partial_refund', 'no_compensation'].includes(type) || note.length < 3 || !Number.isFinite(amount) || amount < 0) return reply(response, 400, { error:'Выберите итог, укажите сумму (0, если нет выплаты) и пояснение для клиента.' });
+      const updated = await database.updateOrder(order.id, { early_return_settlement_type:type, early_return_settlement_amount:amount, early_return_settlement_note:note, early_return_settled_at:new Date().toISOString(), early_return_settled_by:session.phone });
+      await database.createEvent({ order_id:order.id, event_type:'manager_settled_early_return_from_web', actor_type:'manager', metadata:{ type, amount, note, manager_phone:session.phone } });
+      return reply(response, 200, { ok:true, order:updated, message:'Итог досрочного возврата записан. Клиент увидит его в архиве заявки.' });
+    }
     if (payload.action === 'save_order_registry') {
       const order = await database.getOrder(String(payload.orderId || ''));
       if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
@@ -468,6 +516,7 @@ export default async function handler(request, response) {
         if (latest.get('benefit_proof')?.status === 'pending_review') return reply(response, 409, { error:'Клиент запросил социальную скидку. Сначала примите или отклоните льготный документ — сумма должна быть окончательно рассчитана до выставления счёта.' });
         if (String(order.residence_address || '').trim().length < 8 || String(order.supporting_document_type || '').trim().length < 3) return reply(response, 409, { error:'До оплаты клиент должен указать адрес проживания и загрузить обязательное подтверждение адреса, работы или учёбы.' });
         if (String(order.identity_document_number || '').trim().length < 3 || String(order.identity_document_issuer || '').trim().length < 3 || !order.identity_verified_at) return reply(response, 409, { error:'Сначала сверьте паспорт/ID по файлам и сохраните в реестре номер документа и кем он выдан.' });
+        if (['requested', 'submitted'].includes(order.alternative_security_status)) return reply(response, 409, { error:'Сначала примите решение по дополнительной проверке без залога.' });
       }
       if (['returned', 'completed'].includes(nextStatus)) {
         const documents = await database.listOrderDocuments(order.id);
