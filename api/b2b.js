@@ -3,11 +3,14 @@ import { createSupabaseApi } from '../server/src/supabase.js';
 import { createTelegramApi } from '../server/src/telegram.js';
 
 const clean = (value, max = 500) => String(value || '').trim().replace(/\s+/g, ' ').slice(0, max);
-function phone(value) {
+function phone(value, countryCode = '996') {
   let digits = String(value || '').replace(/\D/g, '');
-  if (digits.startsWith('996')) digits = digits.slice(3);
+  const code = String(countryCode || '').replace(/\D/g, '').slice(0, 3);
+  if (!code) return '';
+  if (digits.startsWith(code) && digits.length > code.length + 4) digits = digits.slice(code.length);
   if (digits.startsWith('0')) digits = digits.slice(1);
-  return digits.length === 9 ? `+996${digits}` : '';
+  const fullNumber = `${code}${digits}`;
+  return /^\d{7,15}$/.test(fullNumber) ? `+${fullNumber}` : '';
 }
 
 function managerNotification(lead, fallback = false) {
@@ -28,14 +31,15 @@ export default async function handler(request, response) {
     if (clean(payload.website, 100)) return response.status(200).json({ ok:true });
     const companyName = clean(payload.companyName, 160);
     const contactName = clean(payload.contactName, 160);
-    const contactPhone = phone(payload.phone);
+    const countryCode = payload.phoneCountry === 'other' ? payload.phoneCountryOther : (payload.phoneCountry || '996');
+    const contactPhone = phone(payload.phone, countryCode);
     const email = clean(payload.email, 160).toLowerCase();
     const quantity = Number(payload.quantity);
     const termMonths = payload.termMonths === '' || payload.termMonths === undefined ? null : Number(payload.termMonths);
     const deviceProfile = clean(payload.deviceProfile, 24);
     const deliveryPreference = clean(payload.deliveryPreference, 24);
     const comment = clean(payload.comment, 1500);
-    if (companyName.length < 2 || contactName.length < 2 || !contactPhone) throw new Error('Укажите компанию, контактное лицо и номер Кыргызстана.');
+    if (companyName.length < 2 || contactName.length < 2 || !contactPhone) throw new Error('Укажите компанию, контактное лицо и номер WhatsApp в международном формате.');
     if (!Number.isInteger(quantity) || quantity < 3 || quantity > 500) throw new Error('Для корпоративной заявки укажите от 3 до 500 устройств.');
     if (termMonths !== null && ![1, 3, 6, 12].includes(termMonths)) throw new Error('Выберите срок: 1, 3, 6 или 12 месяцев.');
     if (!['office', 'development', 'design', 'mixed', 'other'].includes(deviceProfile)) throw new Error('Выберите задачи для техники.');

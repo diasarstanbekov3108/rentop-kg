@@ -1751,12 +1751,22 @@ const b2bLabels = {
   deviceProfile:{ office:'офис и обучение', development:'разработка', design:'дизайн / монтаж', mixed:'разные задачи', other:'нужна консультация' },
   deliveryPreference:{ delivery:'доставка в офис', pickup:'самовывоз / выдача', undecided:'нужно обсудить' }
 };
+function b2bCountryCode(values) {
+  const raw = values.phoneCountry === 'other' ? values.phoneCountryOther : (values.phoneCountry || '996');
+  const digits = String(raw || '').replace(/\D/g, '').slice(0, 3);
+  return digits ? `+${digits}` : '';
+}
+function b2bFormattedPhone(values) {
+  const local = String(values.phone || '').replace(/\D/g, '');
+  const code = b2bCountryCode(values);
+  return code && local ? `${code} ${local}` : (values.phone || '—');
+}
 function b2bWhatsappMessage(values) {
   return [
     'Здравствуйте! Отправляю копию корпоративной заявки Rentop.', '',
     `Компания: ${values.companyName || '—'}`,
     `Контакт: ${values.contactName || '—'}`,
-    `Телефон: ${values.phone || '—'}`,
+    `Телефон: ${b2bFormattedPhone(values)}`,
     values.email ? `E-mail: ${values.email}` : '',
     `Количество устройств: ${values.quantity || '—'}`,
     `Срок: ${b2bLabels.termMonths[values.termMonths] || 'обсудить'}`,
@@ -1765,12 +1775,31 @@ function b2bWhatsappMessage(values) {
     values.comment ? `Комментарий: ${values.comment}` : ''
   ].filter(Boolean).join('\n');
 }
+const b2bCountrySelect = b2bForm?.elements.phoneCountry;
+const b2bOtherCountryInput = b2bForm?.elements.phoneCountryOther;
+function syncB2bCountryCode() {
+  if (!b2bCountrySelect || !b2bOtherCountryInput) return;
+  const isOther = b2bCountrySelect.value === 'other';
+  b2bOtherCountryInput.hidden = !isOther;
+  b2bOtherCountryInput.required = isOther;
+  if (!isOther) b2bOtherCountryInput.value = '';
+}
+b2bCountrySelect?.addEventListener('change', syncB2bCountryCode);
+syncB2bCountryCode();
 openB2bForm?.addEventListener('click', () => {
   if (!b2bModal || !b2bForm) return;
   b2bModal.hidden = false;
   b2bModal.setAttribute('aria-hidden', 'false');
   document.body.classList.add('b2b-modal-open');
-  b2bForm.elements.companyName?.focus({ preventScroll:true });
+  // Focusing an input makes mobile Safari scroll the modal into the middle,
+  // hiding the close button under its browser UI. Start every visit at top.
+  const dialog = b2bModal.querySelector('.b2b-modal-dialog');
+  b2bModal.scrollTop = 0;
+  dialog?.scrollTo({ top:0, behavior:'auto' });
+  requestAnimationFrame(() => {
+    b2bModal.scrollTop = 0;
+    dialog?.scrollTo({ top:0, behavior:'auto' });
+  });
 });
 function closeB2bModal() {
   if (!b2bModal) return;
@@ -1786,6 +1815,11 @@ b2bForm?.addEventListener('submit', async event => {
   event.preventDefault();
   const button = b2bForm.querySelector('[type="submit"]');
   const values = Object.fromEntries(new FormData(b2bForm).entries());
+  const phoneDigits = String(values.phone || '').replace(/\D/g, '');
+  if (!b2bCountryCode(values) || phoneDigits.length < 5) {
+    if (b2bFormStatus) { b2bFormStatus.textContent = 'Укажите код страны и номер WhatsApp.'; b2bFormStatus.className = 'b2b-form-status is-error'; }
+    return;
+  }
   if (b2bFormStatus) { b2bFormStatus.textContent = 'Отправляем запрос…'; b2bFormStatus.className = 'b2b-form-status'; }
   button.disabled = true;
   try {

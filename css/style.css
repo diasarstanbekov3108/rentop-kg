@@ -2287,3 +2287,15 @@ html.catalog-showcase-compact #catalog .catalog-showcase-featured .catalog-open-
   border-color: #86efff;
   box-shadow: 0 0 0 2px rgba(102, 228, 255, 0.45), 0 0 34px rgba(36, 210, 248, 0.3), 0 16px 35px rgba(0, 0, 0, 0.25);
 }
+
+/* B2B mobile form: stay at the top when opened and keep the close control
+   accessible above Safari's browser chrome. */
+.b2b-phone-row { display:grid; grid-template-columns:minmax(144px, .9fr) minmax(0, 1.1fr); gap:8px; }
+.b2b-phone-field > small { line-height:1.4; }
+.b2b-modal-dialog { overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
+@media (max-width:640px) {
+  .b2b-modal { place-items:start center; align-content:start; padding:max(8px, env(safe-area-inset-top)) 8px calc(8px + env(safe-area-inset-bottom)); overflow:hidden; }
+  .b2b-modal-dialog { width:100%; max-height:calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); border-radius:16px; }
+  .b2b-modal-close { position:sticky; z-index:5; top:8px; float:right; margin:8px 8px -46px 0; touch-action:manipulation; }
+  .b2b-phone-row { grid-template-columns:1fr; }
+}

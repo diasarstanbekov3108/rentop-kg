@@ -335,7 +335,7 @@
             <div class="b2b-form-grid">
               <label>Компания<input name="companyName" maxlength="160" autocomplete="organization" placeholder="Например, ОсОО «Компания»" required></label>
               <label>Контактное лицо<input name="contactName" maxlength="160" autocomplete="name" placeholder="ФИО" required></label>
-              <label>Телефон / WhatsApp<input name="phone" type="tel" inputmode="tel" maxlength="19" autocomplete="tel" placeholder="+996 700 000 000" required></label>
+              <label class="b2b-phone-field">Телефон / WhatsApp<div class="b2b-phone-row"><select name="phoneCountry" aria-label="Код страны"><option value="996" selected>+996 · Кыргызстан</option><option value="7">+7 · Казахстан / Россия</option><option value="998">+998 · Узбекистан</option><option value="992">+992 · Таджикистан</option><option value="other">Другой код</option></select><input name="phone" type="tel" inputmode="tel" maxlength="18" autocomplete="tel" placeholder="700 000 000" required></div><input name="phoneCountryOther" type="tel" inputmode="numeric" maxlength="4" placeholder="Код страны, например 971" hidden><small>Для иностранных номеров менеджер согласует документы, способ выдачи и условия индивидуально.</small></label>
               <label>Количество устройств<select name="quantity" required><option value="">Выберите</option><option value="3">3–4</option><option value="5">5–9</option><option value="10">10–19</option><option value="20">20–49</option><option value="50">50+</option></select></label>
               <label>Срок аренды<select name="termMonths"><option value="">Нужно обсудить</option><option value="1">1 месяц</option><option value="3">3 месяца</option><option value="6">6 месяцев</option><option value="12">12 месяцев и дольше</option></select></label>
               <label>Задачи<select name="deviceProfile" required><option value="">Выберите</option><option value="office">Офис и обучение</option><option value="development">Разработка</option><option value="design">Дизайн / монтаж</option><option value="mixed">Разные задачи</option><option value="other">Нужна консультация</option></select></label>
@@ -375,6 +375,10 @@
         <div class="faq-item">
           <button class="faq-question" type="button">Как проходит проверка заявки?</button>
           <div class="faq-answer">После загрузки документов менеджер Rentop вручную сверяет заявку и принимает решение. Затем в личном кабинете появляется защищённый QR-счёт. Оплату по нему подтверждает банк; при техническом сбое менеджер может проверить поступление вручную.</div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question" type="button">Можно ли оформить аренду иностранному клиенту?</button>
+          <div class="faq-answer">Да, для компании оставьте заявку с международным номером WhatsApp. Менеджер отдельно согласует удостоверяющие документы, контакт в Кыргызстане, адрес или город использования, способ выдачи и залог. Автоматический личный кабинет с SMS сейчас работает только с номером +996.</div>
         </div>
         <div class="faq-item">
           <button class="faq-question" type="button">Как получить ноутбук через ARCHA POINT?</button>
