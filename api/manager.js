@@ -315,14 +315,18 @@ export default async function handler(request, response) {
       const rentalPurpose = String(payload.rentalPurpose || '').trim().replace(/\s+/g, ' ').slice(0, 600);
       const managerNote = String(payload.managerNote || '').trim().slice(0, 2000);
       const returnConditionNote = String(payload.returnConditionNote || '').trim().slice(0, 2000);
+      const residenceAddress = String(payload.residenceAddress || '').trim().replace(/\s+/g, ' ').slice(0, 500);
+      const supportingDocumentType = String(payload.supportingDocumentType || '').trim().replace(/\s+/g, ' ').slice(0, 120);
       const identityDocumentNumber = String(payload.identityDocumentNumber || '').trim().replace(/\s+/g, ' ').slice(0, 80);
       const identityDocumentIssuer = String(payload.identityDocumentIssuer || '').trim().replace(/\s+/g, ' ').slice(0, 240);
       const hasIdentityPair = Boolean(identityDocumentNumber) || Boolean(identityDocumentIssuer);
       if (hasIdentityPair && (identityDocumentNumber.length < 3 || identityDocumentIssuer.length < 3)) return reply(response, 400, { error:'Для проверки личности укажите и номер документа, и кем он выдан — строго по загруженному документу.' });
-      const patch = { rental_purpose:rentalPurpose || null, manager_note:managerNote || null, return_condition_note:returnConditionNote || null };
+      const hasResidencePair = Boolean(residenceAddress) || Boolean(supportingDocumentType);
+      if (hasResidencePair && (residenceAddress.length < 15 || !/\d/.test(residenceAddress) || supportingDocumentType.length < 3)) return reply(response, 400, { error:'Для адреса укажите полный адрес проживания (город, улица, номер дома) и выберите тип подтверждающего документа.' });
+      const patch = { rental_purpose:rentalPurpose || null, manager_note:managerNote || null, return_condition_note:returnConditionNote || null, ...(hasResidencePair ? { residence_address:residenceAddress, supporting_document_type:supportingDocumentType } : {}) };
       if (hasIdentityPair) Object.assign(patch, { identity_document_number:identityDocumentNumber, identity_document_issuer:identityDocumentIssuer, identity_verified_at:new Date().toISOString(), identity_verified_by:session.phone });
       const updated = await database.updateOrder(order.id, patch);
-      await database.createEvent({ order_id:order.id, event_type:'manager_updated_rental_registry_from_web', actor_type:'manager', metadata:{ has_rental_purpose:Boolean(rentalPurpose), has_manager_note:Boolean(managerNote), has_return_condition_note:Boolean(returnConditionNote), identity_verified:hasIdentityPair } }).catch(error => console.error('Manager registry audit event failed:', error.message));
+      await database.createEvent({ order_id:order.id, event_type:'manager_updated_rental_registry_from_web', actor_type:'manager', metadata:{ has_residence_address:hasResidencePair, has_rental_purpose:Boolean(rentalPurpose), has_manager_note:Boolean(managerNote), has_return_condition_note:Boolean(returnConditionNote), identity_verified:hasIdentityPair } }).catch(error => console.error('Manager registry audit event failed:', error.message));
       return reply(response, 200, { ok:true, order:updated, message:'Сверка документов и внутренний реестр сохранены. После приёма обязательных файлов можно перейти к выставлению оплаты.' });
     }
     if (payload.action === 'issue_loyalty_promo') {
