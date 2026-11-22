@@ -38,6 +38,11 @@ const mobileNavToggle = document.getElementById('manager-mobile-nav-toggle');
 const mobileNavClose = document.getElementById('manager-mobile-nav-close');
 const mobileNavBackdrop = document.getElementById('manager-mobile-nav-backdrop');
 const managerSidebar = document.getElementById('manager-sidebar');
+const replacementPicker = document.getElementById('manager-replacement-picker');
+const replacementPickerSearch = document.getElementById('manager-replacement-picker-search');
+const replacementPickerFilters = document.getElementById('manager-replacement-picker-filters');
+const replacementPickerList = document.getElementById('manager-replacement-picker-list');
+const replacementPickerConfirm = document.getElementById('manager-replacement-picker-confirm');
 const b2bList = document.getElementById('manager-b2b-list');
 const refreshButton = document.getElementById('manager-refresh');
 let orders = [];
@@ -54,6 +59,8 @@ const transientOrderMessages = new Map();
 let openOrderDetails = new Set();
 let selectedOrderId = '';
 const paymentDrafts = new Map();
+const replacementSelections = new Map();
+let replacementPickerState = { orderId:'', filter:'all', query:'', selectedId:'' };
 
 const escape = value => String(value || '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' }[char]));
 const date = value => value ? new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }).format(new Date(value)) : '—';
@@ -269,6 +276,48 @@ function replacementOptions(laptops) {
   return [...groups.entries()].filter(([, items]) => items.length).map(([group, items]) => `<optgroup label="${escape(group)}">${items.map(({ laptop, label, rate }) => `<option value="${Number(laptop.id)}" ${rate > 0 ? '' : 'disabled'}>${escape(label)}</option>`).join('')}</optgroup>`).join('');
 }
 
+function replacementPickerCategory(laptop) {
+  const group = replacementGroup(laptop);
+  return group === 'Офис и учёба' ? 'office' : group === 'Монтаж и графика' ? 'creative' : group === 'Игры и 3D' ? 'gaming' : 'all';
+}
+
+function closeReplacementPicker() {
+  if (!replacementPicker) return;
+  replacementPicker.hidden = true;
+  document.body.style.overflow = '';
+}
+
+function renderReplacementPicker() {
+  if (!replacementPickerList) return;
+  const order = orders.find(item => String(item.id) === String(replacementPickerState.orderId));
+  const query = replacementPickerState.query.trim().toLowerCase();
+  const items = rentableLaptops
+    .filter(laptop => String(laptop.id) !== String(order?.laptop_id))
+    .filter(laptop => Number(laptop.daily_rate || laptop.dailyRate || 0) > 0)
+    .filter(laptop => replacementPickerState.filter === 'all' || replacementPickerCategory(laptop) === replacementPickerState.filter)
+    .filter(laptop => !query || `${laptop.title || ''} ${laptop.cpu || ''} ${laptop.use_cases || laptop.useCases || ''} ${laptop.description || ''}`.toLowerCase().includes(query));
+  replacementPickerList.innerHTML = items.length ? items.map(laptop => {
+    const rate = Number(laptop.daily_rate || laptop.dailyRate || 0);
+    const group = replacementGroup(laptop);
+    const selected = String(laptop.id) === String(replacementPickerState.selectedId);
+    const specs = [laptop.cpu, laptop.ram, laptop.storage].filter(Boolean).join(' · ');
+    return `<button type="button" class="manager-replacement-option ${selected ? 'is-selected' : ''}" data-replacement-option="${Number(laptop.id)}"><span class="manager-replacement-option-top"><strong>${escape(laptop.title)}</strong><b>${rate.toLocaleString('ru-RU')} сом/день</b></span><span>${escape(group)}${specs ? ` · ${escape(specs)}` : ''}</span></button>`;
+  }).join('') : '<p class="manager-replacement-empty">Подходящих моделей не найдено. Измените поиск или категорию.</p>';
+  replacementPickerFilters?.querySelectorAll('[data-replacement-filter]').forEach(button => button.classList.toggle('is-active', button.dataset.replacementFilter === replacementPickerState.filter));
+  if (replacementPickerConfirm) replacementPickerConfirm.disabled = !replacementPickerState.selectedId;
+}
+
+function openReplacementPicker(orderId) {
+  const current = replacementSelections.get(String(orderId));
+  replacementPickerState = { orderId:String(orderId), filter:'all', query:'', selectedId:current ? String(current) : '' };
+  if (replacementPickerSearch) replacementPickerSearch.value = '';
+  renderReplacementPicker();
+  if (!replacementPicker) return;
+  replacementPicker.hidden = false;
+  document.body.style.overflow = 'hidden';
+  window.setTimeout(() => replacementPickerSearch?.focus(), 0);
+}
+
 function render() {
   // Refreshing a queue must not throw the manager to the beginning of a long
   // card while they review a return or a document.
@@ -362,7 +411,8 @@ function render() {
     const mayReplaceBeforePayment = ['draft','pending_review'].includes(order.status);
     const replacementLaptops = rentableLaptops.filter(laptop => String(laptop.id) !== String(order.laptop_id));
     const pricedReplacementLaptops = replacementLaptops.filter(laptop => Number(laptop.daily_rate || laptop.dailyRate || 0) > 0);
-    const replacementBeforePayment = mayReplaceBeforePayment ? `<div class="manager-prepayment-replacement"><select data-prepayment-replacement-laptop aria-label="Выберите новую модель для замены"><option value="">Выберите новую модель для замены</option>${replacementOptions(replacementLaptops)}</select><button class="secondary" data-replace-prepayment-laptop="${order.id}" ${pricedReplacementLaptops.length ? '' : 'disabled'}>Заменить и пересчитать</button><small>${pricedReplacementLaptops.length ? 'Модели сгруппированы по назначению. Доступны только позиции с указанной дневной ставкой.' : 'Нет другой модели с заполненной ставкой аренды. Укажите ставку в каталоге — тогда она появится здесь.'}</small></div>` : '';
+    const selectedReplacement = rentableLaptops.find(laptop => String(laptop.id) === String(replacementSelections.get(String(order.id))));
+    const replacementBeforePayment = mayReplaceBeforePayment ? `<div class="manager-prepayment-replacement"><input type="hidden" data-prepayment-replacement-laptop value="${escape(replacementSelections.get(String(order.id)) || '')}"><button class="manager-replacement-open" type="button" data-open-replacement-picker="${order.id}"><span>${selectedReplacement ? escape(selectedReplacement.title) : 'Выбрать новую модель для замены'}</span><small>${selectedReplacement ? `${Number(selectedReplacement.daily_rate || selectedReplacement.dailyRate || 0).toLocaleString('ru-RU')} сом/день · изменить` : 'Поиск по модели, назначению и ставке'}</small></button><button class="secondary" data-replace-prepayment-laptop="${order.id}" ${selectedReplacement && pricedReplacementLaptops.length ? '' : 'disabled'}>Заменить и пересчитать</button><small>${pricedReplacementLaptops.length ? 'Откройте выбор: модели сгруппированы по задачам и показывают ставку аренды.' : 'Нет другой модели с заполненной ставкой аренды. Укажите ставку в каталоге — тогда она появится здесь.'}</small></div>` : '';
     const mayCancelUnissued = ['draft','pending_review','awaiting_payment','payment_review','confirmed','awaiting_archa_reservation','awaiting_locker_loading','awaiting_pickup'].includes(order.status);
     const adminTools = isChiefAdmin ? `<details class="manager-section manager-chief-tools"><summary><span>Служебные действия</span><small>Открыть</small></summary>${replacementBeforePayment ? `<div class="manager-chief-replacement"><strong>Заменить ноутбук в этой заявке</strong><span>Доступно до создания QR-счёта</span>${replacementBeforePayment}</div>` : ''}<details class="manager-dossier-tools"><summary>Досье и экспорт</summary><div class="manager-admin-links"><a class="cabinet-action secondary" href="/api/manager/dossier?order=${encodeURIComponent(order.id)}" target="_blank" rel="noopener">Открыть досье</a><a class="cabinet-action ghost" href="/api/manager/dossier?order=${encodeURIComponent(order.id)}&format=json">Скачать JSON</a></div></details>${order.status === 'returned' ? `<div class="manager-chief-group"><button class="secondary" data-admin-close="${order.id}">Завершить после физического осмотра</button></div>` : ''}<details class="manager-chief-critical"><summary>Инцидент или отмена</summary><p>Используйте только для исключительных случаев. Все действия фиксируются в истории заявки.</p><div class="manager-actions">${incidentTools}${mayCancelUnissued ? `<button class="danger" data-cancel-unissued-order="${order.id}">Отменить до начала аренды</button>` : ''}${!['completed','cancelled','rejected','incident'].includes(order.status) ? `<button class="danger" data-admin-incident="${order.id}">Открыть инцидент</button>` : ''}${testTools}</div></details></details>` : '';
     const handoffPanel = archaIssueHandoffPanel(order);
@@ -477,6 +527,13 @@ document.querySelector('.manager-filters').addEventListener('click', event => { 
 mobileNavToggle?.addEventListener('click', () => setMobileNav(!managerSidebar?.classList.contains('is-mobile-open')));
 mobileNavClose?.addEventListener('click', () => setMobileNav(false));
 mobileNavBackdrop?.addEventListener('click', () => setMobileNav(false));
+document.getElementById('manager-replacement-picker-close')?.addEventListener('click', closeReplacementPicker);
+document.getElementById('manager-replacement-picker-cancel')?.addEventListener('click', closeReplacementPicker);
+replacementPicker?.addEventListener('click', event => { if (event.target === replacementPicker) closeReplacementPicker(); });
+replacementPickerSearch?.addEventListener('input', () => { replacementPickerState.query = replacementPickerSearch.value; renderReplacementPicker(); });
+replacementPickerFilters?.addEventListener('click', event => { const button = event.target.closest('[data-replacement-filter]'); if (!button) return; replacementPickerState.filter = button.dataset.replacementFilter; renderReplacementPicker(); });
+replacementPickerList?.addEventListener('click', event => { const option = event.target.closest('[data-replacement-option]'); if (!option) return; replacementPickerState.selectedId = option.dataset.replacementOption; renderReplacementPicker(); });
+replacementPickerConfirm?.addEventListener('click', () => { if (!replacementPickerState.orderId || !replacementPickerState.selectedId) return; replacementSelections.set(String(replacementPickerState.orderId), String(replacementPickerState.selectedId)); closeReplacementPicker(); render(); });
 document.addEventListener('touchmove', event => {
   if (document.body.classList.contains('manager-mobile-nav-open') && !managerSidebar?.contains(event.target)) event.preventDefault();
 }, { passive:false });
@@ -511,6 +568,8 @@ ordersEl.addEventListener('click', async event => {
   if (closeOrder) { selectedOrderId = ''; render(); return; }
   const explicitOpen = event.target.closest('[data-open-manager-order]');
   if (explicitOpen?.dataset.openManagerOrder) { selectedOrderId = explicitOpen.dataset.openManagerOrder; render(); return; }
+  const replacementOpen = event.target.closest('[data-open-replacement-picker]');
+  if (replacementOpen?.dataset.openReplacementPicker) { openReplacementPicker(replacementOpen.dataset.openReplacementPicker); return; }
   const queueSelection = event.target.closest('[data-select-order]');
   if (queueSelection && !queueSelection.disabled && queueSelection.dataset.selectOrder) {
     selectedOrderId = queueSelection.dataset.selectOrder;
@@ -883,7 +942,7 @@ ordersEl.addEventListener('toggle', event => {
 }, true);
 document.getElementById('manager-document-viewer-close')?.addEventListener('click', closeDocumentViewer);
 documentViewer?.addEventListener('click', event => { if (event.target === documentViewer) closeDocumentViewer(); });
-document.addEventListener('keydown', event => { if (event.key === 'Escape' && !documentViewer?.hidden) closeDocumentViewer(); });
+document.addEventListener('keydown', event => { if (event.key !== 'Escape') return; if (!replacementPicker?.hidden) closeReplacementPicker(); else if (!documentViewer?.hidden) closeDocumentViewer(); });
 managerPhoneInput?.addEventListener('input', () => { managerPhoneInput.value = formatPhone(managerPhoneInput.value); });
 managerPhoneForm?.addEventListener('submit', async event => { event.preventDefault(); const phone = normalizePhone(managerPhoneInput.value); if (!phone) return loginMessage('Введите рабочий номер Кыргызстана: +996XXXXXXXXX.', 'error'); const button = managerPhoneForm.querySelector('button'); button.disabled = true; loginMessage('Отправляем код…'); try { await accountApi({ action:'request_code', phone }); pendingManagerPhone = phone; managerPhoneForm.hidden = true; managerCodeForm.hidden = false; managerCodeInput.focus(); loginMessage('Код отправлен. Введите 6 цифр из сообщения.', 'success'); } catch (error) { loginMessage(error.message, 'error'); } finally { button.disabled = false; } });
 managerCodeForm?.addEventListener('submit', async event => { event.preventDefault(); const code = managerCodeInput.value.replace(/\D/g, ''); if (code.length !== 6) return loginMessage('Введите все 6 цифр кода.', 'error'); const button = managerCodeForm.querySelector('button'); button.disabled = true; loginMessage('Проверяем доступ…'); try { await accountApi({ action:'verify_code', phone:pendingManagerPhone, code, remember:true }); await load(); if (!dashboard.hidden) loginMessage(''); else loginMessage('Этот номер не имеет доступа к панели менеджера.', 'error'); } catch (error) { loginMessage(error.message, 'error'); } finally { button.disabled = false; } });
