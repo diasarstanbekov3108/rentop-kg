@@ -50,7 +50,9 @@ let rentableLaptops = [];
 let catalogLaptops = [];
 let managerPromos = [];
 let b2bLeads = [];
-let filter = 'all';
+// The queue opens on work that still needs attention. Historical orders stay
+// available through “Все”, “Завершённые аренды” and “Отменённые”.
+let filter = 'new';
 let pendingManagerPhone = '';
 let isChiefAdmin = false;
 let mobileNavScrollY = 0;
@@ -226,7 +228,7 @@ function renderPromoManager() {
 
 function visibleOrders() {
   const query = String(searchInput?.value || '').trim().toLowerCase();
-  return orders.filter(order => {
+  const filtered = orders.filter(order => {
     if (query && !`${order.id} ${order.customer_name} ${order.customer_phone} ${order.laptop_title}`.toLowerCase().includes(query)) return false;
     if (filter === 'new') return ['draft','pending_review','awaiting_payment','payment_review','confirmed','awaiting_archa_reservation','awaiting_locker_loading','awaiting_pickup'].includes(order.status);
     if (filter === 'documents') return order.documents.some(document => document.status === 'pending_review');
@@ -237,6 +239,14 @@ function visibleOrders() {
     if (filter === 'closed') return ['cancelled','rejected'].includes(order.status);
     return true;
   });
+  const priority = (order) => {
+    if (['draft','pending_review','awaiting_payment','payment_review','confirmed','awaiting_archa_reservation','awaiting_locker_loading','awaiting_pickup'].includes(order.status)) return 0;
+    if (['in_use','incident','return_requested','awaiting_return_reservation','awaiting_return_dropoff','awaiting_return_collection','returned'].includes(order.status)) return 1;
+    if (order.status === 'completed') return 2;
+    if (['cancelled','rejected'].includes(order.status)) return 3;
+    return 1;
+  };
+  return filtered.sort((a, b) => priority(a) - priority(b) || new Date(b.created_at || 0) - new Date(a.created_at || 0));
 }
 
 function documentCard(document, orderId) {
@@ -317,7 +327,7 @@ function replacementPickerCategory(laptop) {
 function closeReplacementPicker() {
   if (!replacementPicker) return;
   replacementPicker.hidden = true;
-  document.body.style.overflow = '';
+  document.body.style.overflow = document.body.classList.contains('manager-mobile-order-open') ? 'hidden' : '';
 }
 
 function renderReplacementPicker() {
