@@ -346,7 +346,7 @@ export default async function handler(request, response) {
       if (!promo) return reply(response, 409, { error:'Промокод уже использован, отозван или не найден.' });
       return reply(response, 200, { ok:true, promo, message:'Промокод отозван. В новой заявке он больше не сработает.' });
     }
-    if (payload.action === 'admin_close_rental_early' || payload.action === 'admin_open_incident' || payload.action === 'admin_resolve_incident' || payload.action === 'admin_offer_incident_replacement' || payload.action === 'admin_update_laptop_asset') {
+    if (payload.action === 'admin_close_rental_early' || payload.action === 'admin_cancel_unissued_order' || payload.action === 'admin_replace_pre_payment_laptop' || payload.action === 'admin_open_incident' || payload.action === 'admin_resolve_incident' || payload.action === 'admin_offer_incident_replacement' || payload.action === 'admin_update_laptop_asset') {
       if (!isChiefAdmin) return reply(response, 403, { error:'Это действие доступно только главному администратору.' });
       if (payload.action === 'admin_update_laptop_asset') {
         const laptopId = String(payload.laptopId || '');
@@ -362,6 +362,26 @@ export default async function handler(request, response) {
       const reason = String(payload.reason || '').trim().replace(/\s+/g, ' ').slice(0, 1000);
       if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
       if (reason.length < 5) return reply(response, 400, { error:'Укажите понятную причину действия — минимум 5 символов.' });
+      if (payload.action === 'admin_cancel_unissued_order') {
+        if (!['draft','pending_review','awaiting_payment','payment_review','confirmed','awaiting_archa_reservation','awaiting_locker_loading','awaiting_pickup'].includes(order.status)) return reply(response, 409, { error:'Эта заявка уже выдана или закрыта. Для неё используйте обычный сценарий возврата.' });
+        const updated = await database.updateOrder(order.id, { status:'cancelled', admin_note:`Отменена менеджером до начала аренды: ${reason}` });
+        await database.createEvent({ order_id:order.id, event_type:'chief_admin_cancelled_unissued_order_from_web', actor_type:'chief_admin', metadata:{ reason, previous_status:order.status, manager_phone:session.phone } });
+        return reply(response, 200, { ok:true, order:updated, message:'Заявка отменена и сохранена в истории. Она больше не считается готовой к выдаче.' });
+      }
+      if (payload.action === 'admin_replace_pre_payment_laptop') {
+        if (!['draft','pending_review'].includes(order.status)) return reply(response, 409, { error:'Заменить модель автоматически можно только до выставления счёта. После QR или оплаты сначала согласуйте изменение с клиентом.' });
+        const laptopId = Number(payload.laptopId);
+        const replacement = await database.getLaptop(laptopId);
+        if (!Number.isInteger(laptopId) || !replacement || replacement.category !== 'rent' || String(replacement.id) === String(order.laptop_id)) return reply(response, 400, { error:'Выберите другую доступную модель из аренды.' });
+        const conflict = await database.findOverlappingBlockingOrder(order.id, replacement.id, order.rental_start_date, order.rental_end_date);
+        if (conflict) return reply(response, 409, { error:`Эта модель занята на выбранные даты: заявка с ${conflict.rental_start_date}. Выберите другую.` });
+        const rate = Number(replacement.daily_rate || replacement.dailyRate || replacement.dailyrate || 0);
+        if (!Number.isFinite(rate) || rate <= 0) return reply(response, 409, { error:'У выбранной модели не указана корректная ставка аренды.' });
+        const total = Math.round(Number(order.rental_days || 0) * rate * (100 - Number(order.discount_percent || 0)) / 100);
+        const updated = await database.updateOrder(order.id, { laptop_id:replacement.id, daily_rate:rate, total_amount:total, admin_note:`Модель заменена до счёта: ${reason}` });
+        await database.createEvent({ order_id:order.id, event_type:'chief_admin_replaced_pre_payment_laptop_from_web', actor_type:'chief_admin', metadata:{ previous_laptop_id:order.laptop_id, replacement_laptop_id:replacement.id, daily_rate:rate, total_amount:total, reason, manager_phone:session.phone } });
+        return reply(response, 200, { ok:true, order:updated, message:`Модель заменена на «${replacement.title}». Сумма аренды пересчитана до счёта.` });
+      }
       if (payload.action === 'admin_open_incident') {
         if (['completed','cancelled','rejected'].includes(order.status)) return reply(response, 409, { error:'По завершённой или отменённой заявке инцидент не открывается.' });
         const updated = await database.updateOrder(order.id, { status:'incident', admin_note:`Инцидент: ${reason}` });
