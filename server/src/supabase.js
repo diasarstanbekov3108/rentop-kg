@@ -48,21 +48,12 @@ export function createSupabaseApi(config) {
   }
 
   async function listRentableLaptops() {
-    // The manager only needs identifiers, titles, categories and a rate when
-    // offering a replacement. Do not transfer catalog images or descriptions
-    // to every dashboard refresh. Older catalogues use one of three names for
-    // the rate, so try the compatible projections in order.
-    const projections = ['id,title,category,dailyRate', 'id,title,category,dailyrate', 'id,title,category,daily_rate'];
-    let lastError;
-    for (const projection of projections) {
-      try {
-        const rows = await request(`laptops?category=eq.rent&select=${projection}&order=id.asc&limit=50`);
-        return (rows || []).map(normalizeLaptopRate);
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    throw lastError || new Error('Не удалось загрузить каталог для замены.');
+    // Use the same full records as the catalogue editor. Trying one legacy
+    // rate column at a time could select an existing but empty column and turn
+    // correctly priced laptops into "0 сом/день" in the replacement menu.
+    // The tags are also required to group models by purpose for the manager.
+    const rows = await request('laptops?category=eq.rent&select=*&order=sort_order.asc,id.asc&limit=50');
+    return (rows || []).map(normalizeLaptopRate);
   }
 
   async function listCatalogLaptops() {
