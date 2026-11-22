@@ -794,9 +794,8 @@ function panelMarkup(kind, orderId, documentState = {}) {
     const offer = replacement ? '' : `<section class="cabinet-offer-flow"><strong>Договор-оферта и подтверждение</strong><p>Всё оформляется здесь, в одном шаге — без перехода в другие разделы.</p><button class="cabinet-action secondary" type="button" data-open-offer="true">1. Открыть договор-оферту</button><label class="cabinet-document-consent"><input name="offerConsent" type="checkbox" required><span>2. Я прочитал(а) договор-оферту и принимаю его условия.</span></label>${smsConsent}</section>`;
     const warnings = replacement ? '' : `<details class="cabinet-safety-notice"><summary>Важно о документах и технике</summary><p>Подделка, использование чужих или заведомо недостоверных документов может повлечь ответственность по законодательству Кыргызской Республики. Rentop проверяет документы до выдачи.</p><p>На выдаваемом оборудовании установлены средства контроля местонахождения и целостности, включая GPS-трекеры и гарантийные пломбы. Несанкционированное вскрытие, нарушение пломб или попытка отключить средства контроля считаются нарушением правил эксплуатации и могут повлечь штраф, возмещение ущерба и обращение в уполномоченные органы.</p></details>`;
     const residence = replacement ? '' : `<label>Полный адрес проживания <span>обязательно</span></label><textarea name="residenceAddress" required minlength="15" maxlength="500" autocomplete="street-address" placeholder="г. Бишкек, район, ул. Пример, д. 12, кв. 34"></textarea><p class="cabinet-form-hint">Укажите город, район, улицу, номер дома и квартиру. Адрес фиксируется в защищённой заявке и сверяется с подтверждающим документом.</p>`;
-    const delivery = replacement ? '' : documentState.deliveryType === 'arca_locker'
-      ? `<section class="cabinet-delivery-inline"><strong>Получение через ARCHA POINT</strong><p>Выберите удобную точку. Получение из ячейки включено в тариф аренды.</p><label>Точка ARCHA POINT <span>обязательно</span></label><select name="lockerAddress" required><option value="">Выберите точку</option>${ARCHA_LOCATIONS.map(location => `<option value="${escape(location.value)}" ${documentState.lockerAddress === location.value ? 'selected' : ''}>${escape(location.value)} · ${escape(location.hours)}</option>`).join('')}</select></section>`
-      : `<section class="cabinet-delivery-inline"><strong>Доставка курьером</strong><p>Укажите адрес и удобный интервал. Доставка платная: точную стоимость и время подтвердит менеджер до выдачи.</p><label>Адрес доставки <span>обязательно</span></label><textarea name="deliveryAddress" required minlength="8" maxlength="500" placeholder="Город, район, улица, дом, квартира (если есть)">${escape(documentState.deliveryAddress || '')}</textarea><label>Предпочтительный интервал доставки <span>обязательно</span></label><input name="deliveryPreferredTime" required minlength="3" maxlength="300" value="${escape(documentState.deliveryPreferredTime || '')}" placeholder="Например: после 20:00, по согласованию"><p class="cabinet-form-hint">Это ориентир, а не гарантия доставки ровно в указанное время. Мы обрабатываем заявки по очереди и заранее согласуем с вами доступный интервал.</p></section>`;
+    const isLockerDelivery = documentState.deliveryType === 'arca_locker';
+    const delivery = replacement ? '' : `<section class="cabinet-delivery-inline cabinet-delivery-choice"><strong>Способ получения</strong><p>До отправки документов и создания QR-счёта его можно поменять. Выберите удобный вариант для этой заявки.</p><label>Как получить ноутбук <span>обязательно</span></label><select name="deliveryType" data-delivery-type><option value="delivery" ${isLockerDelivery ? '' : 'selected'}>Доставка курьером</option><option value="arca_locker" ${isLockerDelivery ? 'selected' : ''}>Через ARCHA POINT</option></select><div data-delivery-fields="delivery" ${isLockerDelivery ? 'hidden' : ''}><p class="cabinet-delivery-subtitle">Доставка курьером</p><p>Укажите адрес и удобный интервал. Точную стоимость и время менеджер подтвердит до выдачи.</p><label>Адрес доставки <span>обязательно</span></label><textarea name="deliveryAddress" ${isLockerDelivery ? 'disabled' : 'required'} minlength="8" maxlength="500" placeholder="Город, район, улица, дом, квартира (если есть)">${escape(documentState.deliveryAddress || '')}</textarea><label>Предпочтительный интервал доставки <span>обязательно</span></label><input name="deliveryPreferredTime" ${isLockerDelivery ? 'disabled' : 'required'} minlength="3" maxlength="300" value="${escape(documentState.deliveryPreferredTime || '')}" placeholder="Например: после 20:00, по согласованию"></div><div data-delivery-fields="arca_locker" ${isLockerDelivery ? '' : 'hidden'}><p class="cabinet-delivery-subtitle">Получение через ARCHA POINT</p><p>Выберите удобную точку. Получение из ячейки включено в тариф аренды.</p><label>Точка ARCHA POINT <span>обязательно</span></label><select name="lockerAddress" ${isLockerDelivery ? 'required' : 'disabled'}><option value="">Выберите точку</option>${ARCHA_LOCATIONS.map(location => `<option value="${escape(location.value)}" ${documentState.lockerAddress === location.value ? 'selected' : ''}>${escape(location.value)} · ${escape(location.hours)}</option>`).join('')}</select></div></section>`;
     const orderComment = replacement ? '' : `<label>Комментарий к заявке <span>необязательно</span></label><textarea name="orderComment" maxlength="1000" placeholder="Например: цель аренды, пожелания по комплектации или вопрос менеджеру"></textarea>`;
     const profileField = replacement || isValidFullName(customerProfile?.full_name) ? '' : `<label>ФИО для договора <span>заполняется один раз</span></label><input name="fullName" autocomplete="name" placeholder="Фамилия Имя Отчество">`;
     const requestedBenefit = BENEFIT_OPTIONS.some(([value]) => value === documentState.benefitRequested) ? documentState.benefitRequested : '';
@@ -1425,6 +1424,21 @@ document.addEventListener('click', event => {
   event.preventDefault();
   focusDocumentFormTarget(targetButton.closest('[data-document-upload]'), targetButton.dataset.formErrorTarget);
 });
+document.addEventListener('change', event => {
+  const picker = event.target.closest('[data-delivery-type]');
+  if (!picker) return;
+  const section = picker.closest('.cabinet-delivery-choice');
+  if (!section) return;
+  const selectedType = picker.value === 'arca_locker' ? 'arca_locker' : 'delivery';
+  section.querySelectorAll('[data-delivery-fields]').forEach(group => {
+    const active = group.dataset.deliveryFields === selectedType;
+    group.hidden = !active;
+    group.querySelectorAll('input, textarea, select').forEach(field => {
+      field.disabled = !active;
+      field.required = active;
+    });
+  });
+});
 document.addEventListener('submit', async event => {
   const documentForm = event.target.closest('[data-document-upload]');
   if (documentForm) {
@@ -1459,9 +1473,10 @@ document.addEventListener('submit', async event => {
     const deliveryAddress = String(documentForm.elements.deliveryAddress?.value || '').trim();
     const deliveryPreferredTime = String(documentForm.elements.deliveryPreferredTime?.value || '').trim();
     const lockerAddress = String(documentForm.elements.lockerAddress?.value || '').trim();
-    if (!isEvidence && !isReplacement && documentForm.elements.deliveryAddress && deliveryAddress.length < 8) return formError('Укажите полный адрес доставки: город, улицу и номер дома.', 'deliveryAddress');
-    if (!isEvidence && !isReplacement && documentForm.elements.deliveryPreferredTime && deliveryPreferredTime.length < 3) return formError('Укажите удобное время доставки.', 'deliveryPreferredTime');
-    if (!isEvidence && !isReplacement && documentForm.elements.lockerAddress && lockerAddress.length < 8) return formError('Выберите точку ARCHA POINT.', 'lockerAddress');
+    const deliveryType = documentForm.elements.deliveryType?.value === 'arca_locker' ? 'arca_locker' : 'delivery';
+    if (!isEvidence && !isReplacement && deliveryType === 'delivery' && deliveryAddress.length < 8) return formError('Укажите полный адрес доставки: город, улицу и номер дома.', 'deliveryAddress');
+    if (!isEvidence && !isReplacement && deliveryType === 'delivery' && deliveryPreferredTime.length < 3) return formError('Укажите удобное время доставки.', 'deliveryPreferredTime');
+    if (!isEvidence && !isReplacement && deliveryType === 'arca_locker' && lockerAddress.length < 8) return formError('Выберите точку ARCHA POINT.', 'lockerAddress');
     const residenceAddress = String(documentForm.elements.residenceAddress?.value || '').trim();
     if (!isEvidence && !isReplacement && (residenceAddress.length < 15 || !/\d/.test(residenceAddress))) return formError('Укажите полный адрес проживания: город, район, улицу, номер дома и квартиру.', 'residenceAddress');
     const fullName = String(documentForm.elements.fullName?.value || '').trim();
@@ -1484,7 +1499,7 @@ document.addEventListener('submit', async event => {
         const saved = await request('POST', { action:'save_profile', fullName });
         customerProfile = saved.profile || { full_name:fullName };
       }
-      if (!isEvidence && !isReplacement && (documentForm.elements.deliveryAddress || documentForm.elements.lockerAddress)) await request('POST', { action:'save_delivery_preferences', orderId:documentForm.dataset.order, deliveryAddress, deliveryPreferredTime, lockerAddress });
+      if (!isEvidence && !isReplacement && documentForm.elements.deliveryType) await request('POST', { action:'save_delivery_preferences', orderId:documentForm.dataset.order, deliveryType, deliveryAddress, deliveryPreferredTime, lockerAddress });
       if (!isEvidence && !isReplacement) await request('POST', { action:'save_residence_address', orderId:documentForm.dataset.order, residenceAddress, supportingDocumentType:documentForm.elements.supportingType?.value || '' });
       const orderComment = String(documentForm.elements.orderComment?.value || '').trim();
       if (!isEvidence && orderComment.length >= 3) await request('POST', { action:'save_order_comment', orderId:documentForm.dataset.order, message:orderComment });

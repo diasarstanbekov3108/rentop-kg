@@ -220,26 +220,29 @@ export default async function handler(request, response) {
       }
       if (payload.action === 'save_delivery_preferences') {
         if (order.status !== 'draft') return json(response, 409, { error:'Данные доставки уже переданы менеджеру. Для изменения обратитесь в поддержку.' });
-        if (order.delivery_type === 'arca_locker') {
+        const deliveryType = payload.deliveryType === 'arca_locker' ? 'arca_locker' : 'delivery';
+        if (deliveryType === 'arca_locker') {
           const lockerAddress = String(payload.lockerAddress || '').trim().replace(/\s+/g, ' ').slice(0, 300);
           if (lockerAddress.length < 8) return json(response, 400, { error:'Выберите удобную точку ARCHA POINT.' });
-          const updated = await database.updateOrder(order.id, { locker_address:lockerAddress });
-          await database.createEvent({ order_id:order.id, event_type:'customer_selected_archa_location_from_cabinet', actor_type:'customer', metadata:{ locker_address:lockerAddress } });
+          const updated = await database.updateOrder(order.id, { delivery_type:'arca_locker', locker_address:lockerAddress, locker_status:null, delivery_address:null, delivery_contact_name:null, delivery_contact_phone:null, delivery_preferred_time:null });
+          await database.createEvent({ order_id:order.id, event_type:order.delivery_type === 'arca_locker' ? 'customer_selected_archa_location_from_cabinet' : 'customer_changed_delivery_type_from_cabinet', actor_type:'customer', metadata:{ delivery_type:'arca_locker', locker_address:lockerAddress } });
           return json(response, 200, { ok:true, order:updated });
         }
-        if (order.delivery_type !== 'delivery') return json(response, 200, { ok:true, order });
         const deliveryAddress = String(payload.deliveryAddress || '').trim().replace(/\s+/g, ' ').slice(0, 500);
         const deliveryPreferredTime = String(payload.deliveryPreferredTime || '').trim().replace(/\s+/g, ' ').slice(0, 300);
         if (deliveryAddress.length < 8) return json(response, 400, { error:'Укажите полный адрес доставки.' });
         if (deliveryPreferredTime.length < 3) return json(response, 400, { error:'Укажите удобное время доставки.' });
         const profile = await database.getCustomerProfile(session.phone).catch(() => null);
         const updated = await database.updateOrder(order.id, {
+          delivery_type:'delivery',
+          locker_address:null,
+          locker_status:null,
           delivery_address:deliveryAddress,
           delivery_contact_name:profile?.full_name || order.customer_name || null,
           delivery_contact_phone:session.phone,
           delivery_preferred_time:deliveryPreferredTime
         });
-        await database.createEvent({ order_id:order.id, event_type:'customer_saved_delivery_preferences_from_cabinet', actor_type:'customer', metadata:{ address_length:deliveryAddress.length, preferred_time:deliveryPreferredTime } });
+        await database.createEvent({ order_id:order.id, event_type:order.delivery_type === 'delivery' ? 'customer_saved_delivery_preferences_from_cabinet' : 'customer_changed_delivery_type_from_cabinet', actor_type:'customer', metadata:{ delivery_type:'delivery', address_length:deliveryAddress.length, preferred_time:deliveryPreferredTime } });
         return json(response, 200, { ok:true, order:updated });
       }
       if (payload.action === 'save_alternative_security_contact') {

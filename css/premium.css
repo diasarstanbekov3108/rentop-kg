@@ -1057,6 +1057,10 @@ body {
   /* The visual container itself must remain touchable. On iOS, keeping the
      parent untouchable can make a child button look present but ignore taps. */
   pointer-events: auto;
+  /* Stop iOS/Safari from turning a vertical drag into a page scroll. */
+  touch-action: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
   transform: translate3d(var(--mascot-x), var(--mascot-y), 0);
   transition: transform 620ms cubic-bezier(.2, .82, .27, 1.12), opacity 180ms ease;
 }

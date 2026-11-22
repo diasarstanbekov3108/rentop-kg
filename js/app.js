@@ -1275,9 +1275,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Window listeners remain as a safe fallback when the finger leaves the icon.
   rentopMascotButton?.addEventListener('pointerdown', (event) => {
     if (event.button !== 0 || !rentopMascot) return;
+    // Safari may otherwise hand a vertical finger movement back to page
+    // scrolling before the button receives its first pointermove.
+    event.preventDefault();
     beginMascotDrag({ pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, input: 'pointer' });
     try {
-      rentopMascotButton.setPointerCapture(event.pointerId);
+      rentopMascot.setPointerCapture(event.pointerId);
     } catch {
       // Some mobile browsers reject capture during a fast tap. Window events
       // below still complete both the tap and the drag safely.
@@ -1295,8 +1298,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const endMascotDrag = (event) => {
     if (!mascotDrag || (mascotDrag.input === 'pointer' && mascotDrag.pointerId !== event.pointerId)) return;
     const didDrag = mascotDidDrag;
-    if (mascotDrag.input === 'pointer' && rentopMascotButton?.hasPointerCapture(mascotDrag.pointerId)) {
-      rentopMascotButton.releasePointerCapture(mascotDrag.pointerId);
+    if (mascotDrag.input === 'pointer' && rentopMascot?.hasPointerCapture(mascotDrag.pointerId)) {
+      rentopMascot.releasePointerCapture(mascotDrag.pointerId);
     }
     mascotDrag = undefined;
     window.clearTimeout(mascotWalkTimer);
