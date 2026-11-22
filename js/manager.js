@@ -54,6 +54,7 @@ let filter = 'all';
 let pendingManagerPhone = '';
 let isChiefAdmin = false;
 let mobileNavScrollY = 0;
+let mobileOrderScrollY = 0;
 let activeLoad = null;
 const transientOrderMessages = new Map();
 let openOrderDetails = new Set();
@@ -76,6 +77,36 @@ const nextAction = order => {
   if (order.status === 'pending_review') return { next:'awaiting_payment', label:'Подтвердить сверку и перейти к выставлению оплаты' };
   return null;
 };
+
+function isCompactManagerViewport() {
+  return window.matchMedia('(max-width: 760px)').matches;
+}
+
+function setMobileOrderView(open) {
+  if (!isCompactManagerViewport() && open) return;
+  const body = document.body;
+  if (open) {
+    if (body.classList.contains('manager-mobile-order-open')) return;
+    mobileOrderScrollY = window.scrollY || window.pageYOffset || 0;
+    body.classList.add('manager-mobile-order-open');
+    body.style.position = 'fixed';
+    body.style.top = `-${mobileOrderScrollY}px`;
+    body.style.width = '100%';
+    body.style.overflow = 'hidden';
+    return;
+  }
+  if (!body.classList.contains('manager-mobile-order-open')) return;
+  body.classList.remove('manager-mobile-order-open');
+  body.style.position = '';
+  body.style.top = '';
+  body.style.width = '';
+  body.style.overflow = '';
+  window.scrollTo({ top:mobileOrderScrollY, behavior:'auto' });
+}
+
+window.addEventListener('resize', () => {
+  if (!isCompactManagerViewport()) setMobileOrderView(false);
+}, { passive:true });
 
 function closeDocumentViewer() { if (!documentViewer) return; documentViewer.hidden = true; if (documentViewerContent) documentViewerContent.innerHTML = ''; document.body.style.overflow = ''; }
 function openDocumentViewer(url, name = 'Документ', contentType = '') { if (!documentViewer || !documentViewerContent || !url) return; const isPdf = contentType === 'application/pdf' || /\.pdf(?:[?#]|$)/i.test(name); const isVideo = contentType.startsWith('video/') || /\.(?:mp4|mov)(?:[?#]|$)/i.test(name); documentViewerContent.innerHTML = isVideo ? `<video controls preload="metadata" src="${escape(url)}">Ваш браузер не поддерживает просмотр видео.</video>` : isPdf ? `<iframe src="${escape(url)}" title="${escape(name)}"></iframe>` : `<img src="${escape(url)}" alt="${escape(name)}">`; documentViewer.hidden = false; document.body.style.overflow = 'hidden'; }
@@ -330,6 +361,8 @@ function render() {
   const list = visibleOrders();
   const compactMobileQueue = window.matchMedia('(max-width: 760px)').matches;
   if (!list.some(order => String(order.id) === String(selectedOrderId))) selectedOrderId = compactMobileQueue ? '' : (list[0]?.id || '');
+  if (compactMobileQueue && selectedOrderId) setMobileOrderView(true);
+  else setMobileOrderView(false);
   const pendingDocs = orders.reduce((total, order) => total + order.documents.filter(document => document.status === 'pending_review').length, 0);
   const active = orders.filter(order => ['in_use','incident'].includes(order.status)).length;
   const returns = orders.filter(order => ['return_requested','awaiting_return_reservation','awaiting_return_dropoff','awaiting_return_collection','returned'].includes(order.status));
@@ -440,10 +473,12 @@ function render() {
     const isSelected = String(order.id) === String(selectedOrderId);
     const previous = list[orderIndex - 1];
     const next = list[orderIndex + 1];
-    const queueNavigation = isSelected ? `<div class="manager-order-queue-nav" aria-label="Навигация по рабочей очереди"><span>${list.length > 1 ? `В очереди: ${orderIndex + 1} из ${list.length}` : 'Открыта заявка'}</span><div><button class="manager-order-close" type="button" data-close-manager-order aria-label="Свернуть заявку">×</button>${list.length > 1 ? `<button type="button" data-select-order="${escape(previous?.id || '')}" ${previous ? '' : 'disabled'} aria-label="Предыдущая заявка">←</button><button type="button" data-select-order="${escape(next?.id || '')}" ${next ? '' : 'disabled'} aria-label="Следующая заявка">→</button>` : ''}</div></div>` : '';
+    const isMobileDetail = compactMobileQueue && isSelected;
+    const mobileOrderHeader = isMobileDetail ? `<div class="manager-mobile-order-header"><button type="button" data-close-manager-order aria-label="Вернуться к очереди">← <span>Очередь</span></button><strong>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())}</strong><button type="button" data-close-manager-order aria-label="Закрыть заявку">×</button></div>` : '';
+    const queueNavigation = isSelected ? `<div class="manager-order-queue-nav" aria-label="Навигация по рабочей очереди"><span>${list.length > 1 ? `В очереди: ${orderIndex + 1} из ${list.length}` : 'Открыта заявка'}</span><div>${!isMobileDetail ? '<button class="manager-order-close" type="button" data-close-manager-order aria-label="Свернуть заявку">×</button>' : ''}${list.length > 1 ? `<button type="button" data-select-order="${escape(previous?.id || '')}" ${previous ? '' : 'disabled'} aria-label="Предыдущая заявка">←</button><button type="button" data-select-order="${escape(next?.id || '')}" ${next ? '' : 'disabled'} aria-label="Следующая заявка">→</button>` : ''}</div></div>` : '';
     const fresh = isFreshOrder(order);
     const detailsOpen = openOrderDetails.has(String(order.id)) || (!compactMobileQueue && (isSelected || (order.status === 'pending_review' && documentsReadyForPayment)));
-    return `<article class="manager-order ${isSelected ? 'is-selected' : 'is-queued'}${fresh ? ' is-new' : ''}" data-manager-order="${order.id}" data-manager-return-method="${escape(order.return_method || '')}"><div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p><p class="manager-order-created">Поступила: ${escape(date(order.created_at))}</p></div><span class="manager-status-pill ${escape(order.status)}">${fresh ? '● НОВАЯ' : escape(statusLabel(order.status))}</span></div>${!isSelected ? `<button class="manager-order-open" type="button" data-open-manager-order="${escape(order.id)}">Открыть заявку <span>→</span></button>` : ''}${queueNavigation}<div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда / возврат</span><strong>${calendarDate(order.rental_start_date)} → ${calendarDate(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(deliveryLabel(order))}${deliveryDetails}</strong></div><div><span>Сумма аренды</span><strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div><span>Залог / скидка</span><strong>${Number(order.deposit_amount || 0).toLocaleString('ru-RU')} сом · ${Number(order.discount_percent || 0)}%</strong></div></div>${directDocuments}${alternativeSecurityPanel}${supportPanel}${returnAcceptance}${handoffPanel}${workflowActions ? `<div class="manager-actions manager-workflow-actions">${workflowActions}</div>` : ''}<p class="manager-order-feedback" data-order-feedback="${order.id}" hidden></p><details class="manager-order-details" ${detailsOpen ? 'open' : ''}><summary>Детали заявки, реестр и служебные данные</summary>${details}</details></article>`;
+    return `<article class="manager-order ${isSelected ? 'is-selected' : 'is-queued'}${isMobileDetail ? ' is-mobile-detail' : ''}${fresh ? ' is-new' : ''}" data-manager-order="${order.id}" data-manager-return-method="${escape(order.return_method || '')}">${mobileOrderHeader}<div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p><p class="manager-order-created">Поступила: ${escape(date(order.created_at))}</p></div><span class="manager-status-pill ${escape(order.status)}">${fresh ? '● НОВАЯ' : escape(statusLabel(order.status))}</span></div>${!isSelected ? `<button class="manager-order-open" type="button" data-open-manager-order="${escape(order.id)}">Открыть заявку <span>→</span></button>` : ''}${queueNavigation}<div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда / возврат</span><strong>${calendarDate(order.rental_start_date)} → ${calendarDate(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(deliveryLabel(order))}${deliveryDetails}</strong></div><div><span>Сумма аренды</span><strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div><span>Залог / скидка</span><strong>${Number(order.deposit_amount || 0).toLocaleString('ru-RU')} сом · ${Number(order.discount_percent || 0)}%</strong></div></div>${directDocuments}${alternativeSecurityPanel}${supportPanel}${returnAcceptance}${handoffPanel}${workflowActions ? `<div class="manager-actions manager-workflow-actions">${workflowActions}</div>` : ''}<p class="manager-order-feedback" data-order-feedback="${order.id}" hidden></p><details class="manager-order-details" ${detailsOpen ? 'open' : ''}><summary>Детали заявки, реестр и служебные данные</summary>${details}</details></article>`;
   }).join('') : '<div class="manager-empty">По этому фильтру заявок нет.</div>';
   if (compactMobileQueue) compactMobileOrderSections();
   window.requestAnimationFrame(() => {
@@ -590,9 +625,9 @@ ordersEl?.addEventListener('change', event => {
 });
 ordersEl.addEventListener('click', async event => {
   const closeOrder = event.target.closest('[data-close-manager-order]');
-  if (closeOrder) { selectedOrderId = ''; render(); return; }
+  if (closeOrder) { setMobileOrderView(false); selectedOrderId = ''; render(); return; }
   const explicitOpen = event.target.closest('[data-open-manager-order]');
-  if (explicitOpen?.dataset.openManagerOrder) { selectedOrderId = explicitOpen.dataset.openManagerOrder; render(); return; }
+  if (explicitOpen?.dataset.openManagerOrder) { selectedOrderId = explicitOpen.dataset.openManagerOrder; setMobileOrderView(true); render(); return; }
   const replacementOpen = event.target.closest('[data-open-replacement-picker]');
   if (replacementOpen?.dataset.openReplacementPicker) { openReplacementPicker(replacementOpen.dataset.openReplacementPicker); return; }
   const queueSelection = event.target.closest('[data-select-order]');
