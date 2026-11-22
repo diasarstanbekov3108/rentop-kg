@@ -98,6 +98,17 @@ export default async function handler(request, response) {
     const promoCode = normalizePromoCode(payload.promoCode);
     const promo = promoCode ? usablePromo(await database.getPromoByCode(promoCode), session.phone) : null;
     const rental = rentalWithDiscount(baseRental, baseRental.discount + Number(promo?.discount_percent || 0));
+    // A second tap, a browser back-navigation, or a slow mobile connection
+    // must not create a second copy of the same application for the same
+    // person, laptop and dates. Future rentals on different dates remain OK.
+    const previousOrders = await database.listOrdersByCustomerPhone(session.phone, 30).catch(() => []);
+    const duplicate = previousOrders.find(order =>
+      Number(order.laptop_id) === laptopId &&
+      String(order.rental_start_date) === String(payload.startDate) &&
+      String(order.rental_end_date) === String(payload.endDate) &&
+      !['cancelled', 'rejected', 'completed'].includes(String(order.status || ''))
+    );
+    if (duplicate) throw new Error('Такая заявка уже создана. Откройте личный кабинет и загрузите документы — повторно бронировать этот же ноутбук на те же даты не нужно.');
     const token = randomBytes(18).toString('base64url');
     const order = await database.createOrder({
       laptop_id: laptopId,

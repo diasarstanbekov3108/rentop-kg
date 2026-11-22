@@ -914,7 +914,9 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   profileEl.innerHTML = hasValidProfileName
     ? `<div class="cabinet-profile-name"><span class="cabinet-profile-avatar" aria-hidden="true">${escape(fullName.split(' ').filter(Boolean).slice(0,2).map(part => part[0]).join('').toUpperCase() || 'R')}</span><p><strong>${escape(fullName)}</strong><span>Номер подтверждён · ${escape(phone)}</span></p></div>`
     : `<form class="cabinet-profile-form" id="profile-form"><label for="profile-full-name">${returningToBooking ? `Последний шаг для ${escape(selectedLaptopTitle)}` : 'Заполните ФИО для договора'}</label><div><input id="profile-full-name" name="fullName" autocomplete="name" placeholder="Фамилия Имя Отчество" required><button class="cabinet-action" type="submit">${returningToBooking ? 'Продолжить к заявке' : 'Сохранить'}</button></div><p>${returningToBooking ? 'Номер уже подтверждён по SMS. Укажите ФИО как в документе — и сразу вернём вас к выбранному ноутбуку.' : 'Указывайте данные так же, как в документе. Номер уже подтверждён по SMS.'}</p></form>`;
-  const created = new URLSearchParams(window.location.search).get('created');
+  const accountParams = new URLSearchParams(window.location.search);
+  const created = accountParams.get('created');
+  const autoOpenDocuments = accountParams.get('open') === 'documents';
   dashboardNotice.hidden = !created;
   if (created) {
     const createdOrder = cabinetOrders.find(order => String(order.id) === String(created));
@@ -954,6 +956,12 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   else if (!showingArchivedOrders) emptyEl.innerHTML = '<h3>Аренд пока нет</h3><p>Когда вы оформите заявку с этим номером, она появится здесь.</p><a class="cabinet-primary cabinet-link" href="/#catalog">Выбрать ноутбук</a>';
   watchOrderUpdates(cabinetOrders);
   if (workspaceOrderId && displayedOrders.some(order => String(order.id) === workspaceOrderId)) openOrderWorkspace(workspaceOrderId);
+  else if (created && autoOpenDocuments && displayedOrders.some(order => String(order.id) === String(created))) {
+    // A fresh booking must land directly on the next real task. Leaving a
+    // customer on a card list caused unfinished document steps and repeats.
+    openOrderWorkspace(created);
+    window.requestAnimationFrame(() => document.querySelector(`#cabinet-order-workspace [data-panel="documents"][data-order="${CSS.escape(String(created))}"]`)?.click());
+  }
   // A live update may replace the workspace markup. Restore the exact page
   // position so a customer recording or uploading evidence is never thrown
   // back to the beginning of the application.

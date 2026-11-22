@@ -1621,7 +1621,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         if (!response.ok || !result.accountUrl) throw new Error(result.error || 'Не удалось создать заявку.');
         clearPendingBooking();
-        window.location.assign(result.accountUrl);
+        window.location.assign(`${result.accountUrl}${result.accountUrl.includes('?') ? '&' : '?'}open=documents`);
         return;
       } catch (error) {
         submitInFlight = false;

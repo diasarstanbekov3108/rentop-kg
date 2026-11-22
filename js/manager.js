@@ -431,7 +431,9 @@ ordersEl.addEventListener('click', async event => {
   }
   const orderCard = event.target.closest('.manager-order');
   const isControl = event.target.closest('button, a, input, textarea, select, summary, label');
-  if (orderCard && !isControl) {
+  // Compact queue cards are a single selection target. Let a tap anywhere on
+  // an unselected card open it, even if the tap lands on its status label.
+  if (orderCard && (!isControl || !orderCard.classList.contains('is-selected'))) {
     selectedOrderId = orderCard.dataset.managerOrder;
     render();
     return;
