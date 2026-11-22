@@ -1664,22 +1664,31 @@ cabinetTopikToggle?.addEventListener('pointerdown', event => {
   if (event.button !== 0 || !cabinetTopik) return;
   const rect = cabinetTopik.getBoundingClientRect();
   cabinetTopikDrag = { pointerId:event.pointerId, startX:event.clientX, startY:event.clientY, left:rect.left, top:rect.top, moved:false };
-  try { cabinetTopikToggle.setPointerCapture(event.pointerId); } catch { /* Window events finish dragging if capture is rejected. */ }
+  try { cabinetTopik.setPointerCapture(event.pointerId); } catch { /* Window events finish dragging if capture is rejected. */ }
 });
-window.addEventListener('pointermove', event => {
+const moveCabinetTopik = event => {
   if (!cabinetTopikDrag || event.pointerId !== cabinetTopikDrag.pointerId) return;
   const dx = event.clientX - cabinetTopikDrag.startX;
   const dy = event.clientY - cabinetTopikDrag.startY;
   if (Math.abs(dx) + Math.abs(dy) < 4) return;
+  // A drag belongs to Topik, not the document behind it. This prevents the
+  // vertical gesture from becoming Safari's pull-to-refresh gesture.
+  event.preventDefault();
   cabinetTopikDrag.moved = true;
   setCabinetTopikOpen(false);
   setCabinetTopikPosition(cabinetTopikDrag.left + dx, cabinetTopikDrag.top + dy, true);
-}, { passive:true });
-window.addEventListener('pointerup', event => {
+};
+window.addEventListener('pointermove', moveCabinetTopik, { passive:false });
+const endCabinetTopikDrag = event => {
   if (!cabinetTopikDrag || event.pointerId !== cabinetTopikDrag.pointerId) return;
   if (cabinetTopikDrag.moved && cabinetTopikToggle) cabinetTopikToggle.dataset.dragged = '1';
+  if (cabinetTopik?.hasPointerCapture(event.pointerId)) cabinetTopik.releasePointerCapture(event.pointerId);
   cabinetTopikDrag = null;
-});
+};
+cabinetTopik?.addEventListener('pointerup', endCabinetTopikDrag);
+cabinetTopik?.addEventListener('pointercancel', endCabinetTopikDrag);
+window.addEventListener('pointerup', endCabinetTopikDrag);
+window.addEventListener('pointercancel', endCabinetTopikDrag);
 cabinetTopikOpenOrder?.addEventListener('click', () => {
   const orderId = cabinetTopikOpenOrder.dataset.orderId;
   if (!orderId) return;

@@ -1,6 +1,6 @@
 /* Same Topik visual as on the storefront, kept above an iOS browser toolbar. */
-.cabinet-topik{z-index:2500;right:max(12px,env(safe-area-inset-right));bottom:calc(84px + env(safe-area-inset-bottom));width:84px;height:84px;pointer-events:auto}
-.cabinet-topik-toggle{position:relative;width:84px;height:84px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.cabinet-topik{z-index:2500;right:max(12px,env(safe-area-inset-right));bottom:calc(84px + env(safe-area-inset-bottom));width:84px;height:84px;pointer-events:auto;touch-action:none;overscroll-behavior:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.cabinet-topik-toggle{position:relative;width:84px;height:84px;touch-action:none;-webkit-tap-highlight-color:transparent}
 .cabinet-topik-toggle img{position:absolute;inset:0;width:84px;height:84px;object-fit:contain;transition:opacity 160ms ease,transform 160ms ease}
 .cabinet-topik-happy{opacity:0}.cabinet-topik.is-farewell .cabinet-topik-work{opacity:0}.cabinet-topik.is-farewell .cabinet-topik-happy{opacity:1;animation:topik-farewell .9s ease-in-out 2}
 .cabinet-topik-panel{position:absolute;right:calc(100% - 8px);bottom:4px;width:min(276px,calc(100vw - 104px));padding:13px 14px;background:rgba(7,20,33,.98);box-shadow:0 18px 42px rgba(0,0,0,.42)}
