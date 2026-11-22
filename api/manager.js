@@ -323,7 +323,7 @@ export default async function handler(request, response) {
       if (hasIdentityPair) Object.assign(patch, { identity_document_number:identityDocumentNumber, identity_document_issuer:identityDocumentIssuer, identity_verified_at:new Date().toISOString(), identity_verified_by:session.phone });
       const updated = await database.updateOrder(order.id, patch);
       await database.createEvent({ order_id:order.id, event_type:'manager_updated_rental_registry_from_web', actor_type:'manager', metadata:{ has_rental_purpose:Boolean(rentalPurpose), has_manager_note:Boolean(managerNote), has_return_condition_note:Boolean(returnConditionNote), identity_verified:hasIdentityPair } }).catch(error => console.error('Manager registry audit event failed:', error.message));
-      return reply(response, 200, { ok:true, order:updated, message:'Внутренний реестр аренды сохранён.' });
+      return reply(response, 200, { ok:true, order:updated, message:'Сверка документов и внутренний реестр сохранены. После приёма обязательных файлов можно перейти к выставлению оплаты.' });
     }
     if (payload.action === 'issue_loyalty_promo') {
       const order = await database.getOrder(String(payload.orderId || ''));
