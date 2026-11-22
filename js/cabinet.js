@@ -778,7 +778,7 @@ function loyaltyPanel(promos, benefits = [], orderId = '') {
   const activeBenefit = currentBenefit?.status === 'approved' ? currentBenefit : null;
   const pendingBenefit = currentBenefit?.status === 'pending_review' ? currentBenefit : null;
   const benefitList = currentBenefit ? `<div class="cabinet-promo-list"><div class="cabinet-promo ${currentBenefit.status === 'rejected' ? 'is-rejected' : ''}"><b>Ваша льгота: ${escape(benefitLabel(currentBenefit.benefit_type))}</b><span>${currentBenefit.status === 'approved' ? '−10%' : benefitState(currentBenefit)}</span><small>${currentBenefit.reviewer_note ? escape(currentBenefit.reviewer_note) : currentBenefit.status === 'approved' ? 'Подтверждена и действует в новых заявках.' : 'Менеджер проверяет документ.'}</small></div></div>` : '';
-  const benefitForm = orderId && !activeBenefit && !pendingBenefit ? `<form class="cabinet-inline-form cabinet-benefit-form cabinet-documents-form" novalidate data-document-upload="true" data-document-replacement="1" data-benefit-type="student" data-required-kinds="benefit_proof" data-order="${escape(orderId)}"><div class="cabinet-benefit-heading"><strong>Льгота · 10%</strong><span>Проверка менеджером</span></div><p>Выберите категорию и один подтверждающий документ. После одобрения пересчитаем и текущую неоплаченную заявку, и будущие заявки.</p><label class="cabinet-field-label" for="benefit-type-${escape(orderId)}">Категория льготы</label><select id="benefit-type-${escape(orderId)}" name="benefitType">${BENEFIT_OPTIONS.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select>${fileControl('benefit_proof')}<div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Отправить документ на проверку</button></div></form>` : activeBenefit ? '' : '<p class="cabinet-benefit-status">Льготный документ на проверке. Сумма текущей неоплаченной заявки обновится после одобрения.</p>';
+  const benefitForm = orderId && !activeBenefit && !pendingBenefit ? `<details class="cabinet-benefit-disclosure"><summary><span><strong>Льгота · 10%</strong><small>По документу, необязательно</small></span><b>Оформить</b></summary><form class="cabinet-inline-form cabinet-benefit-form cabinet-documents-form" novalidate data-document-upload="true" data-document-replacement="1" data-benefit-type="student" data-required-kinds="benefit_proof" data-order="${escape(orderId)}"><div class="cabinet-benefit-heading"><strong>Проверка льготы</strong><span>Менеджером</span></div><p>Выберите категорию и один документ. После одобрения скидка применится к неоплаченной и будущим заявкам.</p><label class="cabinet-field-label" for="benefit-type-${escape(orderId)}">Категория льготы</label><select id="benefit-type-${escape(orderId)}" name="benefitType">${BENEFIT_OPTIONS.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select>${fileControl('benefit_proof')}<div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Отправить на проверку</button></div></form></details>` : activeBenefit ? '' : '<p class="cabinet-benefit-status">Льготный документ на проверке. Сумма текущей неоплаченной заявки обновится после одобрения.</p>';
   const promoList = promos.length ? `<div class="cabinet-promo-list">${promos.map(promo => `<div class="cabinet-promo"><b>${escape(promo.code)}</b><span>−${Number(promo.discount_percent || 0)}%</span><small>${escape(promoStatus(promo))} · до ${date(promo.expires_at)}</small></div>`).join('')}</div>` : '<p class="cabinet-form-hint">Пока нет персональных промокодов. Их выдаёт Rentop — код появится здесь.</p>';
   return `<section class="cabinet-loyalty"><div class="cabinet-loyalty-heading"><strong>Ваши скидки</strong><span>до 40%</span></div>${benefitList}${benefitForm}<div class="cabinet-discount-guide"><strong>Скидка по сроку аренды</strong><span>7–14 дней — 15% · 15+ дней — 30%</span></div><div class="cabinet-promo-heading"><strong>Персональные промокоды</strong><small>Введите код при оформлении новой заявки.</small></div>${promoList}<p class="cabinet-form-hint">Срок аренды, подтверждённая льгота и персональный код складываются. Максимальная скидка — 40%. Залог не уменьшается.</p></section>`;
 }
@@ -960,6 +960,13 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
     // A fresh booking must land directly on the next real task. Leaving a
     // customer on a card list caused unfinished document steps and repeats.
     openOrderWorkspace(created);
+    // `created` is a one-time route instruction, not a permanent cabinet
+    // state. Remove it before background refreshes so «Все заявки» remains
+    // a real exit from the application workspace.
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete('created');
+    cleanUrl.searchParams.delete('open');
+    window.history.replaceState({}, '', `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
     window.requestAnimationFrame(() => document.querySelector(`#cabinet-order-workspace [data-panel="documents"][data-order="${CSS.escape(String(created))}"]`)?.click());
   }
   // A live update may replace the workspace markup. Restore the exact page
@@ -1047,7 +1054,7 @@ phoneForm?.addEventListener('submit', async event => { event.preventDefault(); c
 codeForm?.addEventListener('submit', async event => { event.preventDefault(); const code = codeInput.value.replace(/\D/g, ''); if (code.length !== 6) return message('Введите все 6 цифр кода.', 'error'); const button = codeForm.querySelector('button'); button.disabled = true; message('Проверяем код…'); try { const remember = document.getElementById('cabinet-remember')?.checked !== false; let data = await request('POST', { action:'verify_code', phone:pendingPhone, code, remember }); data = await stabilizeAccountSnapshot(data); sessionViewEpoch += 1; showRentals(data.orders || [], data.phone, data.profile, data.whatsappUrl, data.offerSmsConsentRequired, data.promos, data.benefits); message(''); } catch (error) { message(error.message, 'error'); } finally { button.disabled = false; } });
 document.getElementById('change-phone')?.addEventListener('click', () => { codeForm.hidden = true; phoneForm.hidden = false; codeInput.value = ''; message(''); phoneInput.focus(); });
 document.getElementById('cabinet-logout')?.addEventListener('click', async () => { await request('POST', { action:'logout' }).catch(() => {}); showLogin(); phoneForm.hidden = false; codeForm.hidden = true; phoneInput.value = ''; codeInput.value = ''; pendingPhone = ''; message('Вы вышли из кабинета.'); });
-rentalsEl?.addEventListener('click', event => {
+document.addEventListener('click', event => {
   const openOrder = event.target.closest('[data-open-order]');
   if (openOrder) {
     openOrderWorkspace(openOrder.dataset.openOrder);
@@ -1348,7 +1355,7 @@ document.addEventListener('visibilitychange', () => {
   // customer returns to the cabinet, fetch the current status immediately.
   if (document.visibilityState === 'visible' && !dashboard.hidden) refreshAccountIfSafe();
 });
-rentalsEl?.addEventListener('change', event => {
+document.addEventListener('change', event => {
   const benefitType = event.target.closest('select[data-benefit-type]');
   if (benefitType) {
     const proof = benefitType.closest('form')?.querySelector('[data-benefit-proof]');
@@ -1412,13 +1419,13 @@ rentalsEl?.addEventListener('change', event => {
     video.src = objectUrl;
   }
 });
-rentalsEl?.addEventListener('click', event => {
+document.addEventListener('click', event => {
   const targetButton = event.target.closest('[data-form-error-target]');
   if (!targetButton) return;
   event.preventDefault();
   focusDocumentFormTarget(targetButton.closest('[data-document-upload]'), targetButton.dataset.formErrorTarget);
 });
-rentalsEl?.addEventListener('submit', async event => {
+document.addEventListener('submit', async event => {
   const documentForm = event.target.closest('[data-document-upload]');
   if (documentForm) {
     event.preventDefault();
