@@ -48,6 +48,7 @@ let b2bLeads = [];
 let filter = 'all';
 let pendingManagerPhone = '';
 let isChiefAdmin = false;
+let mobileNavScrollY = 0;
 let activeLoad = null;
 const transientOrderMessages = new Map();
 let openOrderDetails = new Set();
@@ -343,7 +344,7 @@ function render() {
     const mayReplaceBeforePayment = ['draft','pending_review'].includes(order.status);
     const replacementBeforePayment = mayReplaceBeforePayment ? `<div class="manager-prepayment-replacement"><label>Заменить модель до счёта<select data-prepayment-replacement-laptop><option value="">Выберите другую доступную модель</option>${rentableLaptops.filter(laptop => String(laptop.id) !== String(order.laptop_id)).map(laptop => `<option value="${Number(laptop.id)}">${escape(laptop.title)} · ${Number(laptop.daily_rate || 0).toLocaleString('ru-RU')} сом/день</option>`).join('')}</select></label><button class="secondary" data-replace-prepayment-laptop="${order.id}">Заменить и пересчитать</button><small>Работает до QR-счёта: система проверит занятость и пересчитает аренду по новой ставке.</small></div>` : '';
     const mayCancelUnissued = ['draft','pending_review','awaiting_payment','payment_review','confirmed','awaiting_archa_reservation','awaiting_locker_loading','awaiting_pickup'].includes(order.status);
-    const adminTools = isChiefAdmin ? `<section class="manager-section"><h3>Контроль главного администратора</h3>${replacementBeforePayment}<div class="manager-actions"><a class="cabinet-action secondary" href="/api/manager/dossier?order=${encodeURIComponent(order.id)}" target="_blank" rel="noopener">Открыть защищённое досье</a><a class="cabinet-action ghost" href="/api/manager/dossier?order=${encodeURIComponent(order.id)}&format=json">Скачать технический JSON</a>${order.status === 'returned' ? `<button class="secondary" data-admin-close="${order.id}">Завершить после физического осмотра</button>` : ''}${incidentTools}${mayCancelUnissued ? `<button class="danger" data-cancel-unissued-order="${order.id}">Отменить до начала аренды</button>` : ''}${!['completed','cancelled','rejected','incident'].includes(order.status) ? `<button class="danger" data-admin-incident="${order.id}">Открыть инцидент</button>` : ''}${testTools}</div></section>` : '';
+    const adminTools = isChiefAdmin ? `<details class="manager-section manager-chief-tools"><summary><span>Служебные действия</span><small>Замена, отмена, инцидент</small></summary>${replacementBeforePayment ? `<div class="manager-chief-group"><h4>Замена модели</h4>${replacementBeforePayment}</div>` : ''}<div class="manager-admin-links"><a class="cabinet-action secondary" href="/api/manager/dossier?order=${encodeURIComponent(order.id)}" target="_blank" rel="noopener">Досье</a><a class="cabinet-action ghost" href="/api/manager/dossier?order=${encodeURIComponent(order.id)}&format=json">Технический JSON</a></div>${order.status === 'returned' ? `<div class="manager-chief-group"><button class="secondary" data-admin-close="${order.id}">Завершить после физического осмотра</button></div>` : ''}<details class="manager-chief-critical"><summary>Инцидент или отмена</summary><p>Используйте только для исключительных случаев. Все действия фиксируются в истории заявки.</p><div class="manager-actions">${incidentTools}${mayCancelUnissued ? `<button class="danger" data-cancel-unissued-order="${order.id}">Отменить до начала аренды</button>` : ''}${!['completed','cancelled','rejected','incident'].includes(order.status) ? `<button class="danger" data-admin-incident="${order.id}">Открыть инцидент</button>` : ''}${testTools}</div></details></details>` : '';
     const handoffPanel = archaIssueHandoffPanel(order);
     const documentsPanel = `<section class="manager-section"><h3>Документы</h3><div class="manager-docs">${order.documents.length ? order.documents.map(document => documentCard(document, order.id)).join('') : '<span class="manager-empty">Документы ещё не загружены</span>'}</div></section>`;
     const requestsPanel = order.requests.length ? `<section class="manager-section"><h3>Запросы клиента</h3><div class="manager-requests">${order.requests.map(request => `<div class="manager-request">${escape(request.kind)} · ${escape(request.status)}${request.return_method ? ` · ${escape(request.return_method)}` : ''}${request.return_locker_address ? ` · ${escape(request.return_locker_address)}` : ''}${request.customer_message ? ` · ${escape(request.customer_message)}` : ''}</div>`).join('')}</div></section>` : '';
@@ -381,10 +382,19 @@ function hasManagerDraft() {
 }
 async function load(silent = false, include = '') { if (activeLoad) return activeLoad; const refreshLabel = refreshButton?.textContent; if (!silent) { statusEl.textContent = 'Обновляем заявки и статусы оплаты…'; if (refreshButton) { refreshButton.disabled = true; refreshButton.textContent = 'Обновляем…'; } } activeLoad = (async () => { try { const data = await api('GET', undefined, include); const incomingOrders = Array.isArray(data.orders) ? data.orders : null; if (!incomingOrders) throw new Error('Панель вернула неполные данные. Текущая очередь оставлена на экране.'); const keepVisibleQueue = orders.length > 0 && incomingOrders.length === 0; if (!keepVisibleQueue) orders = incomingOrders; rentableLaptops = Array.isArray(data.rentableLaptops) ? data.rentableLaptops : rentableLaptops; managerPromos = Array.isArray(data.promos) ? data.promos : managerPromos; b2bLeads = Array.isArray(data.b2bLeads) ? data.b2bLeads : b2bLeads; isChiefAdmin = Boolean(data.isChiefAdmin); if (catalogOpenButton) catalogOpenButton.hidden = !isChiefAdmin; if (sidebarCatalogButton) sidebarCatalogButton.hidden = !isChiefAdmin; gate.hidden = true; if (!catalogPanel.hidden || !promoPanel?.hidden) { renderPromoManager(); } else if (!b2bPanel?.hidden) { renderB2BManager(); } else if (helpPanel?.hidden) dashboard.hidden = false; const stamp = new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date()); statusEl.textContent = keepVisibleQueue ? `Связь с базой нестабильна: пустой ответ не применён. Показана последняя очередь · ${stamp}` : `${silent ? 'Синхронизировано' : 'Обновлено'}: ${stamp}`; render(); } catch (error) { if (error.status === 401) { dashboard.hidden = true; if (catalogOpenButton) catalogOpenButton.hidden = true; if (sidebarCatalogButton) sidebarCatalogButton.hidden = true; gate.hidden = false; statusEl.textContent = ''; return; } if (orders.length) { dashboard.hidden = false; gate.hidden = true; statusEl.textContent = `Не удалось обновить данные. Показана последняя очередь: ${error.message}`; return; } dashboard.hidden = true; gate.hidden = true; statusEl.textContent = error.message; } finally { if (!silent && refreshButton) { refreshButton.disabled = false; refreshButton.textContent = refreshLabel || 'Обновить'; } activeLoad = null; } })(); return activeLoad; }
 function setMobileNav(open) {
+  const wasOpen = document.body.classList.contains('manager-mobile-nav-open');
+  if (open && !wasOpen) {
+    mobileNavScrollY = window.scrollY;
+    document.body.style.top = `-${mobileNavScrollY}px`;
+  }
   managerSidebar?.classList.toggle('is-mobile-open', open);
   mobileNavBackdrop.hidden = !open;
   mobileNavToggle?.setAttribute('aria-expanded', String(open));
   document.body.classList.toggle('manager-mobile-nav-open', open);
+  if (!open && wasOpen) {
+    document.body.style.top = '';
+    window.scrollTo({ top:mobileNavScrollY, behavior:'auto' });
+  }
 }
 function setFilter(nextFilter) { if (!catalogPanel.hidden) catalogPanel.hidden = true; if (promoPanel && !promoPanel.hidden) promoPanel.hidden = true; if (b2bPanel && !b2bPanel.hidden) b2bPanel.hidden = true; if (helpPanel && !helpPanel.hidden) helpPanel.hidden = true; dashboard.hidden = false; filter = nextFilter; setMobileNav(false); document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item.dataset.filter === filter)); render(); }
 
@@ -430,6 +440,9 @@ document.querySelector('.manager-filters').addEventListener('click', event => { 
 mobileNavToggle?.addEventListener('click', () => setMobileNav(!managerSidebar?.classList.contains('is-mobile-open')));
 mobileNavClose?.addEventListener('click', () => setMobileNav(false));
 mobileNavBackdrop?.addEventListener('click', () => setMobileNav(false));
+document.addEventListener('touchmove', event => {
+  if (document.body.classList.contains('manager-mobile-nav-open') && !managerSidebar?.contains(event.target)) event.preventDefault();
+}, { passive:false });
 document.querySelector('.manager-sidebar-nav')?.addEventListener('click', event => { const button = event.target.closest('[data-filter]'); if (button) setFilter(button.dataset.filter); const dashboardButton = event.target.closest('[data-open-dashboard]'); if (dashboardButton) setFilter('all'); });
 statsEl.addEventListener('click', event => { const button = event.target.closest('[data-filter]'); if (button) setFilter(button.dataset.filter); });
 returnAlert?.addEventListener('click', () => { setFilter('returns'); document.querySelector('.manager-toolbar')?.scrollIntoView({ behavior:'smooth', block:'start' }); });
