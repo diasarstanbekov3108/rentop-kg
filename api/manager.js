@@ -3,6 +3,7 @@ import { loadConfig } from '../server/src/config.js';
 import { createSupabaseApi } from '../server/src/supabase.js';
 import { verifyBakaiToken, generateBakaiQr, makePaymentOperationId } from '../server/src/bakai.js';
 import { createNikitaSmsClient } from '../server/src/sms.js';
+import { createTelegramApi } from '../server/src/telegram.js';
 
 const COOKIE = '__Host-rentop_session';
 const allowedDocumentStates = new Set(['accepted', 'rejected']);
@@ -167,6 +168,18 @@ export default async function handler(request, response) {
     }
     if (request.method !== 'POST') return reply(response, 405, { error:'Method not allowed.' });
     const payload = request.body || {};
+    if (payload.action === 'test_manager_notification') {
+      try {
+        await createTelegramApi(config.telegramBotToken).sendMessage(
+          config.adminChatId,
+          `🔔 Проверка уведомлений Rentop\n\nСообщение отправлено из панели менеджера. Новые заявки будут приходить сюда сразу после создания.\n\nПанель: ${config.publicAppUrl}/manager`
+        );
+        return reply(response, 200, { ok:true, message:'Тест отправлен в Telegram. Проверьте чат Rentop.' });
+      } catch (error) {
+        console.error('Manager Telegram notification test failed:', error.message);
+        return reply(response, 502, { error:'Telegram не принял тест. Проверьте токен бота, ID чата и что вы начали диалог с ботом.' });
+      }
+    }
     if (payload.action === 'update_b2b_lead') {
       const id = String(payload.leadId || '');
       const status = String(payload.status || '');

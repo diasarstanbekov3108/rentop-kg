@@ -150,7 +150,7 @@ export default async function handler(request, response) {
     await bot.sendMessage(config.adminChatId,
       `🆕 Новая заявка с сайта\n\nЗаявка ${order.id.slice(0, 8).toUpperCase()}\n` +
       `${laptop.title}\nКлиент: ${fullName || 'ФИО заполняется в кабинете'}\nТелефон: ${session.phone}\n` +
-      `Срок: ${payload.startDate} — ${payload.endDate}\nСкидка: ${rental.discount}%${promo ? ` (промокод ${promo.code})` : ''}\nСумма: ${rental.total} сом\nПолучение: ${payload.deliveryType === 'arca_locker' ? 'ARCHA POINT (точка будет выбрана в кабинете)' : 'доставка (адрес будет указан в кабинете)'}`
+      `Срок: ${payload.startDate} — ${payload.endDate}\nСкидка: ${rental.discount}%${promo ? ` (промокод ${promo.code})` : ''}\nСумма: ${rental.total} сом\nПолучение: ${payload.deliveryType === 'arca_locker' ? 'ARCHA POINT (точка будет выбрана в кабинете)' : 'доставка (адрес будет указан в кабинете)'}\nДокументы: ожидаются\n\nОткройте панель: ${config.publicAppUrl}/manager`
     ).catch((error) => console.error('Manager notification failed:', error.message));
     return response.status(201).json({ orderId: order.id, accountUrl: `/account?created=${encodeURIComponent(order.id)}` });
   } catch (error) {

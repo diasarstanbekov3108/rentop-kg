@@ -13,6 +13,7 @@ const managerCodeInput = document.getElementById('manager-code');
 const managerLoginStatus = document.getElementById('manager-login-status');
 const clearTestsButton = document.getElementById('manager-clear-tests');
 const testBakaiButton = document.getElementById('manager-test-bakai');
+const testTelegramButton = document.getElementById('manager-test-telegram');
 const bakaiCheck = document.getElementById('manager-bakai-check');
 const returnAlert = document.getElementById('manager-return-alert');
 const catalogOpenButton = document.getElementById('manager-catalog-open');
@@ -392,6 +393,21 @@ testBakaiButton?.addEventListener('click', async () => {
   } finally {
     testBakaiButton.disabled = false;
     testBakaiButton.textContent = original;
+  }
+});
+testTelegramButton?.addEventListener('click', async () => {
+  testTelegramButton.disabled = true;
+  const original = testTelegramButton.textContent;
+  testTelegramButton.textContent = 'Отправляем…';
+  bakaiMessage('Отправляем тест в Telegram…');
+  try {
+    const result = await api('POST', { action:'test_manager_notification' });
+    bakaiMessage(result.message || 'Тест отправлен в Telegram.', 'success');
+  } catch (error) {
+    bakaiMessage(error.message, 'error');
+  } finally {
+    testTelegramButton.disabled = false;
+    testTelegramButton.textContent = original;
   }
 });
 if (clearTestsButton) clearTestsButton.hidden = true;
