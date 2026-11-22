@@ -31,6 +31,9 @@ const promoList = document.getElementById('manager-promo-list');
 const b2bPanel = document.getElementById('manager-b2b-panel');
 const b2bOpenButton = document.querySelector('[data-open-b2b]');
 const b2bCloseButton = document.getElementById('manager-b2b-close');
+const helpPanel = document.getElementById('manager-help-panel');
+const helpOpenButton = document.querySelector('[data-open-help]');
+const helpCloseButton = document.getElementById('manager-help-close');
 const b2bList = document.getElementById('manager-b2b-list');
 const refreshButton = document.getElementById('manager-refresh');
 let orders = [];
@@ -370,8 +373,8 @@ function hasManagerDraft() {
   // a manager is actively typing or selecting a value.
   return Boolean(document.activeElement?.matches('.manager-order textarea, .manager-order input, .manager-order select'));
 }
-async function load(silent = false, include = '') { if (activeLoad) return activeLoad; const refreshLabel = refreshButton?.textContent; if (!silent) { statusEl.textContent = 'Обновляем заявки и статусы оплаты…'; if (refreshButton) { refreshButton.disabled = true; refreshButton.textContent = 'Обновляем…'; } } activeLoad = (async () => { try { const data = await api('GET', undefined, include); const incomingOrders = Array.isArray(data.orders) ? data.orders : null; if (!incomingOrders) throw new Error('Панель вернула неполные данные. Текущая очередь оставлена на экране.'); const keepVisibleQueue = orders.length > 0 && incomingOrders.length === 0; if (!keepVisibleQueue) orders = incomingOrders; rentableLaptops = Array.isArray(data.rentableLaptops) ? data.rentableLaptops : rentableLaptops; managerPromos = Array.isArray(data.promos) ? data.promos : managerPromos; b2bLeads = Array.isArray(data.b2bLeads) ? data.b2bLeads : b2bLeads; isChiefAdmin = Boolean(data.isChiefAdmin); if (catalogOpenButton) catalogOpenButton.hidden = !isChiefAdmin; if (sidebarCatalogButton) sidebarCatalogButton.hidden = !isChiefAdmin; gate.hidden = true; if (!catalogPanel.hidden || !promoPanel?.hidden) { renderPromoManager(); } else if (!b2bPanel?.hidden) { renderB2BManager(); } else dashboard.hidden = false; const stamp = new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date()); statusEl.textContent = keepVisibleQueue ? `Связь с базой нестабильна: пустой ответ не применён. Показана последняя очередь · ${stamp}` : `${silent ? 'Синхронизировано' : 'Обновлено'}: ${stamp}`; render(); } catch (error) { if (error.status === 401) { dashboard.hidden = true; if (catalogOpenButton) catalogOpenButton.hidden = true; if (sidebarCatalogButton) sidebarCatalogButton.hidden = true; gate.hidden = false; statusEl.textContent = ''; return; } if (orders.length) { dashboard.hidden = false; gate.hidden = true; statusEl.textContent = `Не удалось обновить данные. Показана последняя очередь: ${error.message}`; return; } dashboard.hidden = true; gate.hidden = true; statusEl.textContent = error.message; } finally { if (!silent && refreshButton) { refreshButton.disabled = false; refreshButton.textContent = refreshLabel || 'Обновить'; } activeLoad = null; } })(); return activeLoad; }
-function setFilter(nextFilter) { if (!catalogPanel.hidden) catalogPanel.hidden = true; if (promoPanel && !promoPanel.hidden) promoPanel.hidden = true; dashboard.hidden = false; filter = nextFilter; document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item.dataset.filter === filter)); render(); }
+async function load(silent = false, include = '') { if (activeLoad) return activeLoad; const refreshLabel = refreshButton?.textContent; if (!silent) { statusEl.textContent = 'Обновляем заявки и статусы оплаты…'; if (refreshButton) { refreshButton.disabled = true; refreshButton.textContent = 'Обновляем…'; } } activeLoad = (async () => { try { const data = await api('GET', undefined, include); const incomingOrders = Array.isArray(data.orders) ? data.orders : null; if (!incomingOrders) throw new Error('Панель вернула неполные данные. Текущая очередь оставлена на экране.'); const keepVisibleQueue = orders.length > 0 && incomingOrders.length === 0; if (!keepVisibleQueue) orders = incomingOrders; rentableLaptops = Array.isArray(data.rentableLaptops) ? data.rentableLaptops : rentableLaptops; managerPromos = Array.isArray(data.promos) ? data.promos : managerPromos; b2bLeads = Array.isArray(data.b2bLeads) ? data.b2bLeads : b2bLeads; isChiefAdmin = Boolean(data.isChiefAdmin); if (catalogOpenButton) catalogOpenButton.hidden = !isChiefAdmin; if (sidebarCatalogButton) sidebarCatalogButton.hidden = !isChiefAdmin; gate.hidden = true; if (!catalogPanel.hidden || !promoPanel?.hidden) { renderPromoManager(); } else if (!b2bPanel?.hidden) { renderB2BManager(); } else if (helpPanel?.hidden) dashboard.hidden = false; const stamp = new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date()); statusEl.textContent = keepVisibleQueue ? `Связь с базой нестабильна: пустой ответ не применён. Показана последняя очередь · ${stamp}` : `${silent ? 'Синхронизировано' : 'Обновлено'}: ${stamp}`; render(); } catch (error) { if (error.status === 401) { dashboard.hidden = true; if (catalogOpenButton) catalogOpenButton.hidden = true; if (sidebarCatalogButton) sidebarCatalogButton.hidden = true; gate.hidden = false; statusEl.textContent = ''; return; } if (orders.length) { dashboard.hidden = false; gate.hidden = true; statusEl.textContent = `Не удалось обновить данные. Показана последняя очередь: ${error.message}`; return; } dashboard.hidden = true; gate.hidden = true; statusEl.textContent = error.message; } finally { if (!silent && refreshButton) { refreshButton.disabled = false; refreshButton.textContent = refreshLabel || 'Обновить'; } activeLoad = null; } })(); return activeLoad; }
+function setFilter(nextFilter) { if (!catalogPanel.hidden) catalogPanel.hidden = true; if (promoPanel && !promoPanel.hidden) promoPanel.hidden = true; if (b2bPanel && !b2bPanel.hidden) b2bPanel.hidden = true; if (helpPanel && !helpPanel.hidden) helpPanel.hidden = true; dashboard.hidden = false; filter = nextFilter; document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item.dataset.filter === filter)); render(); }
 
 refreshButton?.addEventListener('click', () => load(false));
 window.setInterval(() => {
@@ -843,6 +846,15 @@ b2bOpenButton?.addEventListener('click', async () => {
   renderB2BManager();
 });
 b2bCloseButton?.addEventListener('click', () => { if (b2bPanel) b2bPanel.hidden = true; dashboard.hidden = false; render(); });
+helpOpenButton?.addEventListener('click', () => {
+  dashboard.hidden = true;
+  if (catalogPanel) catalogPanel.hidden = true;
+  if (promoPanel) promoPanel.hidden = true;
+  if (b2bPanel) b2bPanel.hidden = true;
+  if (helpPanel) helpPanel.hidden = false;
+  statusEl.textContent = 'Открыта памятка менеджера.';
+});
+helpCloseButton?.addEventListener('click', () => { if (helpPanel) helpPanel.hidden = true; dashboard.hidden = false; render(); });
 b2bList?.addEventListener('click', async event => {
   const button = event.target.closest('[data-save-b2b]');
   if (!button) return;
