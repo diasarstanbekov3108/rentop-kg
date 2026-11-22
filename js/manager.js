@@ -34,6 +34,10 @@ const b2bCloseButton = document.getElementById('manager-b2b-close');
 const helpPanel = document.getElementById('manager-help-panel');
 const helpOpenButton = document.querySelector('[data-open-help]');
 const helpCloseButton = document.getElementById('manager-help-close');
+const mobileNavToggle = document.getElementById('manager-mobile-nav-toggle');
+const mobileNavClose = document.getElementById('manager-mobile-nav-close');
+const mobileNavBackdrop = document.getElementById('manager-mobile-nav-backdrop');
+const managerSidebar = document.getElementById('manager-sidebar');
 const b2bList = document.getElementById('manager-b2b-list');
 const refreshButton = document.getElementById('manager-refresh');
 let orders = [];
@@ -254,7 +258,8 @@ function render() {
   const selectedOrderScrollTop = ordersEl.querySelector('.manager-order.is-selected')?.scrollTop || 0;
   openOrderDetails = new Set([...ordersEl.querySelectorAll('.manager-order-details[open]')].map(item => item.closest('[data-manager-order]')?.dataset.managerOrder).filter(Boolean));
   const list = visibleOrders();
-  if (!list.some(order => String(order.id) === String(selectedOrderId))) selectedOrderId = list[0]?.id || '';
+  const compactMobileQueue = window.matchMedia('(max-width: 760px)').matches;
+  if (!list.some(order => String(order.id) === String(selectedOrderId))) selectedOrderId = compactMobileQueue ? '' : (list[0]?.id || '');
   const pendingDocs = orders.reduce((total, order) => total + order.documents.filter(document => document.status === 'pending_review').length, 0);
   const active = orders.filter(order => ['in_use','incident'].includes(order.status)).length;
   const returns = orders.filter(order => ['return_requested','awaiting_return_reservation','awaiting_return_dropoff','awaiting_return_collection','returned'].includes(order.status));
@@ -318,7 +323,7 @@ function render() {
         return `<section class="manager-section"><h3>Индивидуальное решение по залогу</h3><p>${escape(order.alternative_security_note || 'Запрошена дополнительная проверка вместо денежного залога.')} ${order.alternative_security_expires_at ? `Срок: ${date(order.alternative_security_expires_at)}.` : ''}</p>${contact}<p>Запрошено: ${altRequirements.map(kind => escape(altLabels[kind] || kind)).join(' · ') || '—'}.</p>${rejectedRequired.length ? `<p class="manager-payment-warning">Отклонены: ${rejectedRequired.map(kind => escape(altLabels[kind] || kind)).join(', ')}. Запросите новые файлы или откажите.</p>` : pendingRequired.length ? `<p>Ожидаем / проверяем: ${pendingRequired.map(kind => escape(altLabels[kind] || kind)).join(', ')}.</p>` : '<p>Все запрошенные файлы загружены. Откройте их выше и примите или отклоните каждый файл.</p>'}<label>Решение / причина<textarea data-alternative-security-note maxlength="700" placeholder="Например: видео и справка приняты; залог 0 сом по индивидуальному решению"></textarea></label><div class="manager-actions"><button class="secondary" data-decide-alternative-security="${order.id}" data-alternative-security-decision="approved" ${pendingRequired.length || rejectedRequired.length ? 'disabled' : ''}>Одобрить без залога</button><button class="danger" data-decide-alternative-security="${order.id}" data-alternative-security-decision="rejected">Отказать</button></div></section>`;
       }
       if (order.alternative_security_status === 'approved') return `<section class="manager-section"><h3>Индивидуальное решение по залогу</h3><p class="manager-request">✓ Дополнительная проверка одобрена ${order.alternative_security_decided_at ? date(order.alternative_security_decided_at) : ''}. Денежный залог установлен в 0 сом; ответственность арендатора по договору сохранена.</p></section>`;
-      return `<section class="manager-section manager-alternative-security"><h3>Альтернатива денежному залогу</h3><p>Индивидуальная мера до выставления счёта. Видеообращение запрашивается всегда; ниже выберите только дополнительные документы. Контакт родственника — только для экстренной связи, не поручительство.</p><div class="manager-alternative-security-options"><label><input type="checkbox" data-alternative-security-requirement value="alternative_security_address"><span>Подтверждение адреса</span></label><label><input type="checkbox" data-alternative-security-requirement value="alternative_security_work"><span>Справка с места работы</span></label><label><input type="checkbox" data-alternative-security-requirement value="alternative_security_study"><span>Справка с места учёбы</span></label></div><label class="manager-alternative-security-note"><span>Пояснение клиенту</span><textarea data-alternative-security-note maxlength="700" placeholder="Например: можем рассмотреть выдачу без залога после дополнительной проверки"></textarea></label><div class="manager-actions"><button class="secondary" data-offer-alternative-security="${order.id}">Открыть проверку без залога</button></div></section>`;
+      return `<details class="manager-section manager-alternative-security"><summary><span>Проверка без денежного залога</span><small>По решению менеджера</small></summary><p>Индивидуальная мера до выставления счёта. Видеообращение запрашивается всегда; ниже выберите только дополнительные документы. Контакт родственника — только для экстренной связи, не поручительство.</p><div class="manager-alternative-security-options"><label><input type="checkbox" data-alternative-security-requirement value="alternative_security_address"><span>Подтверждение адреса</span></label><label><input type="checkbox" data-alternative-security-requirement value="alternative_security_work"><span>Справка с места работы</span></label><label><input type="checkbox" data-alternative-security-requirement value="alternative_security_study"><span>Справка с места учёбы</span></label></div><label class="manager-alternative-security-note"><span>Пояснение клиенту</span><textarea data-alternative-security-note maxlength="700" placeholder="Например: можем рассмотреть выдачу без залога после дополнительной проверки"></textarea></label><div class="manager-actions"><button class="secondary" data-offer-alternative-security="${order.id}">Открыть проверку без залога</button></div></details>`;
     })() : '';
     const offerEvidence = order.offer_accepted_at ? `<section class="manager-section"><h3>Оферта и согласия</h3><div class="manager-request">Оферта ${escape(order.offer_version || '—')} · принята ${date(order.offer_accepted_at)} · SMS ${order.offer_otp_verified_at ? `подтверждён ${date(order.offer_otp_verified_at)}` : 'ещё не подтверждён'}</div></section>` : '';
     const identityRegistry = order.documents.some(document => ['identity','identity_front'].includes(document.kind)) ? `<label>Номер паспорта / ID <span>сверьте по загруженному документу</span><input data-registry-identity-number maxlength="80" value="${escape(order.identity_document_number || '')}" placeholder="Внесите только после визуальной проверки"></label><label>Кем выдан документ <input data-registry-identity-issuer maxlength="240" value="${escape(order.identity_document_issuer || '')}" placeholder="Строго как в документе"></label>` : '';
@@ -356,9 +361,10 @@ function render() {
     const isSelected = String(order.id) === String(selectedOrderId);
     const previous = list[orderIndex - 1];
     const next = list[orderIndex + 1];
-    const queueNavigation = isSelected && list.length > 1 ? `<div class="manager-order-queue-nav" aria-label="Навигация по рабочей очереди"><span>В очереди: ${orderIndex + 1} из ${list.length}</span><div><button type="button" data-select-order="${escape(previous?.id || '')}" ${previous ? '' : 'disabled'} aria-label="Предыдущая заявка">←</button><button type="button" data-select-order="${escape(next?.id || '')}" ${next ? '' : 'disabled'} aria-label="Следующая заявка">→</button></div></div>` : '';
+    const queueNavigation = isSelected ? `<div class="manager-order-queue-nav" aria-label="Навигация по рабочей очереди"><span>${list.length > 1 ? `В очереди: ${orderIndex + 1} из ${list.length}` : 'Открыта заявка'}</span><div><button class="manager-order-close" type="button" data-close-manager-order aria-label="Свернуть заявку">×</button>${list.length > 1 ? `<button type="button" data-select-order="${escape(previous?.id || '')}" ${previous ? '' : 'disabled'} aria-label="Предыдущая заявка">←</button><button type="button" data-select-order="${escape(next?.id || '')}" ${next ? '' : 'disabled'} aria-label="Следующая заявка">→</button>` : ''}</div></div>` : '';
     const fresh = isFreshOrder(order);
-    return `<article class="manager-order ${isSelected ? 'is-selected' : 'is-queued'}${fresh ? ' is-new' : ''}" data-manager-order="${order.id}" data-manager-return-method="${escape(order.return_method || '')}"><div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p><p class="manager-order-created">Поступила: ${escape(date(order.created_at))}</p></div><span class="manager-status-pill ${escape(order.status)}">${fresh ? '● НОВАЯ' : escape(statusLabel(order.status))}</span></div>${queueNavigation}<div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда / возврат</span><strong>${calendarDate(order.rental_start_date)} → ${calendarDate(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(deliveryLabel(order))}${deliveryDetails}</strong></div><div><span>Сумма аренды</span><strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div><span>Залог / скидка</span><strong>${Number(order.deposit_amount || 0).toLocaleString('ru-RU')} сом · ${Number(order.discount_percent || 0)}%</strong></div></div>${directDocuments}${alternativeSecurityPanel}${supportPanel}${returnAcceptance}${handoffPanel}<div class="manager-actions manager-workflow-actions">${workflowActions || '<span class="manager-action-note">Следующее действие появится после обновления статуса.</span>'}</div><p class="manager-order-feedback" data-order-feedback="${order.id}" hidden></p><details class="manager-order-details" ${isSelected || openOrderDetails.has(String(order.id)) || (order.status === 'pending_review' && documentsReadyForPayment) ? 'open' : ''}><summary>Детали заявки, реестр и служебные данные</summary>${details}</details></article>`;
+    const detailsOpen = openOrderDetails.has(String(order.id)) || (!compactMobileQueue && (isSelected || (order.status === 'pending_review' && documentsReadyForPayment)));
+    return `<article class="manager-order ${isSelected ? 'is-selected' : 'is-queued'}${fresh ? ' is-new' : ''}" data-manager-order="${order.id}" data-manager-return-method="${escape(order.return_method || '')}"><div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p><p class="manager-order-created">Поступила: ${escape(date(order.created_at))}</p></div><span class="manager-status-pill ${escape(order.status)}">${fresh ? '● НОВАЯ' : escape(statusLabel(order.status))}</span></div>${!isSelected ? `<button class="manager-order-open" type="button" data-open-manager-order="${escape(order.id)}">Открыть заявку <span>→</span></button>` : ''}${queueNavigation}<div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда / возврат</span><strong>${calendarDate(order.rental_start_date)} → ${calendarDate(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(deliveryLabel(order))}${deliveryDetails}</strong></div><div><span>Сумма аренды</span><strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div><span>Залог / скидка</span><strong>${Number(order.deposit_amount || 0).toLocaleString('ru-RU')} сом · ${Number(order.discount_percent || 0)}%</strong></div></div>${directDocuments}${alternativeSecurityPanel}${supportPanel}${returnAcceptance}${handoffPanel}<div class="manager-actions manager-workflow-actions">${workflowActions || '<span class="manager-action-note">Следующее действие появится после обновления статуса.</span>'}</div><p class="manager-order-feedback" data-order-feedback="${order.id}" hidden></p><details class="manager-order-details" ${detailsOpen ? 'open' : ''}><summary>Детали заявки, реестр и служебные данные</summary>${details}</details></article>`;
   }).join('') : '<div class="manager-empty">По этому фильтру заявок нет.</div>';
   window.requestAnimationFrame(() => {
     window.scrollTo({ top:scrollPosition, behavior:'auto' });
@@ -374,7 +380,13 @@ function hasManagerDraft() {
   return Boolean(document.activeElement?.matches('.manager-order textarea, .manager-order input, .manager-order select'));
 }
 async function load(silent = false, include = '') { if (activeLoad) return activeLoad; const refreshLabel = refreshButton?.textContent; if (!silent) { statusEl.textContent = 'Обновляем заявки и статусы оплаты…'; if (refreshButton) { refreshButton.disabled = true; refreshButton.textContent = 'Обновляем…'; } } activeLoad = (async () => { try { const data = await api('GET', undefined, include); const incomingOrders = Array.isArray(data.orders) ? data.orders : null; if (!incomingOrders) throw new Error('Панель вернула неполные данные. Текущая очередь оставлена на экране.'); const keepVisibleQueue = orders.length > 0 && incomingOrders.length === 0; if (!keepVisibleQueue) orders = incomingOrders; rentableLaptops = Array.isArray(data.rentableLaptops) ? data.rentableLaptops : rentableLaptops; managerPromos = Array.isArray(data.promos) ? data.promos : managerPromos; b2bLeads = Array.isArray(data.b2bLeads) ? data.b2bLeads : b2bLeads; isChiefAdmin = Boolean(data.isChiefAdmin); if (catalogOpenButton) catalogOpenButton.hidden = !isChiefAdmin; if (sidebarCatalogButton) sidebarCatalogButton.hidden = !isChiefAdmin; gate.hidden = true; if (!catalogPanel.hidden || !promoPanel?.hidden) { renderPromoManager(); } else if (!b2bPanel?.hidden) { renderB2BManager(); } else if (helpPanel?.hidden) dashboard.hidden = false; const stamp = new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date()); statusEl.textContent = keepVisibleQueue ? `Связь с базой нестабильна: пустой ответ не применён. Показана последняя очередь · ${stamp}` : `${silent ? 'Синхронизировано' : 'Обновлено'}: ${stamp}`; render(); } catch (error) { if (error.status === 401) { dashboard.hidden = true; if (catalogOpenButton) catalogOpenButton.hidden = true; if (sidebarCatalogButton) sidebarCatalogButton.hidden = true; gate.hidden = false; statusEl.textContent = ''; return; } if (orders.length) { dashboard.hidden = false; gate.hidden = true; statusEl.textContent = `Не удалось обновить данные. Показана последняя очередь: ${error.message}`; return; } dashboard.hidden = true; gate.hidden = true; statusEl.textContent = error.message; } finally { if (!silent && refreshButton) { refreshButton.disabled = false; refreshButton.textContent = refreshLabel || 'Обновить'; } activeLoad = null; } })(); return activeLoad; }
-function setFilter(nextFilter) { if (!catalogPanel.hidden) catalogPanel.hidden = true; if (promoPanel && !promoPanel.hidden) promoPanel.hidden = true; if (b2bPanel && !b2bPanel.hidden) b2bPanel.hidden = true; if (helpPanel && !helpPanel.hidden) helpPanel.hidden = true; dashboard.hidden = false; filter = nextFilter; document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item.dataset.filter === filter)); render(); }
+function setMobileNav(open) {
+  managerSidebar?.classList.toggle('is-mobile-open', open);
+  mobileNavBackdrop.hidden = !open;
+  mobileNavToggle?.setAttribute('aria-expanded', String(open));
+  document.body.classList.toggle('manager-mobile-nav-open', open);
+}
+function setFilter(nextFilter) { if (!catalogPanel.hidden) catalogPanel.hidden = true; if (promoPanel && !promoPanel.hidden) promoPanel.hidden = true; if (b2bPanel && !b2bPanel.hidden) b2bPanel.hidden = true; if (helpPanel && !helpPanel.hidden) helpPanel.hidden = true; dashboard.hidden = false; filter = nextFilter; setMobileNav(false); document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item.dataset.filter === filter)); render(); }
 
 refreshButton?.addEventListener('click', () => load(false));
 window.setInterval(() => {
@@ -415,6 +427,9 @@ testTelegramButton?.addEventListener('click', async () => {
 });
 if (clearTestsButton) clearTestsButton.hidden = true;
 document.querySelector('.manager-filters').addEventListener('click', event => { const button = event.target.closest('[data-filter]'); if (button) setFilter(button.dataset.filter); });
+mobileNavToggle?.addEventListener('click', () => setMobileNav(!managerSidebar?.classList.contains('is-mobile-open')));
+mobileNavClose?.addEventListener('click', () => setMobileNav(false));
+mobileNavBackdrop?.addEventListener('click', () => setMobileNav(false));
 document.querySelector('.manager-sidebar-nav')?.addEventListener('click', event => { const button = event.target.closest('[data-filter]'); if (button) setFilter(button.dataset.filter); const dashboardButton = event.target.closest('[data-open-dashboard]'); if (dashboardButton) setFilter('all'); });
 statsEl.addEventListener('click', event => { const button = event.target.closest('[data-filter]'); if (button) setFilter(button.dataset.filter); });
 returnAlert?.addEventListener('click', () => { setFilter('returns'); document.querySelector('.manager-toolbar')?.scrollIntoView({ behavior:'smooth', block:'start' }); });
@@ -442,6 +457,10 @@ ordersEl?.addEventListener('change', event => {
   if (field) updatePaymentDraft(field.closest('[data-payment-draft]'));
 });
 ordersEl.addEventListener('click', async event => {
+  const closeOrder = event.target.closest('[data-close-manager-order]');
+  if (closeOrder) { selectedOrderId = ''; render(); return; }
+  const explicitOpen = event.target.closest('[data-open-manager-order]');
+  if (explicitOpen?.dataset.openManagerOrder) { selectedOrderId = explicitOpen.dataset.openManagerOrder; render(); return; }
   const queueSelection = event.target.closest('[data-select-order]');
   if (queueSelection && !queueSelection.disabled && queueSelection.dataset.selectOrder) {
     selectedOrderId = queueSelection.dataset.selectOrder;
@@ -452,7 +471,7 @@ ordersEl.addEventListener('click', async event => {
   const isControl = event.target.closest('button, a, input, textarea, select, summary, label');
   // Compact queue cards are a single selection target. Let a tap anywhere on
   // an unselected card open it, even if the tap lands on its status label.
-  if (orderCard && (!isControl || !orderCard.classList.contains('is-selected'))) {
+  if (!window.matchMedia('(max-width: 760px)').matches && orderCard && (!isControl || !orderCard.classList.contains('is-selected'))) {
     selectedOrderId = orderCard.dataset.managerOrder;
     render();
     return;
@@ -819,15 +838,23 @@ managerPhoneInput?.addEventListener('input', () => { managerPhoneInput.value = f
 managerPhoneForm?.addEventListener('submit', async event => { event.preventDefault(); const phone = normalizePhone(managerPhoneInput.value); if (!phone) return loginMessage('Введите рабочий номер Кыргызстана: +996XXXXXXXXX.', 'error'); const button = managerPhoneForm.querySelector('button'); button.disabled = true; loginMessage('Отправляем код…'); try { await accountApi({ action:'request_code', phone }); pendingManagerPhone = phone; managerPhoneForm.hidden = true; managerCodeForm.hidden = false; managerCodeInput.focus(); loginMessage('Код отправлен. Введите 6 цифр из сообщения.', 'success'); } catch (error) { loginMessage(error.message, 'error'); } finally { button.disabled = false; } });
 managerCodeForm?.addEventListener('submit', async event => { event.preventDefault(); const code = managerCodeInput.value.replace(/\D/g, ''); if (code.length !== 6) return loginMessage('Введите все 6 цифр кода.', 'error'); const button = managerCodeForm.querySelector('button'); button.disabled = true; loginMessage('Проверяем доступ…'); try { await accountApi({ action:'verify_code', phone:pendingManagerPhone, code, remember:true }); await load(); if (!dashboard.hidden) loginMessage(''); else loginMessage('Этот номер не имеет доступа к панели менеджера.', 'error'); } catch (error) { loginMessage(error.message, 'error'); } finally { button.disabled = false; } });
 document.getElementById('manager-change-phone')?.addEventListener('click', () => { managerCodeForm.hidden = true; managerPhoneForm.hidden = false; managerCodeInput.value = ''; loginMessage(''); managerPhoneInput.focus(); });
+function closeCatalogPanel() {
+  catalogPanel.hidden = true;
+  dashboard.hidden = false;
+  render();
+}
 catalogOpenButton?.addEventListener('click', async () => {
+  if (!catalogPanel.hidden) { closeCatalogPanel(); return; }
+  setMobileNav(false);
   dashboard.hidden = true;
   catalogPanel.hidden = false;
   statusEl.textContent = 'Загружаем каталог…';
   try { await loadCatalogManager(); statusEl.textContent = 'Каталог загружен.'; } catch (error) { statusEl.textContent = error.message; }
 });
 sidebarCatalogButton?.addEventListener('click', () => catalogOpenButton?.click());
-catalogCloseButton?.addEventListener('click', () => { catalogPanel.hidden = true; dashboard.hidden = false; });
+catalogCloseButton?.addEventListener('click', closeCatalogPanel);
 promoOpenButton?.addEventListener('click', async () => {
+  setMobileNav(false);
   dashboard.hidden = true;
   if (catalogPanel) catalogPanel.hidden = true;
   if (promoPanel) promoPanel.hidden = false;
@@ -837,6 +864,7 @@ promoOpenButton?.addEventListener('click', async () => {
 });
 promoCloseButton?.addEventListener('click', () => { if (promoPanel) promoPanel.hidden = true; dashboard.hidden = false; render(); });
 b2bOpenButton?.addEventListener('click', async () => {
+  setMobileNav(false);
   dashboard.hidden = true;
   if (catalogPanel) catalogPanel.hidden = true;
   if (promoPanel) promoPanel.hidden = true;
@@ -847,6 +875,7 @@ b2bOpenButton?.addEventListener('click', async () => {
 });
 b2bCloseButton?.addEventListener('click', () => { if (b2bPanel) b2bPanel.hidden = true; dashboard.hidden = false; render(); });
 helpOpenButton?.addEventListener('click', () => {
+  setMobileNav(false);
   dashboard.hidden = true;
   if (catalogPanel) catalogPanel.hidden = true;
   if (promoPanel) promoPanel.hidden = true;

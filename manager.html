@@ -10,12 +10,13 @@
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/cabinet.css?v=20261014-archa-workflow">
-  <link rel="stylesheet" href="css/manager.css?v=20261118-b2b-v5">
+  <link rel="stylesheet" href="css/manager.css?v=20261122-mobile-manager-v1">
 </head>
 <body class="cabinet-page manager-page">
   <div class="manager-app-shell">
-    <aside class="manager-sidebar" aria-label="Навигация менеджера">
+    <aside class="manager-sidebar" id="manager-sidebar" aria-label="Навигация менеджера">
       <a class="manager-sidebar-brand" href="/" aria-label="На главную RENTOP.KG">RENTOP.<span>KG</span><small>Панель менеджера</small></a>
+      <button class="manager-mobile-nav-close" id="manager-mobile-nav-close" type="button" aria-label="Закрыть меню">×</button>
       <nav class="manager-sidebar-nav">
         <button type="button" data-open-dashboard><span>⌂</span>Рабочий стол</button>
         <button class="is-active" type="button" data-filter="all"><span>▤</span>Заявки</button>
@@ -29,8 +30,9 @@
       </nav>
       <a class="manager-sidebar-support" href="https://wa.me/996707880857" target="_blank" rel="noopener"><span>◌</span><strong>Поддержка</strong><small>Тех. вопросы и интеграции</small></a>
     </aside>
+    <button class="manager-mobile-nav-backdrop" id="manager-mobile-nav-backdrop" type="button" aria-label="Закрыть меню" hidden></button>
     <div class="manager-workspace">
-      <header class="cabinet-header"><label class="manager-global-search" for="manager-search"><span>⌕</span><input id="manager-search" type="search" placeholder="Поиск по заявке, клиенту, телефону, ноутбуку…"></label><a class="cabinet-back" href="/">← На сайт</a></header>
+      <header class="cabinet-header"><button class="manager-mobile-nav-toggle" id="manager-mobile-nav-toggle" type="button" aria-controls="manager-sidebar" aria-expanded="false">☰<span>Меню</span></button><label class="manager-global-search" for="manager-search"><span>⌕</span><input id="manager-search" type="search" placeholder="Поиск по заявке, клиенту, телефону, ноутбуку…"></label><a class="cabinet-back" href="/">← На сайт</a></header>
       <main class="manager-main">
     <section class="manager-head"><div><p class="cabinet-eyebrow">РАБОЧАЯ ОЧЕРЕДЬ</p><h1>Добрый день, Диас!</h1><p>Заявки, документы, оплата и выдача — под рукой.</p><p class="manager-bakai-check" id="manager-bakai-check" hidden></p></div><div class="manager-head-actions"><button id="manager-catalog-open" class="manager-bakai-test" type="button" hidden>Каталог</button><button id="manager-test-telegram" class="manager-bakai-test" type="button">Проверить Telegram</button><button id="manager-test-bakai" class="manager-bakai-test" type="button">Проверить Bakai</button><button id="manager-refresh" class="cabinet-action" type="button">Обновить</button></div></section>
     <section class="manager-gate" id="manager-gate" hidden><h2>Вход менеджера</h2><p>Используйте номер, указанный в настройках менеджера. Этот вход не открывает клиентский кабинет.</p><form id="manager-phone-form"><label for="manager-phone">Рабочий номер</label><input id="manager-phone" type="tel" inputmode="numeric" autocomplete="tel" maxlength="19" value="+996 " placeholder="+996 (___) __-__-__" required><button class="cabinet-primary" type="submit">Получить код</button></form><form id="manager-code-form" hidden><label for="manager-code">Код из сообщения</label><input id="manager-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" required><button class="cabinet-primary" type="submit">Открыть рабочую панель</button><button class="cabinet-text-button" type="button" id="manager-change-phone">Изменить номер</button></form><p class="cabinet-status" id="manager-login-status" role="status"></p></section>
@@ -44,6 +46,6 @@
     </div>
   </div>
   <div class="cabinet-document-viewer" id="manager-document-viewer" hidden role="dialog" aria-modal="true" aria-label="Просмотр документа"><div class="cabinet-document-viewer-card"><button class="cabinet-document-viewer-close" id="manager-document-viewer-close" type="button" aria-label="Закрыть просмотр">×</button><div id="manager-document-viewer-content"></div></div></div>
-  <script type="module" src="js/manager.js?v=20261118-b2b-v3"></script>
+  <script type="module" src="js/manager.js?v=20261122-mobile-manager-v1"></script>
 </body>
 </html>
