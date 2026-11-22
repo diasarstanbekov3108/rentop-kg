@@ -348,7 +348,9 @@ function render() {
     const handoffPanel = archaIssueHandoffPanel(order);
     const documentsPanel = `<section class="manager-section"><h3>Документы</h3><div class="manager-docs">${order.documents.length ? order.documents.map(document => documentCard(document, order.id)).join('') : '<span class="manager-empty">Документы ещё не загружены</span>'}</div></section>`;
     const requestsPanel = order.requests.length ? `<section class="manager-section"><h3>Запросы клиента</h3><div class="manager-requests">${order.requests.map(request => `<div class="manager-request">${escape(request.kind)} · ${escape(request.status)}${request.return_method ? ` · ${escape(request.return_method)}` : ''}${request.return_locker_address ? ` · ${escape(request.return_locker_address)}` : ''}${request.customer_message ? ` · ${escape(request.customer_message)}` : ''}</div>`).join('')}</div></section>` : '';
-    const directDocuments = pending ? documentsPanel : '';
+    const directDocuments = pending ? (compactMobileQueue
+      ? `<details class="manager-mobile-stage"><summary>Документы <small>${pending} на проверке</small></summary>${documentsPanel}</details>`
+      : documentsPanel) : '';
     const details = `${pending ? '' : documentsPanel}${offerEvidence}${customerNote}${registry}${paymentState}${lockerInstruction(order)}${assetTools}${benefitPanel}${loyaltyAction}${earlySettlement}${adminTools}${requestsPanel}`;
     const acceptedReturnVideo = order.documents.some(document => document.kind === 'return_video' && document.status === 'accepted');
     const returnAcceptance = order.status === 'returned'
@@ -367,11 +369,26 @@ function render() {
     const detailsOpen = openOrderDetails.has(String(order.id)) || (!compactMobileQueue && (isSelected || (order.status === 'pending_review' && documentsReadyForPayment)));
     return `<article class="manager-order ${isSelected ? 'is-selected' : 'is-queued'}${fresh ? ' is-new' : ''}" data-manager-order="${order.id}" data-manager-return-method="${escape(order.return_method || '')}"><div class="manager-order-top"><div><h2>${escape(order.laptop_title)}</h2><p>Заявка ${escape(String(order.id).slice(0,8).toUpperCase())} · ${escape(order.customer_name || 'Клиент не указал имя')}</p><p class="manager-order-created">Поступила: ${escape(date(order.created_at))}</p></div><span class="manager-status-pill ${escape(order.status)}">${fresh ? '● НОВАЯ' : escape(statusLabel(order.status))}</span></div>${!isSelected ? `<button class="manager-order-open" type="button" data-open-manager-order="${escape(order.id)}">Открыть заявку <span>→</span></button>` : ''}${queueNavigation}<div class="manager-order-grid"><div><span>Клиент</span><strong>${escape(order.customer_phone || '—')}</strong></div><div><span>Аренда / возврат</span><strong>${calendarDate(order.rental_start_date)} → ${calendarDate(order.rental_end_date)}</strong></div><div><span>Получение</span><strong>${escape(deliveryLabel(order))}${deliveryDetails}</strong></div><div><span>Сумма аренды</span><strong>${Number(order.total_amount || 0).toLocaleString('ru-RU')} сом</strong></div><div><span>Залог / скидка</span><strong>${Number(order.deposit_amount || 0).toLocaleString('ru-RU')} сом · ${Number(order.discount_percent || 0)}%</strong></div></div>${directDocuments}${alternativeSecurityPanel}${supportPanel}${returnAcceptance}${handoffPanel}<div class="manager-actions manager-workflow-actions">${workflowActions || '<span class="manager-action-note">Следующее действие появится после обновления статуса.</span>'}</div><p class="manager-order-feedback" data-order-feedback="${order.id}" hidden></p><details class="manager-order-details" ${detailsOpen ? 'open' : ''}><summary>Детали заявки, реестр и служебные данные</summary>${details}</details></article>`;
   }).join('') : '<div class="manager-empty">По этому фильтру заявок нет.</div>';
+  if (compactMobileQueue) compactMobileOrderSections();
   window.requestAnimationFrame(() => {
     window.scrollTo({ top:scrollPosition, behavior:'auto' });
     if (String(selectedOrderId || '') !== selectedOrderBeforeRender) return;
     const selectedOrder = ordersEl.querySelector('.manager-order.is-selected');
     if (selectedOrder) selectedOrder.scrollTop = selectedOrderScrollTop;
+  });
+}
+
+function compactMobileOrderSections() {
+  ordersEl.querySelectorAll('.manager-order.is-selected .manager-order-details > section.manager-section').forEach(section => {
+    const heading = section.querySelector(':scope > h3');
+    if (!heading) return;
+    const disclosure = document.createElement('details');
+    disclosure.className = 'manager-mobile-stage';
+    const summary = document.createElement('summary');
+    summary.textContent = heading.textContent.trim();
+    disclosure.append(summary);
+    [...section.childNodes].forEach(node => { if (node !== heading) disclosure.append(node); });
+    section.replaceWith(disclosure);
   });
 }
 
