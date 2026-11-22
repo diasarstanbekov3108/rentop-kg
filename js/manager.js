@@ -41,6 +41,7 @@ const managerSidebar = document.getElementById('manager-sidebar');
 const replacementPicker = document.getElementById('manager-replacement-picker');
 const replacementPickerSearch = document.getElementById('manager-replacement-picker-search');
 const replacementPickerFilters = document.getElementById('manager-replacement-picker-filters');
+const replacementPickerFilterSelect = document.getElementById('manager-replacement-picker-filter-select');
 const replacementPickerList = document.getElementById('manager-replacement-picker-list');
 const replacementPickerConfirm = document.getElementById('manager-replacement-picker-confirm');
 const b2bList = document.getElementById('manager-b2b-list');
@@ -347,6 +348,7 @@ function renderReplacementPicker() {
     return `<button type="button" class="manager-replacement-option ${selected ? 'is-selected' : ''}" data-replacement-option="${Number(laptop.id)}"><span class="manager-replacement-option-top"><strong>${escape(laptop.title)}</strong><b>${rate.toLocaleString('ru-RU')} сом/день</b></span><span>${escape(group)}${specs ? ` · ${escape(specs)}` : ''}</span></button>`;
   }).join('') : '<p class="manager-replacement-empty">Подходящих моделей не найдено. Измените поиск или категорию.</p>';
   replacementPickerFilters?.querySelectorAll('[data-replacement-filter]').forEach(button => button.classList.toggle('is-active', button.dataset.replacementFilter === replacementPickerState.filter));
+  if (replacementPickerFilterSelect) replacementPickerFilterSelect.value = replacementPickerState.filter;
   if (replacementPickerConfirm) replacementPickerConfirm.disabled = !replacementPickerState.selectedId;
 }
 
@@ -583,6 +585,7 @@ document.getElementById('manager-replacement-picker-cancel')?.addEventListener('
 replacementPicker?.addEventListener('click', event => { if (event.target === replacementPicker) closeReplacementPicker(); });
 replacementPickerSearch?.addEventListener('input', () => { replacementPickerState.query = replacementPickerSearch.value; renderReplacementPicker(); });
 replacementPickerFilters?.addEventListener('click', event => { const button = event.target.closest('[data-replacement-filter]'); if (!button) return; replacementPickerState.filter = button.dataset.replacementFilter; renderReplacementPicker(); });
+replacementPickerFilterSelect?.addEventListener('change', () => { replacementPickerState.filter = replacementPickerFilterSelect.value; renderReplacementPicker(); });
 replacementPickerList?.addEventListener('click', event => { const option = event.target.closest('[data-replacement-option]'); if (!option) return; replacementPickerState.selectedId = option.dataset.replacementOption; renderReplacementPicker(); });
 replacementPickerConfirm?.addEventListener('click', () => {
   if (!replacementPickerState.orderId || !replacementPickerState.selectedId) return;
