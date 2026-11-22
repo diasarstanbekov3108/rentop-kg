@@ -36,7 +36,7 @@
   
   <!-- Fonts & Styles -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261120-catalog-loading-v1">
+  <link rel="stylesheet" href="css/style.css?v=20261122-smart-alternatives-v1">
   <link rel="stylesheet" href="css/premium.css?v=20261120-topik-nav-v1">
 
   <!-- Микроразметка Schema.org для Google -->
@@ -815,6 +815,10 @@
         <p class="calc-breakdown" id="calc-breakdown"></p>
         <p class="calc-discount" id="calc-discount">Без скидки</p>
         <p class="availability-message" id="rental-availability-message" role="status"></p>
+        <section class="booking-alternatives" id="booking-alternatives" hidden aria-live="polite">
+          <div class="booking-alternatives-head"><div><p>ВАРИАНТЫ НА ЭТИ ДАТЫ</p><h3>Подойдут вместо выбранного</h3></div><span>Свободны</span></div>
+          <div class="booking-alternatives-list" id="booking-alternatives-list"></div>
+        </section>
         <div class="form-group delivery-choice">
           <span class="delivery-choice-label">Как получить ноутбук?</span>
           <input type="hidden" id="delivery-type" name="delivery-type" value="delivery">
@@ -847,6 +851,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script type="module" src="js/app.js?v=20261120-shared-link-form-first-v1"></script>
+  <script type="module" src="js/app.js?v=20261122-smart-alternatives-v1"></script>
 </body>
 </html>

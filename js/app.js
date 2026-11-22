@@ -108,6 +108,8 @@ const deliveryTypeInput = document.getElementById('delivery-type');
 const deliveryChoiceButtons = [...document.querySelectorAll('[data-delivery-option]')];
 const rentalDurationButtons = [...document.querySelectorAll('[data-rental-duration]')];
 const rentalAvailabilityMessage = document.getElementById('rental-availability-message');
+const bookingAlternatives = document.getElementById('booking-alternatives');
+const bookingAlternativesList = document.getElementById('booking-alternatives-list');
 const submitBtn = document.getElementById('submitBtn');
 const cabinetOrderPhone = document.getElementById('cabinet-order-phone');
 const orderNameGroup = document.getElementById('order-name-group');
@@ -725,6 +727,47 @@ function currentRentalDraft(today = todayIso()) {
   return { startDate, endDate, today, validationError, availabilityError, quote };
 }
 
+function alternativeScore(candidate, selected) {
+  const selectedTasks = new Set(getLaptopTasks(selected));
+  const sharedTasks = getLaptopTasks(candidate).filter(task => selectedTasks.has(task)).length;
+  return (sharedTasks * 10000) - Math.abs(getDailyRate(candidate) - getDailyRate(selected));
+}
+
+function renderBookingAlternatives(draft) {
+  if (!bookingAlternatives || !bookingAlternativesList) return;
+  const unavailable = Boolean(draft?.availabilityError && currentLaptop && availabilityLoaded);
+  if (!unavailable) {
+    bookingAlternatives.hidden = true;
+    bookingAlternativesList.replaceChildren();
+    return;
+  }
+  const alternatives = laptops
+    .filter(laptop => laptop.category === 'rent' && String(laptop.id) !== String(currentLaptop.id) && getDailyRate(laptop) > 0 && !hasDateConflict(blockingRentals, laptop.id, draft.startDate, draft.endDate))
+    .sort((a, b) => alternativeScore(b, currentLaptop) - alternativeScore(a, currentLaptop))
+    .slice(0, 3);
+  if (!alternatives.length) {
+    bookingAlternatives.hidden = true;
+    bookingAlternativesList.replaceChildren();
+    return;
+  }
+  const selectedRate = getDailyRate(currentLaptop);
+  bookingAlternativesList.innerHTML = alternatives.map((laptop) => {
+    const rate = getDailyRate(laptop);
+    const difference = rate - selectedRate;
+    const differenceLabel = difference === 0 ? 'Та же цена' : `${difference > 0 ? '+' : '−'}${Math.abs(difference).toLocaleString('ru-RU')} сом/день`;
+    return `<button type="button" class="booking-alternative" data-booking-alternative="${String(laptop.id)}"><span class="booking-alternative-copy"><strong>${laptop.title || 'Ноутбук'}</strong><small>${taskLabel(laptop)} · ${differenceLabel}</small></span><span class="booking-alternative-rate">${rate.toLocaleString('ru-RU')}<small>сом/день</small></span><b aria-hidden="true">→</b></button>`;
+  }).join('');
+  bookingAlternatives.hidden = false;
+}
+
+function selectBookingAlternative(laptopId) {
+  const nextLaptop = laptops.find(laptop => String(laptop.id) === String(laptopId));
+  if (!nextLaptop || nextLaptop.category !== 'rent') return;
+  currentLaptop = nextLaptop;
+  modalLaptopTitle.textContent = `Вы выбрали: ${currentLaptop.title}`;
+  updateCalculator({ text: 'Модель заменена. Этот ноутбук свободен на выбранные даты.', isError: false });
+}
+
 async function getCabinetSession() {
   try {
     const response = await fetch('/api/account', { credentials: 'same-origin', cache: 'no-store' });
@@ -903,6 +946,11 @@ closeArchaSelectionBtn?.addEventListener('click', () => {
   filterAndSearch();
 });
 
+bookingAlternativesList?.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-booking-alternative]');
+  if (button) selectBookingAlternative(button.dataset.bookingAlternative);
+});
+
 function updateCalculator(forcedMessage) {
   if (!currentLaptop || currentLaptop.category !== 'rent') return;
 
@@ -969,6 +1017,7 @@ function updateCalculator(forcedMessage) {
   if (submitBtn && !submitInFlight) {
     submitBtn.disabled = Boolean(draft.validationError || draft.availabilityError);
   }
+  renderBookingAlternatives(draft);
 }
 
 function syncEndDateFromDuration(rawDays) {
