@@ -1318,6 +1318,74 @@ footer {
   overflow-y: auto;
 }
 
+/* The booking form is the primary mobile conversion step. Keep scrolling
+   inside the sheet, not on the page beneath it, and keep the close action
+   reachable below Chrome/Safari browser controls. */
+@media (max-width: 768px) {
+  html.order-modal-open,
+  body.order-modal-open {
+    height: 100%;
+    overflow: hidden !important;
+    overscroll-behavior: none;
+  }
+
+  #order-modal.modal-overlay {
+    inset: 0;
+    box-sizing: border-box;
+    display: block;
+    width: auto;
+    height: 100dvh;
+    min-height: 100svh;
+    padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+    overflow: hidden;
+    overscroll-behavior: contain;
+  }
+
+  #order-modal .modal-card {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: none;
+    height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px);
+    max-height: none;
+    margin: 0;
+    padding: 58px 16px 24px;
+    border-radius: 16px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  #order-modal .modal-close {
+    position: fixed;
+    z-index: 2;
+    top: calc(env(safe-area-inset-top) + 16px);
+    right: 23px;
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    border: 1px solid rgba(117, 219, 248, .45);
+    border-radius: 12px;
+    background: rgba(7, 25, 42, .96);
+    color: #e4f8ff;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, .3);
+    font-size: 28px;
+    line-height: 1;
+  }
+
+  #order-modal #order-promo-group .form-hint {
+    margin-top: 7px;
+    color: #a9c3d2;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  body:has(#order-modal.active) .rentop-mascot {
+    visibility: hidden;
+    pointer-events: none;
+  }
+}
+
 /* Lightbox Content */
 .lightbox {
   flex-direction: column;
@@ -2058,7 +2126,7 @@ html.catalog-showcase-compact .catalog-showcase-intro{padding:16px 15px!importan
   }
 
   #order-modal .modal-card {
-    padding: 22px 14px;
+    padding: 58px 14px 24px;
   }
 }
 

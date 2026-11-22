@@ -821,6 +821,30 @@ function redirectToCabinet() {
   window.location.assign('/account?return=booking');
 }
 
+let orderModalPageScrollY = 0;
+function setOrderModalScrollLock(open) {
+  if (!modal) return;
+  const body = document.body;
+  const root = document.documentElement;
+  if (open) {
+    orderModalPageScrollY = window.scrollY || window.pageYOffset || 0;
+    root.classList.add('order-modal-open');
+    body.classList.add('order-modal-open');
+    body.style.position = 'fixed';
+    body.style.top = `-${orderModalPageScrollY}px`;
+    body.style.width = '100%';
+    body.style.overflow = 'hidden';
+    return;
+  }
+  root.classList.remove('order-modal-open');
+  body.classList.remove('order-modal-open');
+  body.style.position = '';
+  body.style.top = '';
+  body.style.width = '';
+  body.style.overflow = '';
+  window.scrollTo({ top:orderModalPageScrollY, behavior:'auto' });
+}
+
 // ========== MODAL + CALCULATOR ==========
 async function openOrderModal(id, { deliveryType = 'delivery' } = {}) {
   const selectedLaptop = laptops.find(item => item.id === id);
@@ -854,7 +878,10 @@ async function openOrderModal(id, { deliveryType = 'delivery' } = {}) {
   }
 
   modal.classList.add('active');
-  document.body.style.overflow = 'hidden';
+  setOrderModalScrollLock(true);
+  modal.scrollTop = 0;
+  const card = modal.querySelector('.modal-card');
+  if (card) card.scrollTop = 0;
   updateOrderAuthUi();
 }
 
@@ -1464,7 +1491,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function closeModal() {
     modal?.classList.remove('active');
-    document.body.style.overflow = '';
+    setOrderModalScrollLock(false);
     resetOrderSubmit();
     if (clearSharedModelFromUrl()) document.getElementById('catalog')?.scrollIntoView({ behavior:'smooth', block:'start' });
   }
