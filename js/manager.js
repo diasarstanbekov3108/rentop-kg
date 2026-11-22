@@ -533,7 +533,26 @@ replacementPicker?.addEventListener('click', event => { if (event.target === rep
 replacementPickerSearch?.addEventListener('input', () => { replacementPickerState.query = replacementPickerSearch.value; renderReplacementPicker(); });
 replacementPickerFilters?.addEventListener('click', event => { const button = event.target.closest('[data-replacement-filter]'); if (!button) return; replacementPickerState.filter = button.dataset.replacementFilter; renderReplacementPicker(); });
 replacementPickerList?.addEventListener('click', event => { const option = event.target.closest('[data-replacement-option]'); if (!option) return; replacementPickerState.selectedId = option.dataset.replacementOption; renderReplacementPicker(); });
-replacementPickerConfirm?.addEventListener('click', () => { if (!replacementPickerState.orderId || !replacementPickerState.selectedId) return; replacementSelections.set(String(replacementPickerState.orderId), String(replacementPickerState.selectedId)); closeReplacementPicker(); render(); });
+replacementPickerConfirm?.addEventListener('click', () => {
+  if (!replacementPickerState.orderId || !replacementPickerState.selectedId) return;
+  const orderId = String(replacementPickerState.orderId);
+  const laptopId = String(replacementPickerState.selectedId);
+  const laptop = rentableLaptops.find(item => String(item.id) === laptopId);
+  replacementSelections.set(orderId, laptopId);
+  const card = ordersEl.querySelector(`[data-manager-order="${orderId}"]`);
+  const input = card?.querySelector('[data-prepayment-replacement-laptop]');
+  const opener = card?.querySelector('[data-open-replacement-picker]');
+  const recalculate = card?.querySelector('[data-replace-prepayment-laptop]');
+  if (input) input.value = laptopId;
+  if (opener && laptop) {
+    const title = opener.querySelector('span');
+    const detail = opener.querySelector('small');
+    if (title) title.textContent = laptop.title;
+    if (detail) detail.textContent = `${Number(laptop.daily_rate || laptop.dailyRate || 0).toLocaleString('ru-RU')} сом/день · изменить`;
+  }
+  if (recalculate) recalculate.disabled = false;
+  closeReplacementPicker();
+});
 document.addEventListener('touchmove', event => {
   if (document.body.classList.contains('manager-mobile-nav-open') && !managerSidebar?.contains(event.target)) event.preventDefault();
 }, { passive:false });
