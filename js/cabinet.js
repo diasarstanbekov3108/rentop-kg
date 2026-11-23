@@ -353,7 +353,7 @@ function watchOrderUpdates(orders) {
   const epoch = sessionViewEpoch;
   orderPollingTimer = window.setInterval(async () => {
     if (epoch === sessionViewEpoch) await refreshAccountIfSafe();
-  }, 15000);
+  }, 90000);
 }
 
 function requestLabel(request) {
@@ -884,6 +884,10 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   // briefly change page visibility, so this is especially important for video.
   const workspaceOrderId = activeWorkspaceOrderId();
   const pageScrollTop = window.scrollY;
+  // On mobile the opened application is its own scrollable fixed panel.
+  // Saving only window.scrollY always restores 0 and used to throw a reader
+  // back to the top every time background sync re-rendered the workspace.
+  const workspaceScrollTop = rentalsEl?.querySelector('#cabinet-order-workspace')?.scrollTop || 0;
   setWorkspaceMode();
   if (cabinetHero) cabinetHero.hidden = true;
   customerProfile = profile;
@@ -954,7 +958,11 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   if (showingArchivedOrders && !displayedOrders.length) emptyEl.innerHTML = '<h3>Архив пока пуст</h3><p>Завершённую заявку можно скрыть из её экрана после окончания аренды.</p>';
   else if (!showingArchivedOrders) emptyEl.innerHTML = '<h3>Аренд пока нет</h3><p>Когда вы оформите заявку с этим номером, она появится здесь.</p><a class="cabinet-primary cabinet-link" href="/#catalog">Выбрать ноутбук</a>';
   watchOrderUpdates(cabinetOrders);
-  if (workspaceOrderId && displayedOrders.some(order => String(order.id) === workspaceOrderId)) openOrderWorkspace(workspaceOrderId);
+  if (workspaceOrderId && displayedOrders.some(order => String(order.id) === workspaceOrderId)) {
+    openOrderWorkspace(workspaceOrderId);
+    const restoredWorkspace = document.getElementById('cabinet-order-workspace');
+    if (restoredWorkspace) restoredWorkspace.scrollTop = workspaceScrollTop;
+  }
   else if (created && autoOpenDocuments && displayedOrders.some(order => String(order.id) === String(created))) {
     // A fresh booking must land directly on the next real task. Leaving a
     // customer on a card list caused unfinished document steps and repeats.
@@ -971,7 +979,11 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   // A live update may replace the workspace markup. Restore the exact page
   // position so a customer recording or uploading evidence is never thrown
   // back to the beginning of the application.
-  window.requestAnimationFrame(() => window.scrollTo({ top:pageScrollTop, behavior:'auto' }));
+  window.requestAnimationFrame(() => {
+    window.scrollTo({ top:pageScrollTop, behavior:'auto' });
+    const restoredWorkspace = document.getElementById('cabinet-order-workspace');
+    if (restoredWorkspace) restoredWorkspace.scrollTop = workspaceScrollTop;
+  });
   if (returningToBooking && hasValidProfileName) {
     window.setTimeout(() => window.location.assign('/?resume_booking=1'), 120);
   }

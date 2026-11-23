@@ -1420,10 +1420,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateOrderAuthUi();
   const linkedLaptopId = new URLSearchParams(window.location.search).get('model');
   if (linkedLaptopId && laptops.some(laptop => String(laptop.id) === String(linkedLaptopId))) {
-    // A link sent by a manager is a direct invitation to book this model.
-    // Unregistered visitors are safely sent through the same SMS/profile flow
-    // and come back to this exact application afterwards.
-    openOrderModal(Number(linkedLaptopId));
+    // A shared link is for viewing and comparing a model. Opening a booking
+    // form immediately felt like an accidental purchase on mobile.
+    openCatalogForLaptop(Number(linkedLaptopId));
   }
   const returnToBooking = new URLSearchParams(window.location.search).get('resume_booking') === '1';
   if (returnToBooking && cabinetSession) {
