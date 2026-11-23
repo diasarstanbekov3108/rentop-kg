@@ -224,7 +224,7 @@ export default async function handler(request, response) {
         if (deliveryType === 'arca_locker') {
           const lockerAddress = String(payload.lockerAddress || '').trim().replace(/\s+/g, ' ').slice(0, 300);
           if (lockerAddress.length < 8) return json(response, 400, { error:'Выберите удобную точку ARCHA POINT.' });
-          const updated = await database.updateOrder(order.id, { delivery_type:'arca_locker', locker_address:lockerAddress, locker_status:null, delivery_address:null, delivery_contact_name:null, delivery_contact_phone:null, delivery_preferred_time:null });
+          const updated = await database.updateOrder(order.id, { delivery_type:'arca_locker', locker_address:lockerAddress, locker_status:'pending', delivery_address:null, delivery_contact_name:null, delivery_contact_phone:null, delivery_preferred_time:null });
           await database.createEvent({ order_id:order.id, event_type:order.delivery_type === 'arca_locker' ? 'customer_selected_archa_location_from_cabinet' : 'customer_changed_delivery_type_from_cabinet', actor_type:'customer', metadata:{ delivery_type:'arca_locker', locker_address:lockerAddress } });
           return json(response, 200, { ok:true, order:updated });
         }
@@ -236,7 +236,7 @@ export default async function handler(request, response) {
         const updated = await database.updateOrder(order.id, {
           delivery_type:'delivery',
           locker_address:null,
-          locker_status:null,
+          locker_status:'none',
           delivery_address:deliveryAddress,
           delivery_contact_name:profile?.full_name || order.customer_name || null,
           delivery_contact_phone:session.phone,
