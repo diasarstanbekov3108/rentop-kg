@@ -988,6 +988,10 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   // Rendering from a background refresh must not eject a customer from the
   // order they are currently working in. Native mobile file pickers can
   // briefly change page visibility, so this is especially important for video.
+  // A full-screen model chooser belongs to the old workspace only. Every
+  // complete render replaces that workspace, so it must also restore page
+  // scrolling even if the refresh arrived just after a successful selection.
+  document.body.classList.remove('cabinet-overlay-open');
   const workspaceOrderId = activeWorkspaceOrderId();
   const pageScrollTop = window.scrollY;
   // On mobile the opened application is its own scrollable fixed panel.
@@ -1433,6 +1437,8 @@ document.addEventListener('click', event => {
       panel.hidden = true;
       panel.innerHTML = '';
       delete panel.dataset.currentPanel;
+      panel.classList.remove('is-replacement-picker');
+      document.body.classList.remove('cabinet-overlay-open');
       setWorkspaceMode(panel.closest('#cabinet-order-workspace'));
       return;
     }
@@ -1446,7 +1452,8 @@ document.addEventListener('click', event => {
       // Moving to another step replaces the old panel; phone users must never
       // have a model picker and a document form competing on the same screen.
       panel.innerHTML = '';
-      panel.classList.remove('is-document-result');
+      panel.classList.remove('is-document-result', 'is-replacement-picker');
+      document.body.classList.remove('cabinet-overlay-open');
     }
     const originalText = button.textContent;
     button.disabled = true;
@@ -1454,6 +1461,8 @@ document.addEventListener('click', event => {
     panel.hidden = false;
     panel.dataset.currentPanel = requestedPanel;
     panel.classList.toggle('is-document-result', requestedPanel === 'documents' && ['submitted', 'approved'].includes(button.dataset.documentMode || ''));
+    panel.classList.toggle('is-replacement-picker', requestedPanel === 'prepayment-replacement');
+    document.body.classList.toggle('cabinet-overlay-open', requestedPanel === 'prepayment-replacement');
     const sourceOrder = cabinetOrders.find(order => String(order.id) === String(button.dataset.order));
     panel.innerHTML = requestedPanel === 'prepayment-replacement'
       ? `<button class="cabinet-workspace-close" type="button" data-close-workspace aria-label="Закрыть выбор модели">× <span>К заявке</span></button><div class="cabinet-loading"><span></span>Проверяем свободные модели…</div>`
@@ -1492,13 +1501,13 @@ document.addEventListener('click', event => {
   if (event.target.closest('.cabinet-cancel-panel')) {
     const panel = event.target.closest('.cabinet-request-panel');
     if (hasUnsavedDocumentDraft() && !window.confirm('Выбранные фото, видео и заполненные данные будут удалены. Закрыть форму?')) return;
-    panel.hidden = true; panel.innerHTML = ''; delete panel.dataset.currentPanel; setWorkspaceMode(panel.closest('#cabinet-order-workspace'));
+    panel.hidden = true; panel.innerHTML = ''; delete panel.dataset.currentPanel; panel.classList.remove('is-replacement-picker'); document.body.classList.remove('cabinet-overlay-open'); setWorkspaceMode(panel.closest('#cabinet-order-workspace'));
     return;
   }
   if (event.target.closest('[data-close-workspace]')) {
     const panel = event.target.closest('.cabinet-request-panel');
     if (hasUnsavedDocumentDraft() && !window.confirm('Выбранные фото, видео и заполненные данные будут удалены. Закрыть форму?')) return;
-    panel.hidden = true; panel.innerHTML = ''; delete panel.dataset.currentPanel; setWorkspaceMode(panel.closest('#cabinet-order-workspace'));
+    panel.hidden = true; panel.innerHTML = ''; delete panel.dataset.currentPanel; panel.classList.remove('is-replacement-picker'); document.body.classList.remove('cabinet-overlay-open'); setWorkspaceMode(panel.closest('#cabinet-order-workspace'));
   }
 });
 document.addEventListener('input', event => {
@@ -1775,6 +1784,13 @@ document.addEventListener('submit', async event => {
   try {
     const result = await request('POST', { action:form.dataset.request, orderId:form.dataset.order, requestId:data.get('requestId'), days:data.get('days'), replacementLaptopId:data.get('replacementLaptopId'), deliveryType:data.get('deliveryType'), deliveryAddress:data.get('deliveryAddress'), deliveryPreferredTime:data.get('deliveryPreferredTime'), lockerAddress:data.get('lockerAddress'), kind:data.get('kind'), message:data.get('message'), returnMethod:data.get('returnMethod'), returnLockerAddress:data.get('returnLockerAddress'), returnCollectionAddress:data.get('returnCollectionAddress'), returnContactName:data.get('returnContactName'), returnContactPhone:data.get('returnContactPhone'), returnPreferredTime:data.get('returnPreferredTime') || data.get('returnPreferredTimeSelf'), returnDeliveryConfirmed:data.get('returnDeliveryConfirmed') === 'on', rating:data.get('rating'), review:data.get('review'), suggestion:data.get('suggestion') });
     message(result.message || 'Запрос отправлен.', 'success');
+    if (form.dataset.request === 'replace_draft_laptop') {
+      const panel = form.closest('.cabinet-request-panel');
+      panel?.classList.remove('is-replacement-picker');
+      if (panel) { panel.hidden = true; panel.innerHTML = ''; delete panel.dataset.currentPanel; }
+      document.body.classList.remove('cabinet-overlay-open');
+      setWorkspaceMode(panel?.closest('#cabinet-order-workspace'));
+    }
     if (result.request) {
       const order = cabinetOrders.find(item => String(item.id) === String(form.dataset.order));
       if (order) order.requests = [result.request, ...(order.requests || []).filter(item => item.id !== result.request.id)];
