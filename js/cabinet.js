@@ -33,6 +33,12 @@ const cabinetTopikSupport = document.getElementById('cabinet-topik-support');
 const cabinetTopikHide = document.getElementById('cabinet-topik-hide');
 const cabinetTopikRestore = document.getElementById('cabinet-topik-restore');
 const cabinetTopikConfetti = document.getElementById('cabinet-topik-confetti');
+const cabinetCelebration = document.getElementById('cabinet-celebration');
+const cabinetCelebrationClose = document.getElementById('cabinet-celebration-close');
+const cabinetCelebrationContinue = document.getElementById('cabinet-celebration-continue');
+const cabinetCelebrationEyebrow = document.getElementById('cabinet-celebration-eyebrow');
+const cabinetCelebrationTitle = document.getElementById('cabinet-celebration-title');
+const cabinetCelebrationText = document.getElementById('cabinet-celebration-text');
 const FORM_TARGET_LABELS = Object.freeze({
   identity_front:'лицевую сторону ID', identity_back:'обратную сторону ID', selfie:'селфи с документом', supporting:'подтверждающий документ', benefit_proof:'документ для льготы', issue_video:'видео получения', return_video:'видео возврата',
   alternative_security_video:'видеообращение', alternative_security_address:'подтверждение адреса', alternative_security_work:'справку с работы', alternative_security_study:'справку с учёбы',
@@ -217,9 +223,12 @@ function syncBookingReturnLoginCopy() {
     if (loginCopy) loginCopy.textContent = 'Мы отправим одноразовый код. Пароль не нужен.';
     return;
   }
+  const count = Array.isArray(saved.laptopIds) ? saved.laptopIds.length : 1;
   const title = String(saved.laptopTitle || 'выбранный ноутбук').trim();
   if (loginTitle) loginTitle.textContent = 'Подтвердите номер';
-  if (loginCopy) loginCopy.textContent = `Вы выбрали «${title}». После SMS-кода продолжим оформление этой же заявки.`;
+  if (loginCopy) loginCopy.textContent = count > 1
+    ? `Вы выбрали ${count} ноутбука. После SMS-кода продолжим оформление этого же заказа.`
+    : `Вы выбрали «${title}». После SMS-кода продолжим оформление этой же заявки.`;
 }
 const archaLocation = (value) => ARCHA_LOCATIONS.find(location => location.value === value) || null;
 const isValidFullName = (value) => String(value || '').trim().split(/\s+/).filter(Boolean).filter(part => part.length >= 2).length >= 3;
@@ -285,7 +294,7 @@ function closePaymentDialog() {
 }
 
 function syncBodyScrollLock() {
-  const hasOverlay = Boolean(document.querySelector('.cabinet-document-viewer:not([hidden]), .cabinet-payment-dialog:not([hidden])'));
+  const hasOverlay = Boolean(document.querySelector('.cabinet-document-viewer:not([hidden]), .cabinet-payment-dialog:not([hidden]), .cabinet-celebration:not([hidden])'));
   document.documentElement.classList.toggle('cabinet-scroll-locked', hasOverlay);
   document.body.style.overflow = hasOverlay ? 'hidden' : '';
 }
@@ -641,7 +650,25 @@ function celebrateTopikMoment(order, moment, token = '') {
   cabinetTopikConfetti.hidden = false;
   cabinetTopikConfetti.classList.remove('is-running');
   window.requestAnimationFrame(() => cabinetTopikConfetti.classList.add('is-running'));
-  window.setTimeout(() => { cabinetTopikConfetti.hidden = true; cabinetTopikConfetti.classList.remove('is-running'); }, 2600);
+  window.setTimeout(() => { cabinetTopikConfetti.hidden = true; cabinetTopikConfetti.classList.remove('is-running'); }, 5200);
+  showCabinetCelebration(moment);
+}
+function closeCabinetCelebration() {
+  if (!cabinetCelebration) return;
+  cabinetCelebration.hidden = true;
+  syncBodyScrollLock();
+}
+function showCabinetCelebration(moment) {
+  if (!cabinetCelebration || !cabinetCelebrationTitle || !cabinetCelebrationText) return;
+  const completed = moment === 'completion';
+  if (cabinetCelebrationEyebrow) cabinetCelebrationEyebrow.textContent = completed ? 'АРЕНДА ЗАВЕРШЕНА' : 'ОПЛАТА ПОДТВЕРЖДЕНА';
+  cabinetCelebrationTitle.textContent = completed ? 'Спасибо, всё завершено!' : 'Оплата прошла успешно!';
+  cabinetCelebrationText.textContent = completed
+    ? 'Спасибо, что выбрали Rentop. Будем рады помочь вам снова.'
+    : 'Платёж принят. Мы уже готовим ноутбук к выдаче и сообщим, когда всё будет готово.';
+  cabinetCelebration.hidden = false;
+  syncBodyScrollLock();
+  window.setTimeout(closeCabinetCelebration, 6200);
 }
 function celebrateTopikPayment(order) {
   const payment = order?.extensionPayment || order?.payment;
@@ -663,13 +690,20 @@ function actionPanel(order) {
   const documentText = docState.mode === 'approved' ? 'Документы проверены' : docState.mode === 'replacement' ? 'Заменить документ' : 'Загрузить документы →';
   const documents = docState.mode === 'approved' || docState.mode === 'submitted' ? '' : `<button class="cabinet-action secondary cabinet-documents-open" data-panel="documents" data-document-mode="${docState.mode}" data-document-kinds="${docState.kinds.join(',')}" data-order="${order.id}">${documentText}</button>`;
   const documentsPending = docState.mode === 'submitted' ? '<section class="cabinet-documents-cta cabinet-documents-pending"><strong>Документы на проверке</strong><p>Все файлы получены. Менеджер сверит их и затем выставит защищённый счёт. Повторно загружать ничего не нужно.</p></section>' : '';
+  const paymentStarted = ['awaiting_payment', 'paid', 'confirmed'].includes(String(order.payment?.status || ''));
+  const modelChange = ['draft', 'pending_review'].includes(String(order.status || '')) && !paymentStarted
+    ? `<section class="cabinet-model-change"><strong>Не подошла модель?</strong><p>До выставления и оплаты счёта можно выбрать другой свободный ноутбук. Ваша заявка, даты и документы сохранятся, сумма пересчитается автоматически.</p><button class="cabinet-action secondary" data-panel="prepayment-replacement" data-order="${order.id}">Изменить модель</button></section>`
+    : '';
+  const deliveryChange = ['draft', 'pending_review'].includes(String(order.status || '')) && !paymentStarted
+    ? `<section class="cabinet-model-change"><strong>Нужен другой способ получения?</strong><p>До выставления и оплаты счёта можно сменить ARCHA POINT на курьерскую доставку или наоборот.</p><button class="cabinet-action ghost" data-panel="delivery" data-order="${order.id}">Изменить способ получения</button></section>`
+    : '';
   const whatsapp = supportWhatsappUrl ? `<a class="cabinet-action ghost cabinet-whatsapp" href="${escape(supportWhatsappUrl)}?text=${encodeURIComponent(`Здравствуйте! Нужна помощь по заявке ${order.reference}.`)}" target="_blank" rel="noopener" aria-label="Написать в WhatsApp по заявке ${escape(order.reference)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5A10.6 10.6 0 0 0 3.1 16.1L2 22l6-1.6A10.5 10.5 0 1 0 20.5 3.5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8.2 6.9c.3-.7.7-.7 1.1-.6l1.5 2c.3.4.2.8-.1 1.1l-.7.7c.9 1.8 2.3 3.2 4.1 4.1l.7-.7c.3-.3.7-.4 1.1-.1l2 1.5c.1.4.1.8-.6 1.1-.8.3-1.7.5-2.5.3-4.4-1.1-7.4-4.1-8.5-8.5-.2-.8 0-1.7.3-2.5Z" fill="currentColor"/></svg><span>Написать в WhatsApp</span></a>` : '';
   if (['requested', 'submitted'].includes(order.alternative_security_status)) {
     const submitted = order.alternative_security_status === 'submitted';
     return `<section class="cabinet-documents-cta ${submitted ? 'cabinet-documents-pending' : ''}"><strong>${submitted ? 'Дополнительная проверка отправлена' : 'Менеджер запросил дополнительную проверку'}</strong><p>${submitted ? 'Файлы получены. Менеджер примет индивидуальное решение по залогу и покажет следующий шаг.' : 'Это индивидуальная проверка вместо залога. Ответственность по аренде всё равно остаётся за вами.'}</p>${submitted ? '' : `<button class="cabinet-action" data-panel="alternative-security" data-order="${order.id}">Открыть проверку без залога</button>`}</section><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
   }
-  if (docState.mode === 'upload') return `<div class="cabinet-documents-cta"><strong>Следующий шаг — документы</strong><p>Четыре файла: ID с двух сторон, селфи с ID и подтверждающий документ.</p>${documents}</div><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
-  if (order.status === 'pending_review' && docState.mode === 'approved') return `<section class="cabinet-documents-cta"><strong>Документы приняты</strong><p>Менеджер завершает сверку данных для договора. Защищённый счёт появится здесь только после этой проверки.</p></section><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Уточнить статус</button>${whatsapp}</div>`;
+  if (docState.mode === 'upload') return `<div class="cabinet-documents-cta"><strong>Следующий шаг — документы</strong><p>Четыре файла: ID с двух сторон, селфи с ID и подтверждающий документ.</p>${documents}</div>${modelChange}${deliveryChange}<div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
+  if (order.status === 'pending_review' && docState.mode === 'approved') return `<section class="cabinet-documents-cta"><strong>Документы приняты</strong><p>Менеджер завершает сверку данных для договора. Защищённый счёт появится здесь только после этой проверки.</p></section>${modelChange}${deliveryChange}<div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Уточнить статус</button>${whatsapp}</div>`;
   if (order.replacement_exchange_status === 'awaiting_exchange' && order.replacement_pending_laptop_id) return `${documents}<section class="cabinet-pickup-flow"><strong>Замена ноутбука согласована</strong><p>Оплата и срок аренды уже зафиксированы. Rentop согласует физическую передачу старого и нового ноутбуков; аренда продолжится без повторной подачи документов.</p><p>Не передавайте текущий ноутбук без согласованного способа и времени обмена.</p><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Уточнить передачу</button>${whatsapp}</div></section>`;
   if (order.delivery_type === 'delivery' && order.status === 'confirmed') return `${documents}<section class="cabinet-pickup-flow"><strong>Оплата подтверждена</strong><p>Менеджер согласует с вами точное время и отдельную стоимость платной доставки по адресу из заявки. Срок аренды ещё не начался.</p><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Уточнить доставку</button>${whatsapp}</div></section>`;
   if (order.status === 'awaiting_pickup') {
@@ -750,7 +784,7 @@ function actionPanel(order) {
     return `${documents}<div class="cabinet-request-state ${isExtension ? 'is-info cabinet-extension-pending' : ''}"><strong>${isExtension ? '⌛ Продление на рассмотрении' : '⌛ Запрос на возврат на рассмотрении'}</strong><p>${escape(requestLabel(pending))}. Менеджер проверяет доступность и подготовит следующий шаг.</p></div><div class="cabinet-actions">${cancelExtension}<button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
   }
   if (order.status === 'incident') return `${documents}<section class="cabinet-pickup-flow"><strong>Rentop проверяет ситуацию с ноутбуком</strong><p>Аренда и залог не списываются дополнительно, пока менеджер не зафиксирует решение. При необходимости мы предложим доступную замену и согласуем способ передачи.</p><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Связаться с менеджером</button>${whatsapp}</div></section>`;
-  if (!canAct) return `${documentsPending}${documents}<div class="cabinet-action-disabled">Продление и досрочный возврат станут доступны после выдачи ноутбука.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="support" data-order="${order.id}">Помощь</button>${whatsapp}</div>`;
+  if (!canAct) return `${documentsPending}${documents}${modelChange}${deliveryChange}<div class="cabinet-action-disabled">Продление и досрочный возврат станут доступны после выдачи ноутбука.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="support" data-order="${order.id}">Помощь</button>${whatsapp}</div>`;
   const deadlineNotice = deadline ? `<div class="cabinet-request-state ${deadline.due ? 'is-warning' : ''}"><strong>${deadline.title}</strong><p>${deadline.text}</p></div>` : '';
   const returnLabel = 'Вернуть';
   const exactTerm = order.rental_ends_at ? `До ${moment(order.rental_ends_at)} (Бишкек).` : `До ${date(order.rental_end_date)}.`;
@@ -762,6 +796,11 @@ function requestForm(order) {
 function replacementChoicesMarkup(orderId, days, alternatives = []) {
   if (!alternatives.length) return `<div class="cabinet-request-state is-warning"><strong>Продлить эту модель нельзя</strong><p>На нужные даты свободной замены пока нет. Оформите возврат или напишите в поддержку — менеджер проверит другие варианты.</p></div>`;
   return `<form class="cabinet-inline-form" data-request="replacement_request" data-order="${escape(orderId)}"><input name="days" type="hidden" value="${Number(days)}"><label>Выберите замену на период продления</label><p>Документы и текущая заявка сохраняются. Менеджер подтвердит модель и откроет один счёт с перерасчётом.</p><div class="cabinet-replacement-options">${alternatives.map(item => `<label class="cabinet-replacement-option"><input type="radio" name="replacementLaptopId" value="${Number(item.id)}" required><span><b>${escape(item.title)}</b><small>${Number(item.daily_rate || 0).toLocaleString('ru-RU')} сом/день · скидка ${Number(item.discount_percent || 0)}%</small><em>За ${Number(days)} дн.: ${Number(item.estimated_amount || 0).toLocaleString('ru-RU')} сом · разница ${Number(item.difference || 0) >= 0 ? '+' : ''}${Number(item.difference || 0).toLocaleString('ru-RU')} сом</em></span></label>`).join('')}</div><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Выбрать замену</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
+}
+
+function prepaymentReplacementChoicesMarkup(orderId, alternatives = []) {
+  if (!alternatives.length) return `<div class="cabinet-request-state is-warning"><strong>Свободных моделей пока нет</strong><p>На эти даты другой свободной модели не найдено. Ваша текущая заявка сохранена — попробуйте позже или напишите в поддержку.</p></div>`;
+  return `<form class="cabinet-inline-form" data-request="replace_draft_laptop" data-order="${escape(orderId)}"><strong>Выберите модель для этой заявки</strong><p>Заменить можно только до выставления и оплаты счёта. Даты, доставка и документы останутся в этой же заявке.</p><div class="cabinet-replacement-options">${alternatives.map(item => `<label class="cabinet-replacement-option"><input type="radio" name="replacementLaptopId" value="${Number(item.id)}" required><span><b>${escape(item.title)}</b><small>${Number(item.daily_rate || 0).toLocaleString('ru-RU')} сом/день · скидка ${Number(item.discount_percent || 0)}%</small><em>Новая сумма: ${Number(item.total_amount || 0).toLocaleString('ru-RU')} сом · разница ${Number(item.difference || 0) >= 0 ? '+' : ''}${Number(item.difference || 0).toLocaleString('ru-RU')} сом</em></span></label>`).join('')}</div><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Заменить модель</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
 }
 function promoStatus(promo) {
   if (promo.status === 'redeemed') return 'Использован';
@@ -784,6 +823,10 @@ function loyaltyPanel(promos, benefits = [], orderId = '') {
 }
 function panelMarkup(kind, orderId, documentState = {}) {
   const order = cabinetOrders.find(item => String(item.id) === String(orderId)) || {};
+  if (kind === 'delivery') {
+    const isLocker = order.delivery_type === 'arca_locker';
+    return `<form class="cabinet-inline-form cabinet-delivery-choice" data-request="save_delivery_preferences" data-order="${escape(orderId)}"><strong>Изменить способ получения</strong><p>Это можно сделать до выставления и оплаты счёта. После сохранения заявка останется той же.</p><label>Способ получения</label><select name="deliveryType" data-delivery-type><option value="delivery" ${isLocker ? '' : 'selected'}>Доставка курьером</option><option value="arca_locker" ${isLocker ? 'selected' : ''}>Через ARCHA POINT</option></select><div data-delivery-fields="delivery" ${isLocker ? 'hidden' : ''}><label>Адрес доставки</label><textarea name="deliveryAddress" ${isLocker ? 'disabled' : 'required'} minlength="8" maxlength="500" placeholder="Город, район, улица, дом, квартира">${escape(order.delivery_address || '')}</textarea><label>Предпочтительный интервал</label><input name="deliveryPreferredTime" ${isLocker ? 'disabled' : 'required'} minlength="3" maxlength="300" value="${escape(order.delivery_preferred_time || '')}" placeholder="Например: после 20:00"></div><div data-delivery-fields="arca_locker" ${isLocker ? '' : 'hidden'}><label>Точка ARCHA POINT</label><select name="lockerAddress" ${isLocker ? 'required' : 'disabled'}><option value="">Выберите точку</option>${ARCHA_LOCATIONS.map(location => `<option value="${escape(location.value)}" ${order.locker_address === location.value ? 'selected' : ''}>${escape(location.value)} · ${escape(location.hours)}</option>`).join('')}</select></div><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Сохранить способ получения</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
+  }
   if (kind === 'documents') {
     if (documentState.mode === 'approved') return `<div class="cabinet-document-wait is-approved"><strong>Документы проверены</strong><p>Спасибо. Заявка перешла к оплате или подготовке выдачи — следующий шаг показан выше.</p></div>`;
     if (documentState.mode === 'submitted') return `<div class="cabinet-document-wait"><strong>Документы отправлены</strong><p>Ваша заявка обрабатывается. Ожидайте ответа менеджера — повторная отправка заблокирована.</p><button class="cabinet-action ghost" type="button" data-document-correction="${orderId}">Я отправил(а) неверный документ</button></div>`;
@@ -1322,6 +1365,16 @@ document.addEventListener('click', event => {
     panel.classList.toggle('is-document-result', button.dataset.panel === 'documents' && ['submitted', 'approved'].includes(button.dataset.documentMode || ''));
     const sourceOrder = cabinetOrders.find(order => String(order.id) === String(button.dataset.order));
     panel.innerHTML = panel.hidden ? '' : `<button class="cabinet-workspace-close" type="button" data-close-workspace aria-label="Закрыть форму">× <span>К заявке</span></button>${panelMarkup(button.dataset.panel, button.dataset.order, { mode:button.dataset.documentMode, kinds:button.dataset.documentKinds, requestId:button.dataset.requestId, days:button.dataset.extensionDays, offerSmsVerified:Boolean(sourceOrder?.offer_otp_verified_at), benefitRequested:sourceOrder?.benefit_requested_type || '', deliveryType:sourceOrder?.delivery_type || '', deliveryAddress:sourceOrder?.delivery_address || '', deliveryPreferredTime:sourceOrder?.delivery_preferred_time || '', lockerAddress:sourceOrder?.locker_address || '', address:sourceOrder?.return_collection_address || sourceOrder?.residence_address || '', name:sourceOrder?.return_contact_name || sourceOrder?.customer_name || '', phone:sourceOrder?.return_contact_phone || sourceOrder?.customer_phone || '' })}`;
+    if (button.dataset.panel === 'prepayment-replacement') {
+      panel.insertAdjacentHTML('beforeend', '<p class="cabinet-form-hint">Проверяем свободные модели на выбранные даты…</p>');
+      request('POST', { action:'prepayment_replacement_options', orderId:button.dataset.order })
+        .then((result) => {
+          panel.innerHTML = `<button class="cabinet-workspace-close" type="button" data-close-workspace aria-label="Закрыть форму">× <span>К заявке</span></button>${prepaymentReplacementChoicesMarkup(button.dataset.order, result.alternatives || [])}`;
+        })
+        .catch((error) => {
+          panel.innerHTML = `<button class="cabinet-workspace-close" type="button" data-close-workspace aria-label="Закрыть форму">× <span>К заявке</span></button><div class="cabinet-request-state is-error"><strong>Модель пока нельзя заменить</strong><p>${escape(error.message)}</p></div>`;
+        });
+    }
     setWorkspaceMode(panel.hidden ? null : panel);
     // Action forms are rendered after the order details. On a phone they can
     // open below the viewport, which looks like a failed tap, so always show
@@ -1426,6 +1479,23 @@ document.addEventListener('change', event => {
         hint.textContent = `Длительность: ${seconds} сек. · Размер: ${(file.size / 1024 / 1024).toFixed(1)} МБ из 50 МБ.`;
       }
     };
+function putDocumentFile(uploadUrl, token, contentType, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', uploadUrl, true);
+    xhr.timeout = 90_000;
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader('x-upsert', 'false');
+    xhr.setRequestHeader('content-type', contentType);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(event.loaded, event.total);
+    };
+    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Хранилище ответило ${xhr.status || 'без статуса'}`)));
+    xhr.onerror = () => reject(new Error('Сеть оборвала загрузку файла.'));
+    xhr.ontimeout = () => reject(new Error('Загрузка файла слишком долго не отвечает.'));
+    xhr.send(file);
+  });
+}
     video.onerror = () => { URL.revokeObjectURL(objectUrl); if (hint) hint.textContent = 'Не удалось определить длительность — проверьте, что ролик короткий и меньше 50 МБ.'; };
     video.src = objectUrl;
   }
@@ -1436,7 +1506,20 @@ document.addEventListener('click', event => {
   event.preventDefault();
   focusDocumentFormTarget(targetButton.closest('[data-document-upload]'), targetButton.dataset.formErrorTarget);
 });
+function clearDocumentFormError(form, field) {
+  if (!form || !field) return;
+  field.removeAttribute('aria-invalid');
+  field.classList.remove('is-invalid');
+  // Any corrected field is a new attempt. Do not leave a scary stale upload
+  // error on screen while the customer has already changed the file or input.
+  form.querySelector('.cabinet-form-error')?.remove();
+}
+document.addEventListener('input', event => {
+  const field = event.target;
+  clearDocumentFormError(field.closest?.('[data-document-upload]'), field);
+});
 document.addEventListener('change', event => {
+  clearDocumentFormError(event.target.closest?.('[data-document-upload]'), event.target);
   const picker = event.target.closest('[data-delivery-type]');
   if (!picker) return;
   const section = picker.closest('.cabinet-delivery-choice');
@@ -1518,6 +1601,13 @@ document.addEventListener('submit', async event => {
       if (!isEvidence && !isReplacement) await request('POST', { action:'accept_offer', orderId:documentForm.dataset.order });
       if (isAlternativeSecurity) await request('POST', { action:'save_alternative_security_contact', orderId:documentForm.dataset.order, operationCity, name:emergencyContactName, relationship:emergencyContactRelationship, phone:emergencyContactPhone, contactConsent:true });
       let completedUploads = 0;
+      const totalUploadBytes = files.reduce((sum, item) => sum + Number(item.file?.size || 0), 0);
+      const uploadedBytes = new Map();
+      const showUploadProgress = () => {
+        const current = [...uploadedBytes.values()].reduce((sum, value) => sum + value, 0);
+        const percent = totalUploadBytes ? Math.min(99, Math.round((current / totalUploadBytes) * 100)) : 0;
+        button.textContent = `Загружаем файлы: ${percent}% · готово ${completedUploads}/${files.length}`;
+      };
       const uploadOne = async ({ kind, file }) => {
         const input = documentForm.elements[kind];
         if (['issue_video', 'return_video', 'alternative_security_video'].includes(kind) && input?.dataset.videoTooLong === '1') throw new Error('Снимите видео короче 30 секунд и выберите его заново.');
@@ -1527,12 +1617,20 @@ document.addEventListener('submit', async event => {
         const isVideo = ['video/mp4', 'video/quicktime'].includes(contentType);
         if (file.size > (isVideo ? 50 : 8) * 1024 * 1024) throw new Error(`${isVideo ? 'Видео' : 'Фото или документ'} «${file.name}» больше ${isVideo ? 50 : 8} МБ. Уменьшите размер и выберите файл заново.`);
         const ticket = await request('POST', { action:'create_document_upload', orderId:documentForm.dataset.order, kind, fileName, contentType, byteSize:file.size });
-        let upload = await fetch(ticket.uploadUrl, { method:'PUT', headers:{ Authorization:`Bearer ${ticket.token}`, 'x-upsert':'false', 'content-type':contentType }, body:file });
-        if (!upload.ok) {
+        try {
+          await putDocumentFile(ticket.uploadUrl, ticket.token, contentType, file, (loaded) => {
+            uploadedBytes.set(kind, loaded);
+            showUploadProgress();
+          });
+        } catch (firstError) {
           button.textContent = `Повторяем загрузку файлов (${completedUploads}/${files.length})…`;
-          upload = await fetch(ticket.uploadUrl, { method:'PUT', headers:{ Authorization:`Bearer ${ticket.token}`, 'x-upsert':'false', 'content-type':contentType }, body:file });
+          await putDocumentFile(ticket.uploadUrl, ticket.token, contentType, file, (loaded) => {
+            uploadedBytes.set(kind, loaded);
+            showUploadProgress();
+          });
         }
-        if (!upload.ok) throw new Error(`Не удалось загрузить «${file.name}». Файл остался выбранным в форме: проверьте соединение и нажмите «Загрузить документы» ещё раз.`);
+        uploadedBytes.set(kind, file.size);
+        showUploadProgress();
         const registerPayload = { action:'register_document', orderId:documentForm.dataset.order, kind, path:ticket.path, fileName, contentType, byteSize:file.size, benefitType:documentForm.elements.benefitType?.value || documentForm.dataset.benefitType || '' };
         try {
           await request('POST', registerPayload);
@@ -1587,7 +1685,7 @@ document.addEventListener('submit', async event => {
   button.disabled = true; button.textContent = 'Отправляем…';
   const data = new FormData(form);
   try {
-    const result = await request('POST', { action:form.dataset.request, orderId:form.dataset.order, requestId:data.get('requestId'), days:data.get('days'), replacementLaptopId:data.get('replacementLaptopId'), kind:data.get('kind'), message:data.get('message'), returnMethod:data.get('returnMethod'), returnLockerAddress:data.get('returnLockerAddress'), returnCollectionAddress:data.get('returnCollectionAddress'), returnContactName:data.get('returnContactName'), returnContactPhone:data.get('returnContactPhone'), returnPreferredTime:data.get('returnPreferredTime') || data.get('returnPreferredTimeSelf'), returnDeliveryConfirmed:data.get('returnDeliveryConfirmed') === 'on', rating:data.get('rating'), review:data.get('review'), suggestion:data.get('suggestion') });
+    const result = await request('POST', { action:form.dataset.request, orderId:form.dataset.order, requestId:data.get('requestId'), days:data.get('days'), replacementLaptopId:data.get('replacementLaptopId'), deliveryType:data.get('deliveryType'), deliveryAddress:data.get('deliveryAddress'), deliveryPreferredTime:data.get('deliveryPreferredTime'), lockerAddress:data.get('lockerAddress'), kind:data.get('kind'), message:data.get('message'), returnMethod:data.get('returnMethod'), returnLockerAddress:data.get('returnLockerAddress'), returnCollectionAddress:data.get('returnCollectionAddress'), returnContactName:data.get('returnContactName'), returnContactPhone:data.get('returnContactPhone'), returnPreferredTime:data.get('returnPreferredTime') || data.get('returnPreferredTimeSelf'), returnDeliveryConfirmed:data.get('returnDeliveryConfirmed') === 'on', rating:data.get('rating'), review:data.get('review'), suggestion:data.get('suggestion') });
     message(result.message || 'Запрос отправлен.', 'success');
     if (result.request) {
       const order = cabinetOrders.find(item => String(item.id) === String(form.dataset.order));
@@ -1645,6 +1743,9 @@ cabinetTopikToggle?.addEventListener('click', () => {
   setCabinetTopikOpen(opening);
   setCabinetTopikMood('happy', 1300);
 });
+cabinetCelebrationClose?.addEventListener('click', closeCabinetCelebration);
+cabinetCelebrationContinue?.addEventListener('click', closeCabinetCelebration);
+cabinetCelebration?.addEventListener('click', event => { if (event.target === cabinetCelebration) closeCabinetCelebration(); });
 cabinetTopikClose?.addEventListener('click', () => setCabinetTopikOpen(false));
 if (localStorage.getItem(HIDDEN_CABINET_TOPIK_KEY) === '1') setCabinetTopikHidden(true);
 cabinetTopikHide?.addEventListener('click', () => setCabinetTopikHidden(true));

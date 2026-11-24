@@ -88,36 +88,40 @@ export default async function handler(request, response) {
     // Orders are always tied to the verified cabinet profile.  Accepting a
     // name from the modal here was the source of "lost" first applications.
     const fullName = normalizeFullName(profile?.full_name, true);
-    const laptopId = Number(payload.laptopId);
-    if (!Number.isFinite(laptopId) || !['delivery', 'arca_locker'].includes(payload.deliveryType)) throw new Error('Некорректные данные заявки.');
-    const laptop = await database.getLaptop(laptopId);
-    if (!laptop || laptop.category !== 'rent') throw new Error('Ноутбук для аренды не найден.');
+    const laptopIds = [...new Set((Array.isArray(payload.laptopIds) ? payload.laptopIds : [payload.laptopId]).map(Number).filter(Number.isFinite))];
+    if (!laptopIds.length || laptopIds.length > 3 || !['delivery', 'arca_locker'].includes(payload.deliveryType)) throw new Error('Выберите от одного до трёх ноутбуков и способ получения.');
+    const laptops = await database.listLaptopsByIds(laptopIds);
+    if (laptops.length !== laptopIds.length || laptops.some(laptop => laptop.category !== 'rent')) throw new Error('Один из выбранных ноутбуков больше недоступен для аренды.');
     const benefits = await database.listBenefitVerifications(session.phone).catch(() => []);
-    const tariffRental = quote(laptop, payload.startDate, payload.endDate);
-    const baseRental = rentalWithDiscount(tariffRental, tariffRental.discount + benefitDiscount(benefits));
     const promoCode = normalizePromoCode(payload.promoCode);
+    if (laptopIds.length > 1 && promoCode) throw new Error('Промокод для заказа из нескольких ноутбуков добавим вместе с общим QR-счётом. Пока оформите заказ без него.');
     const promo = promoCode ? usablePromo(await database.getPromoByCode(promoCode), session.phone) : null;
-    const rental = rentalWithDiscount(baseRental, baseRental.discount + Number(promo?.discount_percent || 0));
+    const rentals = laptops.map(laptop => {
+      const tariffRental = quote(laptop, payload.startDate, payload.endDate);
+      const baseRental = rentalWithDiscount(tariffRental, tariffRental.discount + benefitDiscount(benefits));
+      return { laptop, baseRental, rental:rentalWithDiscount(baseRental, baseRental.discount + Number(promo?.discount_percent || 0)) };
+    });
     // A second tap, a browser back-navigation, or a slow mobile connection
     // must not create a second copy of the same application for the same
     // person, laptop and dates. Future rentals on different dates remain OK.
     const previousOrders = await database.listOrdersByCustomerPhone(session.phone, 30).catch(() => []);
     const duplicate = previousOrders.find(order =>
-      Number(order.laptop_id) === laptopId &&
+      laptopIds.includes(Number(order.laptop_id)) &&
       String(order.rental_start_date) === String(payload.startDate) &&
       String(order.rental_end_date) === String(payload.endDate) &&
       !['cancelled', 'rejected', 'completed'].includes(String(order.status || ''))
     );
-    if (duplicate) throw new Error('Такая заявка уже создана. Откройте личный кабинет и загрузите документы — повторно бронировать этот же ноутбук на те же даты не нужно.');
-    const token = randomBytes(18).toString('base64url');
-    const order = await database.createOrder({
-      laptop_id: laptopId,
-      customer_name: fullName,
-      customer_phone: session.phone,
-      rental_start_date: payload.startDate,
-      rental_end_date: payload.endDate,
-      rental_days: rental.days,
-      daily_rate: rental.rate,
+    if (duplicate) throw new Error('Один из выбранных ноутбуков уже есть в активной заявке на эти даты.');
+    const groupId = laptopIds.length > 1 ? `${randomBytes(4).toString('hex')}-${randomBytes(2).toString('hex')}-${randomBytes(2).toString('hex')}-${randomBytes(2).toString('hex')}-${randomBytes(6).toString('hex')}` : null;
+    const orders = [];
+    for (const { laptop, baseRental, rental } of rentals) {
+      const orderPayload = {
+        laptop_id: laptop.id,
+        customer_name: fullName,
+        customer_phone: session.phone,
+        rental_start_date: payload.startDate,
+        rental_end_date: payload.endDate,
+        rental_days: rental.days, daily_rate: rental.rate,
       // The personal code is redeemed only after the new order has an ID.
       // The database then verifies the second, repriced update atomically.
       discount_percent: baseRental.discount,
@@ -133,8 +137,16 @@ export default async function handler(request, response) {
       delivery_contact_name: null,
       delivery_contact_phone: null,
       delivery_preferred_time: null,
-      client_token: token
-    });
+        client_token: randomBytes(18).toString('base64url')
+      };
+      // A single booking is a normal order, not a one-item group. Omitting
+      // the optional field also keeps the critical booking flow compatible
+      // while a database schema change is rolling out.
+      if (groupId) orderPayload.order_group_id = groupId;
+      const order = await database.createOrder(orderPayload);
+      orders.push(order);
+    }
+    const order = orders[0];
     if (promo) {
       // The update is conditional on an unused code, so a second browser tab
       // cannot spend the same personal code twice.
@@ -143,16 +155,16 @@ export default async function handler(request, response) {
         await database.deleteOrder(order.id).catch(() => {});
         throw new Error('Промокод только что был использован. Обновите кабинет и выберите другой.');
       }
-      const repriced = await database.updateOrder(order.id, { discount_percent:rental.discount, total_amount:rental.total });
+      const repriced = await database.updateOrder(order.id, { discount_percent:rentals[0].rental.discount, total_amount:rentals[0].rental.total });
       if (!repriced) throw new Error('Не удалось закрепить скидку по промокоду. Заявка не создана.');
     }
     const bot = createTelegramApi(config.telegramBotToken);
     await bot.sendMessage(config.adminChatId,
       `🆕 Новая заявка с сайта\n\nЗаявка ${order.id.slice(0, 8).toUpperCase()}\n` +
-      `${laptop.title}\nКлиент: ${fullName || 'ФИО заполняется в кабинете'}\nТелефон: ${session.phone}\n` +
-      `Срок: ${payload.startDate} — ${payload.endDate}\nСкидка: ${rental.discount}%${promo ? ` (промокод ${promo.code})` : ''}\nСумма: ${rental.total} сом\nПолучение: ${payload.deliveryType === 'arca_locker' ? 'ARCHA POINT (точка будет выбрана в кабинете)' : 'доставка (адрес будет указан в кабинете)'}\nДокументы: ожидаются\n\nОткройте панель: ${config.publicAppUrl}/manager`
+      `${laptops.map(item => item.title).join(' + ')}\nКлиент: ${fullName || 'ФИО заполняется в кабинете'}\nТелефон: ${session.phone}\n` +
+      `Срок: ${payload.startDate} — ${payload.endDate}\nПозиций: ${orders.length}\nСумма: ${rentals.reduce((sum, item) => sum + item.rental.total, 0)} сом\nПолучение: ${payload.deliveryType === 'arca_locker' ? 'ARCHA POINT — проверьте вместимость, при необходимости забронируйте две ячейки; коды можно выбрать общими или разными.' : 'Курьерская доставка — передайте весь заказ одним выездом.'}\nДокументы: ожидаются\n\nОткройте панель: ${config.publicAppUrl}/manager`
     ).catch((error) => console.error('Manager notification failed:', error.message));
-    return response.status(201).json({ orderId: order.id, accountUrl: `/account?created=${encodeURIComponent(order.id)}` });
+    return response.status(201).json({ orderId: order.id, orderIds:orders.map(item => item.id), accountUrl: `/account?created=${encodeURIComponent(order.id)}` });
   } catch (error) {
     console.error('Booking creation failed:', error.message);
     return response.status(400).json({ error: error.message || 'Не удалось создать заявку.' });

@@ -586,11 +586,17 @@ export default async function handler(request, response) {
     if (payload.action === 'prepare_archa_handoff') {
       const order = await database.getOrder(String(payload.orderId || ''));
       if (!order || order.delivery_type !== 'arca_locker') return reply(response, 400, { error:'Эта заявка не использует ARCHA POINT.' });
-      if (order.status !== 'confirmed') return reply(response, 409, { error:'Заявку можно передать в ARCHA POINT только после подтверждения оплаты.' });
+      // The bank webhook and the order status are written independently.  A
+      // successfully paid QR must not leave an ARCHA order stuck just because
+      // its status update was delayed or missed after the payment arrived.
+      // Extension payments do not authorise issuing the original order.
+      const payments = await database.listOrderPayments(order.id).catch(() => []);
+      const hasPaidRental = payments.some(payment => payment.status === 'paid' && payment.purpose !== 'extension');
+      if (order.status !== 'confirmed' && !hasPaidRental) return reply(response, 409, { error:'Заявку можно передать в ARCHA POINT только после подтверждения оплаты.' });
       const laptop = await database.getLaptop(order.laptop_id);
       const now = new Date().toISOString();
       const updated = await database.updateOrder(order.id, { status:'awaiting_archa_reservation', locker_status:'reservation_requested', archa_handoff_sent_at:now });
-      await database.createEvent({ order_id:order.id, event_type:'manager_prepared_archa_issue_handoff_from_web', actor_type:'manager', metadata:{ locker:order.locker_address } });
+      await database.createEvent({ order_id:order.id, event_type:'manager_prepared_archa_issue_handoff_from_web', actor_type:'manager', metadata:{ locker:order.locker_address, recovered_from_stale_payment_status:order.status !== 'confirmed' && hasPaidRental } });
       return reply(response, 200, { ok:true, order:updated, message:archaMessage(order, laptop) });
     }
     if (payload.action === 'record_archa_reservation') {

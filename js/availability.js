@@ -164,7 +164,8 @@ export function deliveryLabel(deliveryType) {
 }
 
 export function rentalErrorText(error) {
-  const details = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`;
+  const message = String(error?.message || '').trim();
+  const details = `${message} ${error?.details || ''} ${error?.hint || ''}`;
   if (details.includes('LAPTOP_UNAVAILABLE')) {
     return 'Этот ноутбук уже занят на выбранные даты. Выберите другой период.';
   }
@@ -174,5 +175,9 @@ export function rentalErrorText(error) {
   if (details.includes('INVALID_RENTAL_TERMS')) {
     return 'Заявка пока не создана: сервер не подтвердил расчёт. Повторите попытку чуть позже или напишите в поддержку Rentop.';
   }
-  return 'Не удалось сохранить заявку. Бронь не создана. Проверьте даты и попробуйте ещё раз.';
+  // Keep a meaningful server validation message visible. A generic "check
+  // dates" notice sends a customer in the wrong direction when the problem
+  // is, for example, a duplicate reservation or an unfinished profile.
+  if (message && message.length <= 240 && !/failed to fetch|networkerror|unexpected token/i.test(message)) return message;
+  return 'Не удалось сохранить заявку. Проверьте даты и попробуйте ещё раз.';
 }

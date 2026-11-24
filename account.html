@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
-  <link rel="stylesheet" href="css/cabinet.css?v=20261123-delivery-choice-v1">
+  <link rel="stylesheet" href="css/cabinet.css?v=20261124-celebration-v1">
   <link rel="stylesheet" href="css/cabinet-topik.css?v=20261123-topik-drag-v2">
   <link rel="stylesheet" href="css/cabinet-topik-motion.css?v=20261120-motion-v2">
   <link rel="stylesheet" href="css/cabinet-return-address.css?v=20261120-address-v1">
@@ -95,6 +95,16 @@
   </aside>
   <button class="cabinet-topik-restore" id="cabinet-topik-restore" type="button" hidden>Показать Топика</button>
   <div class="cabinet-topik-confetti" id="cabinet-topik-confetti" aria-hidden="true" hidden></div>
+  <section class="cabinet-celebration" id="cabinet-celebration" role="dialog" aria-modal="true" aria-labelledby="cabinet-celebration-title" hidden>
+    <div class="cabinet-celebration-card">
+      <button class="cabinet-celebration-close" id="cabinet-celebration-close" type="button" aria-label="Закрыть поздравление">×</button>
+      <span class="cabinet-celebration-mark" aria-hidden="true">✦</span>
+      <p class="cabinet-eyebrow" id="cabinet-celebration-eyebrow">RENTOP.KG</p>
+      <h2 id="cabinet-celebration-title">Готово!</h2>
+      <p id="cabinet-celebration-text"></p>
+      <button class="cabinet-action secondary" id="cabinet-celebration-continue" type="button">Продолжить</button>
+    </div>
+  </section>
   <div class="cabinet-document-viewer" id="cabinet-document-viewer" hidden role="dialog" aria-modal="true" aria-label="Просмотр документа">
     <div class="cabinet-document-viewer-card"><button class="cabinet-document-viewer-close" id="cabinet-document-viewer-close" type="button" aria-label="Закрыть просмотр">×</button><div id="cabinet-document-viewer-content"></div></div>
   </div>
@@ -110,6 +120,6 @@
       <p class="cabinet-payment-dialog-expiry" id="cabinet-payment-dialog-expiry"></p>
     </div>
   </div>
-  <script type="module" src="js/cabinet.js?v=20261123-cabinet-refresh-v1"></script>
+  <script type="module" src="js/cabinet.js?v=20261124-celebration-v1"></script>
 </body>
 </html>

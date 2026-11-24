@@ -379,7 +379,10 @@ function render() {
   const active = orders.filter(order => ['in_use','incident'].includes(order.status)).length;
   const returns = orders.filter(order => ['return_requested','awaiting_return_reservation','awaiting_return_dropoff','awaiting_return_collection','returned'].includes(order.status));
   const fresh = orders.filter(order => ['draft','pending_review','awaiting_payment','payment_review','confirmed','awaiting_archa_reservation','awaiting_locker_loading','awaiting_pickup'].includes(order.status)).length;
-  const paidOrders = orders.filter(order => order.payment?.status === 'paid');
+  // Test applications can deliberately go through a payment scenario, but
+  // that is not income. Keep them visible to the founder for cleanup while
+  // excluding them from the financial KPI immediately after marking.
+  const paidOrders = orders.filter(order => order.payment?.status === 'paid' && !order.is_test);
   const revenue = paidOrders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
   const deposits = paidOrders.reduce((sum, order) => sum + Number(order.deposit_amount || 0), 0);
   statsEl.innerHTML = [[orders.length,'Всего заявок','all'],[fresh,'В работе','new'],[pendingDocs,'Документы на проверке','documents'],[active,'Активные аренды','active'],[`${revenue.toLocaleString('ru-RU')} сом`,'Выручка (месяц)','all']].map(([value,label,key]) => `<button class="manager-stat ${filter === key ? 'is-active' : ''}" type="button" data-filter="${key}"><span>${label}</span><strong>${value}</strong></button>`).join('');

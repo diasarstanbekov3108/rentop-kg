@@ -11,7 +11,7 @@ import {
   deliveryLabel,
   rentalErrorText,
   ARCHA_LOCATIONS
-} from './availability.js';
+} from './availability.js?v=20261124-booking-recovery-v1';
 
 let laptops = [];
 let filteredLaptops = [];
@@ -24,6 +24,7 @@ let activeCategoryFilter = 'rent';
 let activeUseFilter = 'all';
 let savedLaptopIds = new Set();
 let comparisonLaptopIds = new Set();
+let bookingLaptopIds = new Set();
 let savedOnly = false;
 let submitInFlight = false;
 let catalogReady = false;
@@ -92,6 +93,7 @@ const catalogResultsCount = document.getElementById('catalog-results-count');
 const modal = document.getElementById('order-modal');
 const closeModalBtn = document.getElementById('close-modal');
 const modalLaptopTitle = document.getElementById('modal-laptop-title');
+const modalOrderItems = document.getElementById('modal-order-items');
 const orderForm = document.getElementById('order-form');
 const calcBox = document.getElementById('calc-box');
 const daysSlider = document.getElementById('days-slider');
@@ -390,6 +392,7 @@ function renderLaptops(items, append = false, target = catalogGrid) {
         <button class="btn-card" data-id="${laptop.id}">
           ${isRent ? (archaSelectionMode ? 'Выбрать для ARCHA POINT' : 'Забронировать') : 'Купить / Предзаказ'}
         </button>
+        ${isRent ? `<button class="catalog-compare-button" data-add-to-order="${laptop.id}">Добавить в заказ</button>` : ''}
         <button class="catalog-compare-button ${isCompared ? 'is-selected' : ''}" data-compare-laptop="${laptop.id}" type="button" aria-pressed="${isCompared}">
           ${isCompared ? '✓ В сравнении' : 'Сравнить'}
         </button>
@@ -405,6 +408,15 @@ function renderLaptops(items, append = false, target = catalogGrid) {
       const id = Number(e.currentTarget.dataset.id);
       if (catalogBrowser && !catalogBrowser.hidden) setCatalogBrowser(false);
       openOrderModal(id, { deliveryType: archaSelectionMode ? 'arca_locker' : 'delivery' });
+    };
+  });
+  target.querySelectorAll('[data-add-to-order]').forEach(btn => {
+    btn.onclick = () => {
+      const id = Number(btn.dataset.addToOrder);
+      if (bookingLaptopIds.has(id)) bookingLaptopIds.delete(id);
+      else if (bookingLaptopIds.size < 3) bookingLaptopIds.add(id);
+      else { alert('В одном заказе можно оформить не более трёх ноутбуков.'); return; }
+      btn.textContent = bookingLaptopIds.has(id) ? '✓ Добавлен в заказ' : 'Добавить в заказ';
     };
   });
 
@@ -652,6 +664,35 @@ function getDailyRate(laptop) {
   return Number.isFinite(rate) ? rate : 0;
 }
 
+function bookingItems() {
+  return laptops.filter((laptop) => bookingLaptopIds.has(laptop.id) && laptop.category === 'rent');
+}
+
+function renderBookingOrderItems() {
+  if (!modalOrderItems) return;
+  const items = bookingItems();
+  if (items.length < 2) {
+    modalOrderItems.replaceChildren();
+    return;
+  }
+  modalOrderItems.innerHTML = items.map((item) => `
+    <span><b>${item.title}</b><button type="button" data-remove-order-item="${item.id}" aria-label="Убрать ${item.title} из заказа">Убрать</button></span>
+  `).join('');
+  modalOrderItems.querySelectorAll('[data-remove-order-item]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (bookingLaptopIds.size <= 1) return;
+      bookingLaptopIds.delete(Number(button.dataset.removeOrderItem));
+      if (!bookingLaptopIds.has(currentLaptop?.id)) currentLaptop = bookingItems()[0] || null;
+      const selected = bookingItems();
+      if (modalLaptopTitle) modalLaptopTitle.textContent = selected.length > 1
+        ? `В заказе ${selected.length} ноутбука`
+        : `Вы выбрали: ${selected[0]?.title || 'ноутбук'}`;
+      renderBookingOrderItems();
+      updateCalculator();
+    });
+  });
+}
+
 function createOrderId() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
 
@@ -678,6 +719,17 @@ function updateDeliveryNote() {
     button.classList.toggle('active', active);
     button.setAttribute('aria-checked', String(active));
   });
+  const note = document.querySelector('.delivery-note');
+  if (note) {
+    const multi = bookingItems().length > 1;
+    note.textContent = selected === 'arca_locker'
+      ? (multi
+        ? 'Менеджер подберёт одну или две ячейки ARCHA POINT для всего заказа и сообщит коды после подготовки.'
+        : 'Точку ARCHA POINT выберете следующим коротким шагом в личном кабинете.')
+      : (multi
+        ? 'Все ноутбуки передадим одной курьерской доставкой. Адрес и время укажете следующим шагом в кабинете.'
+        : 'Адрес и время доставки укажете следующим коротким шагом в личном кабинете.');
+  }
 }
 
 function selectedArchaLocation() {
@@ -763,8 +815,13 @@ function renderBookingAlternatives(draft) {
 function selectBookingAlternative(laptopId) {
   const nextLaptop = laptops.find(laptop => String(laptop.id) === String(laptopId));
   if (!nextLaptop || nextLaptop.category !== 'rent') return;
+  const previousId = currentLaptop?.id;
   currentLaptop = nextLaptop;
-  modalLaptopTitle.textContent = `Вы выбрали: ${currentLaptop.title}`;
+  if (previousId) bookingLaptopIds.delete(previousId);
+  bookingLaptopIds.add(nextLaptop.id);
+  const selected = bookingItems();
+  modalLaptopTitle.textContent = selected.length > 1 ? `В заказе ${selected.length} ноутбука` : `Вы выбрали: ${currentLaptop.title}`;
+  renderBookingOrderItems();
   updateCalculator({ text: 'Модель заменена. Этот ноутбук свободен на выбранные даты.', isError: false });
 }
 
@@ -851,6 +908,7 @@ function savePendingBooking() {
   const draft = currentLaptop.category === 'rent' ? currentRentalDraft() : {};
   persistPendingBooking({
     laptopId: currentLaptop.id,
+    laptopIds: [...bookingLaptopIds],
     laptopTitle: currentLaptop.title || '',
     deliveryType: deliveryTypeInput?.value || 'delivery',
     lockerAddress: selectedArchaLocation(),
@@ -897,8 +955,11 @@ async function openOrderModal(id, { deliveryType = 'delivery' } = {}) {
   // first. The verified-phone step happens only when they press Continue;
   // redirectToCabinet() then preserves this completed draft.
   currentLaptop = selectedLaptop;
+  bookingLaptopIds.add(selectedLaptop.id);
+  const selectedItems = bookingItems();
 
-  modalLaptopTitle.textContent = `Вы выбрали: ${currentLaptop.title}`;
+  modalLaptopTitle.textContent = selectedItems.length > 1 ? `В заказе ${selectedItems.length} ноутбука` : `Вы выбрали: ${currentLaptop.title}`;
+  renderBookingOrderItems();
 
   if (currentLaptop.category === 'rent') {
     calcBox.style.display = 'block';
@@ -956,6 +1017,11 @@ function updateCalculator(forcedMessage) {
 
   clampRentalDates();
   const draft = currentRentalDraft();
+  const selectedItems = bookingItems();
+  const groupAvailabilityError = !draft.validationError && availabilityLoaded
+    && selectedItems.some((laptop) => hasDateConflict(blockingRentals, laptop.id, draft.startDate, draft.endDate))
+    ? 'Один из выбранных ноутбуков уже занят на эти даты. Уберите его из заказа или выберите другой период.'
+    : '';
   const now = Date.now();
   const tariffDiscount = Number(draft.quote.discountPercent || 0);
   const benefitDiscount = Array.isArray(cabinetSession?.benefits) && cabinetSession.benefits.some((benefit) => (
@@ -965,9 +1031,12 @@ function updateCalculator(forcedMessage) {
   const activePromo = promoCode && Array.isArray(cabinetSession?.promos)
     ? cabinetSession.promos.find((promo) => promo.code === promoCode && promo.status === 'issued' && !promo.redeemed_at && (!promo.expires_at || new Date(promo.expires_at).getTime() > now))
     : null;
-  const promoDiscount = Number(activePromo?.discount_percent || 0);
+  // One code is currently tied to one payment record. Do not show a discount
+  // that the secure backend cannot yet redeem for a combined order.
+  const promoDiscount = selectedItems.length === 1 ? Number(activePromo?.discount_percent || 0) : 0;
   const discount = Math.min(40, tariffDiscount + benefitDiscount + promoDiscount);
-  const total = Math.round(draft.quote.days * draft.quote.dailyRate * (100 - discount) / 100);
+  const regularTotal = selectedItems.reduce((sum, laptop) => sum + (draft.quote.days * getDailyRate(laptop)), 0);
+  const total = Math.round(regularTotal * (100 - discount) / 100);
   const discountParts = [
     tariffDiscount ? `срок ${tariffDiscount}%` : '',
     benefitDiscount ? 'льгота 10%' : '',
@@ -976,6 +1045,10 @@ function updateCalculator(forcedMessage) {
 
   if (daysCount) daysCount.textContent = String(draft.quote.days);
   if (totalPriceEl) totalPriceEl.textContent = total.toLocaleString('ru-RU');
+  const totalLabel = document.querySelector('.calc-total-text');
+  if (totalLabel) totalLabel.textContent = selectedItems.length > 1
+    ? `За весь срок · ${selectedItems.length} ноутбука:`
+    : 'За весь срок:';
   if (daysSlider && draft.quote.days >= 2) {
     // The slider is a quick picker, not an invitation to jump to a costly
     // 30-day total. Longer rentals are still available through the return
@@ -998,24 +1071,27 @@ function updateCalculator(forcedMessage) {
   }
   if (calcBreakdownEl) {
     const perDay = draft.quote.days ? Math.round(total / draft.quote.days) : 0;
-    const saving = Math.max(0, (draft.quote.days * draft.quote.dailyRate) - total);
+    const saving = Math.max(0, regularTotal - total);
     calcBreakdownEl.textContent = draft.quote.days
       ? `≈ ${perDay.toLocaleString('ru-RU')} сом в день${saving ? ` · экономия ${saving.toLocaleString('ru-RU')} сом` : ''}`
       : '';
   }
+  const promoGroup = document.getElementById('order-promo-group');
+  if (promoGroup) promoGroup.hidden = selectedItems.length > 1;
+  if (selectedItems.length > 1 && userPromoInput) userPromoInput.value = '';
 
   if (forcedMessage) {
     showRentalMessage(forcedMessage.text, forcedMessage.isError ? 'error' : 'ok');
-  } else if (draft.validationError || draft.availabilityError) {
-    showRentalMessage(draft.validationError || draft.availabilityError, 'error');
+  } else if (draft.validationError || draft.availabilityError || groupAvailabilityError) {
+    showRentalMessage(draft.validationError || draft.availabilityError || groupAvailabilityError, 'error');
   } else if (availabilityLoaded) {
-    showRentalMessage('На выбранные даты ноутбук свободен.', 'ok');
+    showRentalMessage(selectedItems.length > 1 ? 'Все выбранные ноутбуки свободны на эти даты.' : 'На выбранные даты ноутбук свободен.', 'ok');
   } else {
     showRentalMessage('Занятость подтвердится при сохранении заявки.', 'neutral');
   }
 
   if (submitBtn && !submitInFlight) {
-    submitBtn.disabled = Boolean(draft.validationError || draft.availabilityError);
+    submitBtn.disabled = Boolean(draft.validationError || draft.availabilityError || groupAvailabilityError);
   }
   renderBookingAlternatives(draft);
 }
@@ -1429,6 +1505,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const saved = readPendingBooking();
       if (saved?.laptopId) {
+        bookingLaptopIds = new Set((Array.isArray(saved.laptopIds) ? saved.laptopIds : [saved.laptopId])
+          .map(Number)
+          .filter((id) => laptops.some((laptop) => laptop.id === id)));
         openOrderModal(Number(saved.laptopId), { deliveryType: saved.deliveryType });
         if (rentalStartInput && saved.startDate) rentalStartInput.value = saved.startDate;
         if (rentalEndInput && saved.endDate) rentalEndInput.value = saved.endDate;
@@ -1665,7 +1744,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (freshAvailability.ok) {
         blockingRentals = freshAvailability.rows;
         availabilityLoaded = true;
-        if (hasDateConflict(blockingRentals, currentLaptop.id, draft.startDate, draft.endDate)) {
+        if (laptops.filter(item => bookingLaptopIds.has(item.id)).some(item => hasDateConflict(blockingRentals, item.id, draft.startDate, draft.endDate))) {
           updateCatalogView(false);
           submitInFlight = false;
           if (submitBtn) submitBtn.textContent = 'Продолжить оформление';
@@ -1682,6 +1761,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             laptopId: currentLaptop.id,
+            laptopIds:[...bookingLaptopIds],
             customerName: name,
             customerPhone: cabinetSession.phone,
             startDate: draft.startDate,

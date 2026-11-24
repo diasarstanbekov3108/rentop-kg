@@ -187,7 +187,7 @@ export default async function handler(request, response) {
       response.setHeader('Set-Cookie', [sessionCookie(COOKIE, '', 0), sessionCookie(COMPAT_COOKIE, '', 0)]);
       return json(response, 200, { ok:true });
     }
-    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'delete_draft_document' || payload.action === 'create_document_download' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'request_offer_sms_consent' || payload.action === 'verify_offer_sms_consent' || payload.action === 'save_profile' || payload.action === 'save_residence_address' || payload.action === 'save_delivery_preferences' || payload.action === 'save_alternative_security_contact' || payload.action === 'extension_request' || payload.action === 'replacement_request' || payload.action === 'cancel_extension_request' || payload.action === 'early_return_request' || payload.action === 'change_return_method' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup_access_received' || payload.action === 'confirm_pickup' || payload.action === 'confirm_return_access_received' || payload.action === 'confirm_return_dropoff' || payload.action === 'submit_feedback') {
+    if (payload.action === 'create_document_upload' || payload.action === 'register_document' || payload.action === 'delete_draft_document' || payload.action === 'create_document_download' || payload.action === 'document_correction_request' || payload.action === 'accept_offer' || payload.action === 'request_offer_sms_consent' || payload.action === 'verify_offer_sms_consent' || payload.action === 'save_profile' || payload.action === 'save_residence_address' || payload.action === 'save_delivery_preferences' || payload.action === 'save_alternative_security_contact' || payload.action === 'prepayment_replacement_options' || payload.action === 'replace_draft_laptop' || payload.action === 'extension_request' || payload.action === 'replacement_request' || payload.action === 'cancel_extension_request' || payload.action === 'early_return_request' || payload.action === 'change_return_method' || payload.action === 'support_request' || payload.action === 'save_order_comment' || payload.action === 'confirm_pickup_access_received' || payload.action === 'confirm_pickup' || payload.action === 'confirm_return_access_received' || payload.action === 'confirm_return_dropoff' || payload.action === 'submit_feedback') {
       const session = await verifySession();
       if (!session) return json(response, 401, { error:'Сессия истекла. Войдите в кабинет снова.', code:'AUTH_REQUIRED' });
       if (payload.action === 'save_profile') {
@@ -219,7 +219,9 @@ export default async function handler(request, response) {
         return json(response, 200, { ok:true, order:updated });
       }
       if (payload.action === 'save_delivery_preferences') {
-        if (order.status !== 'draft') return json(response, 409, { error:'Данные доставки уже переданы менеджеру. Для изменения обратитесь в поддержку.' });
+        const payments = await database.listOrderPayments(order.id).catch(() => []);
+        const paymentStarted = payments.some((payment) => ['awaiting_payment', 'paid', 'confirmed'].includes(String(payment.status || '')));
+        if (!['draft', 'pending_review'].includes(String(order.status || '')) || paymentStarted) return json(response, 409, { error:'Способ получения можно изменить только до выставления и оплаты счёта.' });
         const deliveryType = payload.deliveryType === 'arca_locker' ? 'arca_locker' : 'delivery';
         if (deliveryType === 'arca_locker') {
           const lockerAddress = String(payload.lockerAddress || '').trim().replace(/\s+/g, ' ').slice(0, 300);
@@ -398,6 +400,44 @@ export default async function handler(request, response) {
       const notifyManager = async (text) => {
         try { await createTelegramApi(config.telegramBotToken).sendMessage(config.adminChatId, text); } catch (error) { console.error('Cabinet manager notification failed:', error.message); }
       };
+      const canReplaceBeforePayment = async () => {
+        if (!['draft', 'pending_review'].includes(String(order.status || ''))) return false;
+        const payments = await database.listOrderPayments(order.id).catch(() => []);
+        return !payments.some((payment) => ['awaiting_payment', 'paid', 'confirmed'].includes(String(payment.status || '')));
+      };
+      const availableReplacementChoices = async () => {
+        const benefits = await database.listBenefitVerifications(session.phone).catch(() => []);
+        const discount = discountForTerm(Number(order.rental_days || 0), benefits);
+        const currentTotal = Math.round(Number(order.daily_rate || 0) * Number(order.rental_days || 0) * (100 - discount) / 100);
+        const choices = [];
+        for (const candidate of await database.listRentableLaptops()) {
+          if (String(candidate.id) === String(order.laptop_id) || Number(candidate.daily_rate || 0) <= 0) continue;
+          const conflict = await database.findOverlappingBlockingOrder(order.id, candidate.id, order.rental_start_date, order.rental_end_date);
+          if (conflict) continue;
+          const total = Math.round(Number(candidate.daily_rate || 0) * Number(order.rental_days || 0) * (100 - discount) / 100);
+          choices.push({ id:candidate.id, title:candidate.title, daily_rate:Number(candidate.daily_rate || 0), total_amount:total, difference:total - currentTotal, discount_percent:discount, tags:candidate.tags || [] });
+        }
+        return choices.sort((a, b) => Math.abs(a.difference) - Math.abs(b.difference) || a.daily_rate - b.daily_rate).slice(0, 24);
+      };
+      if (payload.action === 'prepayment_replacement_options') {
+        if (!(await canReplaceBeforePayment())) return json(response, 409, { error:'Модель можно изменить только до выставления и оплаты счёта.' });
+        return json(response, 200, { ok:true, alternatives:await availableReplacementChoices() });
+      }
+      if (payload.action === 'replace_draft_laptop') {
+        if (!(await canReplaceBeforePayment())) return json(response, 409, { error:'Счёт уже выставлен или оплата начата. Самостоятельная замена модели больше недоступна.' });
+        const replacementLaptopId = Number(payload.replacementLaptopId);
+        const replacementLaptop = await database.getLaptop(replacementLaptopId);
+        if (!Number.isInteger(replacementLaptopId) || !replacementLaptop || replacementLaptop.category !== 'rent' || String(replacementLaptop.id) === String(order.laptop_id)) return json(response, 400, { error:'Выберите другую доступную модель.' });
+        const conflict = await database.findOverlappingBlockingOrder(order.id, replacementLaptop.id, order.rental_start_date, order.rental_end_date);
+        if (conflict) return json(response, 409, { error:'Эту модель только что забронировали на выбранные даты. Выберите другую.' });
+        const benefits = await database.listBenefitVerifications(session.phone).catch(() => []);
+        const discount = discountForTerm(Number(order.rental_days || 0), benefits);
+        const total = Math.round(Number(replacementLaptop.daily_rate || 0) * Number(order.rental_days || 0) * (100 - discount) / 100);
+        const updated = await database.updateOrder(order.id, { laptop_id:replacementLaptop.id, daily_rate:Number(replacementLaptop.daily_rate || 0), discount_percent:discount, total_amount:total });
+        await database.createEvent({ order_id:order.id, event_type:'customer_replaced_laptop_before_payment_from_cabinet', actor_type:'customer', metadata:{ previous_laptop_id:order.laptop_id, replacement_laptop_id:replacementLaptop.id, total_amount:total, discount_percent:discount } });
+        await notifyManager(`🔁 Клиент заменил модель до оплаты\n\nЗаявка ${orderRef(order)}\n${laptop?.title || 'Предыдущая модель'} → ${replacementLaptop.title}\nСумма пересчитана: ${total.toLocaleString('ru-RU')} сом\nПолучение: ${order.delivery_type === 'arca_locker' ? 'ARCHA POINT' : 'доставка'}`);
+        return json(response, 200, { ok:true, order:updated, message:`Модель заменена на «${replacementLaptop.title}». Сумма пересчитана: ${total.toLocaleString('ru-RU')} сом.` });
+      }
       if (payload.action === 'save_order_comment') {
         const note = String(payload.message || '').trim().replace(/\s+/g, ' ').slice(0, 1000);
         if (note.length < 3) return json(response, 400, { error:'Напишите комментарий хотя бы несколькими словами.' });
