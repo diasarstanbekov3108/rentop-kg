@@ -461,7 +461,19 @@ export default async function handler(request, response) {
           const conflict = await database.findOverlappingBlockingOrder(order.id, candidate.id, order.rental_start_date, order.rental_end_date);
           if (conflict) continue;
           const total = Math.round(Number(candidate.daily_rate || 0) * Number(order.rental_days || 0) * (100 - discount) / 100);
-          choices.push({ id:candidate.id, title:candidate.title, daily_rate:Number(candidate.daily_rate || 0), total_amount:total, difference:total - currentTotal, discount_percent:discount, tags:candidate.tags || candidate.use_cases || candidate.description || [] });
+          choices.push({
+            id:candidate.id,
+            title:candidate.title,
+            daily_rate:Number(candidate.daily_rate || 0),
+            total_amount:total,
+            difference:total - currentTotal,
+            discount_percent:discount,
+            tags:candidate.tags || candidate.use_cases || candidate.description || [],
+            image_url:candidate.image_url || candidate.image || '',
+            cpu:candidate.cpu || '',
+            ram:candidate.ram || '',
+            storage:candidate.storage || ''
+          });
         }
         return choices.sort((a, b) => Math.abs(a.difference) - Math.abs(b.difference) || a.daily_rate - b.daily_rate).slice(0, 24);
       };
