@@ -101,7 +101,7 @@ export default async function handler(request, response) {
     // into more than seventy database requests and make a valid session look
     // like it had been lost on a slow mobile connection.
     const [laptops, allRequests, allDocuments, allPayments, allFeedback, allSupportCases, allInvoiceEvents] = await Promise.all([
-      database.listLaptopsByIds(orders.map(order => order.laptop_id)).catch(() => []),
+      database.listLaptopsByIds(orders.flatMap(order => [order.laptop_id, order.prepayment_replacement_offer_laptop_id]).filter(Boolean)).catch(() => []),
       database.listCustomerRequestsForOrders(orderIds).catch(() => []),
       database.listOrderDocumentsForOrders(orderIds).catch(() => []),
       database.listOrderPaymentsForOrders(orderIds).catch(() => []),
@@ -124,23 +124,44 @@ export default async function handler(request, response) {
     const feedbackByOrder = by(allFeedback, 'order_id');
     const supportCasesByOrder = by(allSupportCases, 'order_id');
     const invoiceEventsByOrder = by(allInvoiceEvents, 'order_id');
-    return orders.map(order => {
+    const ordersByGroup = by(orders.filter(order => order.order_group_id), 'order_group_id');
+    const groupPayment = new Map();
+    for (const [groupId, groupedOrders] of ordersByGroup) {
+      const payment = groupedOrders
+        .flatMap(item => paymentsByOrder.get(String(item.id)) || [])
+        .find(item => item.purpose !== 'extension');
+      if (payment) groupPayment.set(groupId, payment);
+    }
+    const hydratedOrders = orders.map(order => {
       const laptop = laptopById.get(String(order.laptop_id));
+      const offeredLaptop = laptopById.get(String(order.prepayment_replacement_offer_laptop_id || ''));
       const payments = paymentsByOrder.get(String(order.id)) || [];
+      const sharedPayment = order.order_group_id ? groupPayment.get(String(order.order_group_id)) || null : null;
+      const invoicePayment = payments.find(payment => payment.purpose !== 'extension') || sharedPayment;
+      const groupedItems = (ordersByGroup.get(String(order.order_group_id)) || [order]).map(item => {
+        const itemLaptop = laptopById.get(String(item.laptop_id));
+        return { id:item.id, title:itemLaptop?.title || item.laptop_title || 'Ноутбук Rentop', total_amount:Number(item.total_amount || 0) };
+      });
       return {
       ...order,
       laptop_title:laptop?.title || laptop?.name || 'Ноутбук Rentop',
       laptop_image:laptop?.image_url || laptop?.image || '',
+      prepayment_replacement_offer_title:offeredLaptop?.title || '',
       reference: orderRef(order),
       delivery_label:label(order.delivery_type),
       requests:requestsByOrder.get(String(order.id)) || [],
       documents:documentsByOrder.get(String(order.id)) || [],
       feedback:(feedbackByOrder.get(String(order.id)) || [])[0] || null,
       supportCases:supportCasesByOrder.get(String(order.id)) || [],
-      payment:paymentWithRecoveredBreakdown(payments.find(payment => payment.purpose !== 'extension') || null, invoiceEventsByOrder.get(String(order.id)) || []),
+      group_items:groupedItems,
+      payment:paymentWithRecoveredBreakdown(invoicePayment, invoiceEventsByOrder.get(String(order.id)) || []),
       extensionPayment:payments.find(payment => payment.purpose === 'extension' && ['awaiting_payment', 'paid'].includes(payment.status)) || null
     };
     });
+    // A multi-laptop booking is one customer-facing application. The other
+    // rows are device records for availability and return inspection, not
+    // duplicate applications that the customer needs to fill out again.
+    return hydratedOrders.filter(order => !order.order_group_id || String(ordersByGroup.get(String(order.order_group_id))?.[0]?.id) === String(order.id));
   };
   const accountData = async (phone) => {
     const [profile, promos, benefits, orders] = await Promise.all([
@@ -405,6 +426,31 @@ export default async function handler(request, response) {
         const payments = await database.listOrderPayments(order.id).catch(() => []);
         return !payments.some((payment) => ['awaiting_payment', 'paid', 'confirmed'].includes(String(payment.status || '')));
       };
+      if (payload.action === 'accept_prepayment_replacement_offer') {
+        if (!(await canReplaceBeforePayment())) return json(response, 409, { error:'Предложение уже нельзя принять: счёт выставлен или заявка перешла на следующий этап.' });
+        const replacementLaptopId = Number(order.prepayment_replacement_offer_laptop_id);
+        const replacementLaptop = await database.getLaptop(replacementLaptopId);
+        if (!replacementLaptop || replacementLaptop.category !== 'rent' || Number(replacementLaptop.daily_rate || 0) <= 0) return json(response, 409, { error:'Предложенная модель больше недоступна. Откройте подбор и выберите другую.' });
+        const conflict = await database.findOverlappingBlockingOrder(order.id, replacementLaptop.id, order.rental_start_date, order.rental_end_date);
+        if (conflict) return json(response, 409, { error:'Эту модель уже забронировали на ваши даты. Откройте подбор — покажем другие свободные варианты.' });
+        const benefits = await database.listBenefitVerifications(session.phone).catch(() => []);
+        const discount = discountForTerm(Number(order.rental_days || 0), benefits);
+        const total = Math.round(Number(replacementLaptop.daily_rate || 0) * Number(order.rental_days || 0) * (100 - discount) / 100);
+        const updated = await database.updateOrder(order.id, {
+          laptop_id:replacementLaptop.id, daily_rate:Number(replacementLaptop.daily_rate || 0), discount_percent:discount, total_amount:total,
+          prepayment_replacement_offer_laptop_id:null, prepayment_replacement_offer_reason:null, prepayment_replacement_offer_total_amount:null, prepayment_replacement_offer_created_at:null
+        });
+        await database.createEvent({ order_id:order.id, event_type:'customer_accepted_prepayment_replacement_offer', actor_type:'customer', metadata:{ previous_laptop_id:order.laptop_id, replacement_laptop_id:replacementLaptop.id, total_amount:total } });
+        await notifyManager(`✅ Клиент согласовал предложенную замену до оплаты\n\nЗаявка ${orderRef(order)}\n${laptop?.title || 'Прежняя модель'} → ${replacementLaptop.title}\nНовая сумма: ${total.toLocaleString('ru-RU')} сом`);
+        return json(response, 200, { ok:true, order:updated, message:`Выбрана модель «${replacementLaptop.title}». Сумма автоматически пересчитана: ${total.toLocaleString('ru-RU')} сом.` });
+      }
+      if (payload.action === 'decline_prepayment_replacement_offer') {
+        if (!(await canReplaceBeforePayment())) return json(response, 409, { error:'Предложение уже закрыто.' });
+        const updated = await database.updateOrder(order.id, { prepayment_replacement_offer_laptop_id:null, prepayment_replacement_offer_reason:null, prepayment_replacement_offer_total_amount:null, prepayment_replacement_offer_created_at:null });
+        await database.createEvent({ order_id:order.id, event_type:'customer_declined_prepayment_replacement_offer', actor_type:'customer', metadata:{} });
+        await notifyManager(`↩ Клиент не согласовал предложенную замену\n\nЗаявка ${orderRef(order)}. Он может самостоятельно выбрать другую свободную модель до оплаты.`);
+        return json(response, 200, { ok:true, order:updated, message:'Предложение отклонено. Ваша текущая заявка сохранена — можете выбрать другую модель самостоятельно.' });
+      }
       const availableReplacementChoices = async () => {
         const benefits = await database.listBenefitVerifications(session.phone).catch(() => []);
         const discount = discountForTerm(Number(order.rental_days || 0), benefits);

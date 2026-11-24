@@ -1534,6 +1534,9 @@ button.condition-card:focus-visible,
   .hero{padding-bottom:18px!important}
   #catalog{padding-top:14px!important}
 }
+
+/* Persistent, compact cart: chosen models never disappear between catalog pages. */
+.booking-cart{position:fixed;z-index:2600;right:20px;bottom:20px;display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;width:min(460px,calc(100vw - 32px));padding:12px 12px 12px 16px;border:1px solid rgba(100,224,252,.68);border-radius:16px;background:rgba(7,29,45,.97);box-shadow:0 20px 52px rgba(0,0,0,.42);backdrop-filter:blur(12px)}.booking-cart>div{display:grid;min-width:0;gap:2px}.booking-cart span{color:#79e5ff;font-size:10px;font-weight:900;letter-spacing:.11em}.booking-cart strong{color:#f1fbff;font-size:15px}.booking-cart small{overflow:hidden;color:#a8c5d5;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.booking-cart>button:not(.booking-cart-clear){min-height:42px;padding:0 15px;border:0;border-radius:11px;background:#55cff2;color:#06131f;font:800 12px Manrope;cursor:pointer}.booking-cart>button b{margin-left:5px;font-size:16px}.booking-cart-clear{width:32px;height:32px;padding:0;border:1px solid rgba(121,190,215,.45);border-radius:9px;background:transparent;color:#b8d6e5;font:400 22px/1 Manrope;cursor:pointer}.booking-cart-clear:hover{border-color:#ff9ca8;background:rgba(143,48,62,.3);color:#ffd5da}@media(max-width:600px){.booking-cart{right:10px;bottom:calc(12px + env(safe-area-inset-bottom));width:calc(100vw - 20px);padding:10px 10px 10px 13px;border-radius:14px}.booking-cart strong{font-size:14px}.booking-cart>button:not(.booking-cart-clear){min-height:39px;padding:0 12px}.booking-cart-clear{width:30px;height:30px}}
 @media(min-width:769px){
   .catalog-command-center .catalog-taskbar .filter-btn[data-use="exam"]{display:none!important}
   .catalog-command-center{padding-top:20px!important;padding-bottom:12px!important}

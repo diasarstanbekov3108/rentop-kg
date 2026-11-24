@@ -335,11 +335,18 @@ function renderReplacementPicker() {
   if (!replacementPickerList) return;
   const order = orders.find(item => String(item.id) === String(replacementPickerState.orderId));
   const query = replacementPickerState.query.trim().toLowerCase();
+  const originalRate = Number(order?.daily_rate || 0);
+  const originalCategory = replacementPickerCategory(rentableLaptops.find(item => String(item.id) === String(order?.laptop_id)) || {});
   const items = rentableLaptops
     .filter(laptop => String(laptop.id) !== String(order?.laptop_id))
     .filter(laptop => Number(laptop.daily_rate || laptop.dailyRate || 0) > 0)
     .filter(laptop => replacementPickerState.filter === 'all' || replacementPickerCategory(laptop) === replacementPickerState.filter)
-    .filter(laptop => !query || `${laptop.title || ''} ${laptop.cpu || ''} ${laptop.use_cases || laptop.useCases || ''} ${laptop.description || ''}`.toLowerCase().includes(query));
+    .filter(laptop => !query || `${laptop.title || ''} ${laptop.cpu || ''} ${laptop.use_cases || laptop.useCases || ''} ${laptop.description || ''}`.toLowerCase().includes(query))
+    .sort((left, right) => {
+      const leftSamePurpose = replacementPickerCategory(left) === originalCategory ? 0 : 1;
+      const rightSamePurpose = replacementPickerCategory(right) === originalCategory ? 0 : 1;
+      return leftSamePurpose - rightSamePurpose || Math.abs(Number(left.daily_rate || 0) - originalRate) - Math.abs(Number(right.daily_rate || 0) - originalRate) || Number(left.daily_rate || 0) - Number(right.daily_rate || 0);
+    });
   replacementPickerList.innerHTML = items.length ? items.map(laptop => {
     const rate = Number(laptop.daily_rate || laptop.dailyRate || 0);
     const group = replacementGroup(laptop);
@@ -354,7 +361,10 @@ function renderReplacementPicker() {
 
 function openReplacementPicker(orderId) {
   const current = replacementSelections.get(String(orderId));
-  replacementPickerState = { orderId:String(orderId), filter:'all', query:'', selectedId:current ? String(current) : '' };
+  const order = orders.find(item => String(item.id) === String(orderId));
+  const original = rentableLaptops.find(item => String(item.id) === String(order?.laptop_id));
+  const suggestedFilter = replacementPickerCategory(original || {});
+  replacementPickerState = { orderId:String(orderId), filter:suggestedFilter, query:'', selectedId:current ? String(current) : '' };
   if (replacementPickerSearch) replacementPickerSearch.value = '';
   renderReplacementPicker();
   if (!replacementPicker) return;
@@ -407,8 +417,10 @@ function render() {
       ? `<p class="manager-action-note">${!documentsReadyForPayment ? 'Сначала примите все четыре обязательных документа.' : benefitPendingForPayment ? 'Клиент запросил социальную скидку: примите или отклоните льготный документ, чтобы зафиксировать итоговую сумму до счёта.' : 'Документы приняты: сверьте ID, заполните реестр и сохраните проверку — затем появится действие «Перевести к оплате» и можно будет выставить защищённый QR-счёт.'}</p>`
       : '';
     const pending = order.documents.filter(document => document.status === 'pending_review').length;
-    const defaultRentalAmount = Number(order.total_amount || 0);
-    const defaultDepositAmount = Number(order.deposit_amount || 0);
+    const invoiceGroup = order.order_group_id ? orders.filter(item => String(item.order_group_id || '') === String(order.order_group_id)) : [order];
+    const isInvoiceGroupMaster = !order.order_group_id || String(invoiceGroup[0]?.id) === String(order.id);
+    const defaultRentalAmount = invoiceGroup.reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
+    const defaultDepositAmount = invoiceGroup.reduce((sum, item) => sum + Number(item.deposit_amount || 0), 0);
     const savedPaymentDraft = paymentDrafts.get(String(order.id)) || {};
     const paymentDraft = {
       rentalAmount:Number(savedPaymentDraft.rentalAmount ?? savedPaymentDraft.amount ?? defaultRentalAmount),
@@ -416,9 +428,14 @@ function render() {
       deliveryFee:Number(savedPaymentDraft.deliveryFee || 0),
       deliveryMode:savedPaymentDraft.deliveryMode || 'external'
     };
-    const hasActivePayment = order.payment?.status === 'awaiting_payment' && new Date(order.payment.expires_at) > new Date();
+    const sharedInvoice = invoiceGroup.map(item => item.payment).find(payment => payment?.purpose !== 'extension') || null;
+    const hasActivePayment = sharedInvoice?.status === 'awaiting_payment' && new Date(sharedInvoice.expires_at) > new Date();
     const deliveryCharge = order.delivery_type === 'delivery' ? `<label>Как оплачивается доставка<select data-delivery-charge-mode><option value="external" ${paymentDraft.deliveryMode === 'external' ? 'selected' : ''}>Клиент оплачивает курьера при встрече</option><option value="rentop" ${paymentDraft.deliveryMode === 'rentop' ? 'selected' : ''}>Включить доставку Rentop в QR-счёт</option></select></label><label class="manager-delivery-fee">Доставка Rentop, сом<input data-delivery-fee type="number" min="0" max="100000" step="1" value="${Number(paymentDraft.deliveryFee || 0)}" ${paymentDraft.deliveryMode === 'rentop' ? '' : 'disabled'}></label>` : '';
-    const paymentAction = order.status === 'awaiting_payment' && !hasActivePayment ? `<div class="manager-payment-create" data-payment-draft="${order.id}"><label>Аренда, сом<input data-payment-rental type="number" min="0" max="1000000" step="1" value="${paymentDraft.rentalAmount}"></label><label>Возвратный залог, сом<input data-payment-deposit type="number" min="0" max="1000000" step="1" value="${paymentDraft.depositAmount}"></label>${deliveryCharge}<small data-payment-summary>QR-счёт: ${(paymentDraft.rentalAmount + paymentDraft.depositAmount + (paymentDraft.deliveryMode === 'rentop' ? paymentDraft.deliveryFee : 0)).toLocaleString('ru-RU')} сом · аренда ${paymentDraft.rentalAmount.toLocaleString('ru-RU')} + залог ${paymentDraft.depositAmount.toLocaleString('ru-RU')}${paymentDraft.deliveryMode === 'rentop' && paymentDraft.deliveryFee ? ` + доставка ${paymentDraft.deliveryFee.toLocaleString('ru-RU')}` : ''}.</small><button class="secondary" data-create-payment="${order.id}">Создать настоящий QR-счёт</button></div>` : '';
+    const paymentAction = order.status === 'awaiting_payment' && !hasActivePayment
+      ? (isInvoiceGroupMaster
+        ? `<div class="manager-payment-create" data-payment-draft="${order.id}">${invoiceGroup.length > 1 ? `<p class="manager-action-note">Один общий QR для ${invoiceGroup.length} ноутбуков: ${invoiceGroup.map(item => escape(item.laptop_title || 'Ноутбук')).join(' · ')}.</p>` : ''}<label>Аренда, сом<input data-payment-rental type="number" min="0" max="1000000" step="1" value="${paymentDraft.rentalAmount}"></label><label>Возвратный залог, сом<input data-payment-deposit type="number" min="0" max="1000000" step="1" value="${paymentDraft.depositAmount}"></label>${deliveryCharge}<small data-payment-summary>QR-счёт: ${(paymentDraft.rentalAmount + paymentDraft.depositAmount + (paymentDraft.deliveryMode === 'rentop' ? paymentDraft.deliveryFee : 0)).toLocaleString('ru-RU')} сом · аренда ${paymentDraft.rentalAmount.toLocaleString('ru-RU')} + залог ${paymentDraft.depositAmount.toLocaleString('ru-RU')}${paymentDraft.deliveryMode === 'rentop' && paymentDraft.deliveryFee ? ` + доставка ${paymentDraft.deliveryFee.toLocaleString('ru-RU')}` : ''}.</small><button class="secondary" data-create-payment="${order.id}">Создать общий QR-счёт</button></div>`
+        : `<p class="manager-action-note">Эта позиция входит в общий заказ. QR создаётся в первой позиции заказа и будет содержать все ноутбуки.</p>`)
+      : '';
     const paymentMismatch = ['confirmed','awaiting_pickup','issued','in_use'].includes(order.status) && order.payment?.status === 'awaiting_payment' ? '<p class="manager-payment-warning">Банк ещё не подтвердил этот QR. Не выдавайте ноутбук: статус заявки был изменён вручную, а оплата не зафиксирована webhook-ом.</p>' : '';
     const manualPaymentAction = hasActivePayment ? `<button class="secondary manager-payment-manual" data-manual-payment="${order.id}">Подтвердить оплату вручную</button>` : '';
     const paymentState = order.payment ? `<section class="manager-section"><h3>Оплата Bakai</h3><div class="manager-request">${escape(order.payment.status)} · ${Number(order.payment.amount || 0).toLocaleString('ru-RU')} сом · ${escape(order.payment.operation_id || '')}${hasActivePayment ? `<button class="danger manager-payment-revoke" data-revoke-payment="${order.id}">Отозвать QR</button>` : ''}</div>${hasActivePayment ? '<p class="manager-payment-warning">Используйте ручное подтверждение только после проверки поступления в Bakai Business. Отзыв уберёт QR из кабинета Rentop, но не отменяет его в Банке.</p>' : ''}${paymentMismatch}</section>` : '';
@@ -466,7 +483,7 @@ function render() {
     const replacementLaptops = rentableLaptops.filter(laptop => String(laptop.id) !== String(order.laptop_id));
     const pricedReplacementLaptops = replacementLaptops.filter(laptop => Number(laptop.daily_rate || laptop.dailyRate || 0) > 0);
     const selectedReplacement = rentableLaptops.find(laptop => String(laptop.id) === String(replacementSelections.get(String(order.id))));
-    const replacementBeforePayment = mayReplaceBeforePayment ? `<div class="manager-prepayment-replacement"><input type="hidden" data-prepayment-replacement-laptop value="${escape(replacementSelections.get(String(order.id)) || '')}"><button class="manager-replacement-open" type="button" data-open-replacement-picker="${order.id}"><span>${selectedReplacement ? escape(selectedReplacement.title) : 'Выбрать новую модель для замены'}</span><small>${selectedReplacement ? `${Number(selectedReplacement.daily_rate || selectedReplacement.dailyRate || 0).toLocaleString('ru-RU')} сом/день · изменить` : 'Поиск по модели, назначению и ставке'}</small></button><button class="secondary" data-replace-prepayment-laptop="${order.id}" ${selectedReplacement && pricedReplacementLaptops.length ? '' : 'disabled'}>Заменить и пересчитать</button><small>${pricedReplacementLaptops.length ? 'Откройте выбор: модели сгруппированы по задачам и показывают ставку аренды.' : 'Нет другой модели с заполненной ставкой аренды. Укажите ставку в каталоге — тогда она появится здесь.'}</small></div>` : '';
+    const replacementBeforePayment = mayReplaceBeforePayment ? `<div class="manager-prepayment-replacement"><input type="hidden" data-prepayment-replacement-laptop value="${escape(replacementSelections.get(String(order.id)) || '')}"><button class="manager-replacement-open" type="button" data-open-replacement-picker="${order.id}"><span>${selectedReplacement ? escape(selectedReplacement.title) : 'Выбрать новую модель для замены'}</span><small>${selectedReplacement ? `${Number(selectedReplacement.daily_rate || selectedReplacement.dailyRate || 0).toLocaleString('ru-RU')} сом/день · изменить` : 'Поиск по модели, назначению и ставке'}</small></button><label class="manager-replacement-reason"><span>Причина для клиента</span><textarea data-prepayment-replacement-reason maxlength="700" placeholder="Например: выбранная модель занята на ваши даты; предлагаем равноценную альтернативу."></textarea></label><div class="manager-actions"><button class="secondary" data-replace-prepayment-laptop="${order.id}" ${selectedReplacement && pricedReplacementLaptops.length ? '' : 'disabled'}>Заменить сразу и пересчитать</button><button class="secondary" data-offer-prepayment-replacement="${order.id}" ${selectedReplacement && pricedReplacementLaptops.length ? '' : 'disabled'}>Предложить клиенту</button></div><small>${pricedReplacementLaptops.length ? 'Каталог показывает модели по назначению и ставке. «Предложить клиенту» ничего не меняет до его согласия.' : 'Нет другой модели с заполненной ставкой аренды. Укажите ставку в каталоге — тогда она появится здесь.'}</small></div>` : '';
     const mayCancelUnissued = ['draft','pending_review','awaiting_payment','payment_review','confirmed','awaiting_archa_reservation','awaiting_locker_loading','awaiting_pickup'].includes(order.status);
     const adminTools = isChiefAdmin ? `<details class="manager-section manager-chief-tools"><summary><span>Служебные действия</span><small>Открыть</small></summary>${replacementBeforePayment ? `<div class="manager-chief-replacement"><strong>Заменить ноутбук в этой заявке</strong><span>Доступно до создания QR-счёта</span>${replacementBeforePayment}</div>` : ''}<details class="manager-dossier-tools"><summary>Досье и экспорт</summary><div class="manager-admin-links"><a class="cabinet-action secondary" href="/api/manager/dossier?order=${encodeURIComponent(order.id)}" target="_blank" rel="noopener">Открыть досье</a><a class="cabinet-action ghost" href="/api/manager/dossier?order=${encodeURIComponent(order.id)}&format=json">Скачать JSON</a></div></details>${order.status === 'returned' ? `<div class="manager-chief-group"><button class="secondary" data-admin-close="${order.id}">Завершить после физического осмотра</button></div>` : ''}<details class="manager-chief-critical"><summary>Инцидент или отмена</summary><p>Используйте только для исключительных случаев. Все действия фиксируются в истории заявки.</p><div class="manager-actions">${incidentTools}${mayCancelUnissued ? `<button class="danger" data-cancel-unissued-order="${order.id}">Отменить до начала аренды</button>` : ''}${!['completed','cancelled','rejected','incident'].includes(order.status) ? `<button class="danger" data-admin-incident="${order.id}">Открыть инцидент</button>` : ''}${testTools}</div></details></details>` : '';
     const handoffPanel = archaIssueHandoffPanel(order);
@@ -716,6 +733,7 @@ ordersEl.addEventListener('click', async event => {
   const adminClose = event.target.closest('[data-admin-close]');
   const cancelUnissuedOrder = event.target.closest('[data-cancel-unissued-order]');
   const replacePrepaymentLaptop = event.target.closest('[data-replace-prepayment-laptop]');
+  const offerPrepaymentReplacement = event.target.closest('[data-offer-prepayment-replacement]');
   const adminIncident = event.target.closest('[data-admin-incident]');
   const adminResolveIncident = event.target.closest('[data-admin-resolve-incident]');
   const adminOfferIncidentReplacement = event.target.closest('[data-admin-offer-incident-replacement]');
@@ -730,8 +748,8 @@ ordersEl.addEventListener('click', async event => {
   const decideAlternativeSecurity = event.target.closest('[data-decide-alternative-security]');
   const settleEarlyReturn = event.target.closest('[data-settle-early-return]');
   const button = event.target.closest('[data-document], [data-order-action]');
-  if (!rejectAll && !createPayment && !createExtensionPayment && !approveFreeExtension && !confirmReturnCollected && !saveReturnHandoff && !confirmReplacementExchange && !rejectExtension && !revokePayment && !manualPayment && !prepareArcha && !recordArchaReservation && !markLockerLoaded && !markDeliveryDispatched && !sendDeliveryMessage && !archaSmsSent && !manualPickupCode && !manualReturnCode && !confirmCourierReturnDropoff && !prepareArchaReturn && !completeReturn && !adminClose && !cancelUnissuedOrder && !replacePrepaymentLaptop && !adminIncident && !adminResolveIncident && !adminOfferIncidentReplacement && !markTestOrder && !deleteTestOrder && !saveAsset && !saveRegistry && !issuePromo && !resolveSupport && !replySupport && !offerAlternativeSecurity && !decideAlternativeSecurity && !settleEarlyReturn && !button) return;
-  const target = rejectAll || createPayment || createExtensionPayment || approveFreeExtension || confirmReturnCollected || saveReturnHandoff || confirmReplacementExchange || rejectExtension || revokePayment || manualPayment || prepareArcha || recordArchaReservation || markLockerLoaded || markDeliveryDispatched || sendDeliveryMessage || archaSmsSent || manualPickupCode || manualReturnCode || confirmCourierReturnDropoff || prepareArchaReturn || completeReturn || adminClose || cancelUnissuedOrder || replacePrepaymentLaptop || adminIncident || adminResolveIncident || adminOfferIncidentReplacement || markTestOrder || deleteTestOrder || saveAsset || saveRegistry || issuePromo || resolveSupport || replySupport || offerAlternativeSecurity || decideAlternativeSecurity || settleEarlyReturn || button;
+  if (!rejectAll && !createPayment && !createExtensionPayment && !approveFreeExtension && !confirmReturnCollected && !saveReturnHandoff && !confirmReplacementExchange && !rejectExtension && !revokePayment && !manualPayment && !prepareArcha && !recordArchaReservation && !markLockerLoaded && !markDeliveryDispatched && !sendDeliveryMessage && !archaSmsSent && !manualPickupCode && !manualReturnCode && !confirmCourierReturnDropoff && !prepareArchaReturn && !completeReturn && !adminClose && !cancelUnissuedOrder && !replacePrepaymentLaptop && !offerPrepaymentReplacement && !adminIncident && !adminResolveIncident && !adminOfferIncidentReplacement && !markTestOrder && !deleteTestOrder && !saveAsset && !saveRegistry && !issuePromo && !resolveSupport && !replySupport && !offerAlternativeSecurity && !decideAlternativeSecurity && !settleEarlyReturn && !button) return;
+  const target = rejectAll || createPayment || createExtensionPayment || approveFreeExtension || confirmReturnCollected || saveReturnHandoff || confirmReplacementExchange || rejectExtension || revokePayment || manualPayment || prepareArcha || recordArchaReservation || markLockerLoaded || markDeliveryDispatched || sendDeliveryMessage || archaSmsSent || manualPickupCode || manualReturnCode || confirmCourierReturnDropoff || prepareArchaReturn || completeReturn || adminClose || cancelUnissuedOrder || replacePrepaymentLaptop || offerPrepaymentReplacement || adminIncident || adminResolveIncident || adminOfferIncidentReplacement || markTestOrder || deleteTestOrder || saveAsset || saveRegistry || issuePromo || resolveSupport || replySupport || offerAlternativeSecurity || decideAlternativeSecurity || settleEarlyReturn || button;
   if (target.disabled) return;
   const feedback = target.closest('.manager-order')?.querySelector('[data-order-feedback]');
   const showFeedback = (text, type = '') => { if (!feedback) return; feedback.textContent = text; feedback.className = `manager-order-feedback${type ? ` is-${type}` : ''}`; feedback.hidden = !text; };
@@ -900,6 +918,15 @@ ordersEl.addEventListener('click', async event => {
     if (!window.confirm('Заменить модель до выставления счёта? Система проверит занятость и пересчитает сумму аренды.')) return;
     payload = { action:'admin_replace_pre_payment_laptop', orderId:replacePrepaymentLaptop.dataset.replacePrepaymentLaptop, laptopId, reason:reason.trim() };
     successMessage = 'Модель заменена, доступность и сумма аренды пересчитаны.';
+  } else if (offerPrepaymentReplacement) {
+    const card = offerPrepaymentReplacement.closest('.manager-order');
+    const laptopId = Number(card?.querySelector('[data-prepayment-replacement-laptop]')?.value);
+    if (!Number.isInteger(laptopId)) { showFeedback('Выберите модель, которую нужно предложить клиенту.', 'error'); return; }
+    const reason = String(card?.querySelector('[data-prepayment-replacement-reason]')?.value || '').trim();
+    if (!reason) { showFeedback('Напишите понятную клиенту причину предложения.', 'error'); return; }
+    if (!window.confirm('Отправить клиенту предложение замены? Заявка и сумма изменятся только после его согласия.')) return;
+    payload = { action:'admin_offer_pre_payment_replacement', orderId:offerPrepaymentReplacement.dataset.offerPrepaymentReplacement, laptopId, reason };
+    successMessage = 'Предложение отправлено клиенту. Ожидаем его согласия — модель в заявке пока не менялась.';
   } else if (adminIncident) {
     const reason = window.prompt('Опишите инцидент. Ноутбук останется заблокированным в учёте до решения:');
     if (!reason?.trim()) return;

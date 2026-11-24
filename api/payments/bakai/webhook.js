@@ -113,13 +113,21 @@ export default async function handler(request, response) {
       if (payment.request_id) await database.updateCustomerRequest(payment.request_id, customerRequest?.kind === 'replacement' ? { status:'in_progress' } : { status:'resolved', resolved_at:now });
       await database.createEvent({ order_id:payment.order_id, event_type:'bakai_extension_payment_confirmed_webhook', actor_type:'bank', metadata:{ operation_id:operationId, elqr_id:bankElqrId, amount, proposed_return_date:payment.proposed_return_date, request_kind:customerRequest?.kind || 'extension', replacement_laptop_id:customerRequest?.replacement_laptop_id || null } }).catch(error => console.error('Bakai extension payment audit failed:', error.message));
     } else {
-      if (order?.status === 'awaiting_payment') {
-        await database.updateOrder(order.id, {
-          status:'confirmed', payment_channel:'bakai', payment_receipt_received_at:now, payment_confirmed_at:now
-        });
-        await notifyManagerAboutPaidOrder(config, order);
+      const breakdown = paymentPayloadObject(payment.bank_payload).breakdown || {};
+      const groupId = String(breakdown.order_group_id || '').trim();
+      const groupedOrders = groupId ? await database.listOrdersByGroupId(groupId).catch(() => []) : [];
+      const paidOrders = groupedOrders.length ? groupedOrders : order ? [order] : [];
+      const confirmedOrders = [];
+      for (const item of paidOrders) {
+        if (item.status === 'awaiting_payment') {
+          const confirmed = await database.updateOrder(item.id, {
+            status:'confirmed', payment_channel:'bakai', payment_receipt_received_at:now, payment_confirmed_at:now
+          });
+          confirmedOrders.push(confirmed || item);
+        } else confirmedOrders.push(item);
+        await database.createEvent({ order_id:item.id, event_type:'bakai_payment_confirmed_webhook', actor_type:'bank', metadata:{ operation_id:operationId, elqr_id:bankElqrId, amount, order_group_id:groupId || null, order_ids:paidOrders.map(grouped => grouped.id) } }).catch(error => console.error('Bakai webhook audit event failed:', error.message));
       }
-      await database.createEvent({ order_id:payment.order_id, event_type:'bakai_payment_confirmed_webhook', actor_type:'bank', metadata:{ operation_id:operationId, elqr_id:bankElqrId, amount } }).catch(error => console.error('Bakai webhook audit event failed:', error.message));
+      if (confirmedOrders.length) await notifyManagerAboutPaidOrder(config, confirmedOrders[0]);
     }
     return reply(response, 200, { ok:true });
   } catch (error) {

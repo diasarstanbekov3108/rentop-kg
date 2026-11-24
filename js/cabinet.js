@@ -123,6 +123,19 @@ const request = async (method, payload, timeoutMs = 20000) => {
     throw error;
   } finally { window.clearTimeout(timer); }
 };
+const uploadDocumentFile = (uploadUrl, token, contentType, file, onProgress) => new Promise((resolve, reject) => {
+  const xhr = new XMLHttpRequest();
+  xhr.open('PUT', uploadUrl, true);
+  xhr.timeout = 90_000;
+  xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+  xhr.setRequestHeader('x-upsert', 'false');
+  xhr.setRequestHeader('content-type', contentType);
+  xhr.upload.onprogress = (event) => { if (event.lengthComputable) onProgress?.(event.loaded, event.total); };
+  xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Хранилище ответило ${xhr.status || 'без статуса'}`)));
+  xhr.onerror = () => reject(new Error('Сеть оборвала загрузку файла.'));
+  xhr.ontimeout = () => reject(new Error('Загрузка файла слишком долго не отвечает.'));
+  xhr.send(file);
+});
 async function stabilizeAccountSnapshot(data) {
   // A just-created SMS session can occasionally reach a replica before its
   // order history is visible. Make one short re-read before rendering an
@@ -455,12 +468,16 @@ function paymentBreakdown(payment) {
     deliveryMode: breakdown.delivery_charge_mode || 'external'
   };
 }
-function paymentReceiptRows(payment, isExtension = false) {
+function paymentReceiptRows(payment, isExtension = false, order = null) {
   const breakdown = paymentBreakdown(payment);
+  const items = Array.isArray(order?.group_items) ? order.group_items : [];
+  const itemRows = !isExtension && items.length > 1
+    ? items.map(item => `<span>${escape(item.title || 'Ноутбук')}: ${Number(item.total_amount || 0).toLocaleString('ru-RU')} сом</span>`).join('')
+    : '';
   if (isExtension) return `<span>Доплата за продление: ${Number(payment?.amount || 0).toLocaleString('ru-RU')} сом</span>`;
-  if (breakdown.hasSeparateRentalAndDeposit) return `<span>Аренда по счёту: ${breakdown.rentalAmount.toLocaleString('ru-RU')} сом</span><span>Возвратный залог: ${breakdown.depositAmount.toLocaleString('ru-RU')} сом</span>`;
-  if (breakdown.hasStoredBreakdown) return `<span>Аренда и залог по счёту: ${breakdown.rentalAndDeposit.toLocaleString('ru-RU')} сом</span>`;
-  return `<span>Платёж по счёту: ${Number(payment?.amount || 0).toLocaleString('ru-RU')} сом</span>`;
+  if (breakdown.hasSeparateRentalAndDeposit) return `${itemRows}<span>Аренда по счёту: ${breakdown.rentalAmount.toLocaleString('ru-RU')} сом</span><span>Возвратный залог: ${breakdown.depositAmount.toLocaleString('ru-RU')} сом</span>`;
+  if (breakdown.hasStoredBreakdown) return `${itemRows}<span>Аренда и залог по счёту: ${breakdown.rentalAndDeposit.toLocaleString('ru-RU')} сом</span>`;
+  return `${itemRows}<span>Платёж по счёту: ${Number(payment?.amount || 0).toLocaleString('ru-RU')} сом</span>`;
 }
 function paymentReceiptTotalRows(payment, isExtension = false) {
   const amount = Number(payment?.amount || 0).toLocaleString('ru-RU');
@@ -520,7 +537,8 @@ function paymentPanel(order) {
     const delivery = deliveryReceiptDetails(order, breakdown);
     const deliveryLines = `<span>Получение: ${escape(delivery.method)}</span>${delivery.charge ? `<span>${escape(delivery.charge)}</span>` : ''}`;
     const discount = rentalDiscountDetails(order);
-    return `<section class="cabinet-payment success cabinet-receipt"><div><strong>✓ ${isExtension ? 'Продление оплачено' : 'Оплата подтверждена'}</strong><span>${amount} сом · банк подтвердил платёж</span></div><p>${isExtension ? `Новый срок аренды: до ${date(order.rental_end_date)}.` : 'Мы готовим выбранный способ выдачи и сообщим о готовности.'}</p><div class="cabinet-receipt-details"><b>Квитанция Rentop</b><span>Заказчик: ${escape(order.customer_name || 'Клиент Rentop')}</span><span>Заявка: ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</span><span>Ноутбук: ${escape(order.laptop_title || '—')}</span><span>Период: ${escape(date(order.rental_start_date))} — ${escape(date(order.rental_end_date))}</span>${deliveryLines}${paymentReceiptRows(payment, isExtension)}${paymentReceiptTotalRows(payment, isExtension)}${discount.promo ? `<span>Промокод: ${escape(discount.promo.code)} · −${Number(discount.promo.discount_percent || 0)}%</span>` : ''}<span>Общая скидка по тарифу: −${Number(order.discount_percent || 0)}%</span><span>Платёж: ${escape(reference)}</span><span>Подтверждён: ${escape(dateTime(paidAt, { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }))}</span></div><button class="cabinet-action secondary" type="button" data-print-receipt="${escape(order.id)}">Скачать квитанцию PDF</button><small class="cabinet-receipt-note">Данные заказчика указаны по этой заявке.</small></section>`;
+  const groupTitle = Array.isArray(order.group_items) && order.group_items.length > 1 ? `Заказ из ${order.group_items.length} ноутбуков` : `Ноутбук: ${escape(order.laptop_title || '—')}`;
+  return `<section class="cabinet-payment success cabinet-receipt"><div><strong>✓ ${isExtension ? 'Продление оплачено' : 'Оплата подтверждена'}</strong><span>${amount} сом · банк подтвердил платёж</span></div><p>${isExtension ? `Новый срок аренды: до ${date(order.rental_end_date)}.` : 'Мы готовим выбранный способ выдачи и сообщим о готовности.'}</p><div class="cabinet-receipt-details"><b>Квитанция Rentop</b><span>Заказчик: ${escape(order.customer_name || 'Клиент Rentop')}</span><span>Заявка: ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</span><span>${groupTitle}</span><span>Период: ${escape(date(order.rental_start_date))} — ${escape(date(order.rental_end_date))}</span>${deliveryLines}${paymentReceiptRows(payment, isExtension, order)}${paymentReceiptTotalRows(payment, isExtension)}${discount.promo ? `<span>Промокод: ${escape(discount.promo.code)} · −${Number(discount.promo.discount_percent || 0)}%</span>` : ''}<span>Общая скидка по тарифу: −${Number(order.discount_percent || 0)}%</span><span>Платёж: ${escape(reference)}</span><span>Подтверждён: ${escape(dateTime(paidAt, { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }))}</span></div><button class="cabinet-action secondary" type="button" data-print-receipt="${escape(order.id)}">Скачать квитанцию PDF</button><small class="cabinet-receipt-note">Данные заказчика указаны по этой заявке.</small></section>`;
   }
   if (!isExtension && order.status !== 'awaiting_payment') return '';
   if (!payment) return `<div class="cabinet-payment waiting"><strong>Готовим способ оплаты</strong><p>Менеджер формирует защищённый QR-счёт. Обновите страницу через несколько минут — платить по реквизитам в переписке не нужно.</p>${documentNotice}</div>`;
@@ -539,6 +557,9 @@ function openReceiptPrintWindow(order) {
   const reference = payment.payment_reference || payment.provider_reference || payment.id || order.reference || String(order.id || '').slice(0, 8).toUpperCase();
   const breakdown = paymentBreakdown(payment);
   const delivery = deliveryReceiptDetails(order, breakdown);
+  const groupItemRows = !isExtension && Array.isArray(order.group_items) && order.group_items.length > 1
+    ? order.group_items.map(item => `<div class="row"><span>${escape(item.title || 'Ноутбук')}</span><b>${Number(item.total_amount || 0).toLocaleString('ru-RU')} сом</b></div>`).join('')
+    : '';
   const paymentRows = isExtension
     ? `<div class="row"><span>Доплата за продление</span><b>${Number(payment.amount || 0).toLocaleString('ru-RU')} сом</b></div>`
     : breakdown.hasSeparateRentalAndDeposit
@@ -546,7 +567,7 @@ function openReceiptPrintWindow(order) {
       : breakdown.hasStoredBreakdown
         ? `<div class="row"><span>Аренда и залог по счёту</span><b>${breakdown.rentalAndDeposit.toLocaleString('ru-RU')} сом</b></div>`
         : `<div class="row"><span>Платёж по счёту</span><b>${Number(payment.amount || 0).toLocaleString('ru-RU')} сом</b></div>`;
-  const deliveryReceiptRows = `${paymentRows}<div class="row"><span>Получение</span><b>${escape(delivery.method)}</b></div>${delivery.charge ? `<div class="row"><span>Доставка</span><b>${escape(delivery.charge)}</b></div>` : ''}<div class="row"><span>${isExtension ? 'Итого доплата за продление' : 'Итого по счёту'}</span><b>${amount} сом</b></div><div class="row"><span>Оплачено</span><b>${amount} сом</b></div>`;
+  const deliveryReceiptRows = `${groupItemRows}${paymentRows}<div class="row"><span>Получение</span><b>${escape(delivery.method)}</b></div>${delivery.charge ? `<div class="row"><span>Доставка</span><b>${escape(delivery.charge)}</b></div>` : ''}<div class="row"><span>${isExtension ? 'Итого доплата за продление' : 'Итого по счёту'}</span><b>${amount} сом</b></div><div class="row"><span>Оплачено</span><b>${amount} сом</b></div>`;
   const stampUrl = `${window.location.origin}/assets/rentop-ip-stamp.png`;
   const popup = window.open('', '_blank', 'width=760,height=860');
   if (!popup) { message('Браузер заблокировал окно квитанции. Разрешите всплывающие окна для Rentop и повторите.', 'error'); return; }
@@ -691,19 +712,19 @@ function actionPanel(order) {
   const documents = docState.mode === 'approved' || docState.mode === 'submitted' ? '' : `<button class="cabinet-action secondary cabinet-documents-open" data-panel="documents" data-document-mode="${docState.mode}" data-document-kinds="${docState.kinds.join(',')}" data-order="${order.id}">${documentText}</button>`;
   const documentsPending = docState.mode === 'submitted' ? '<section class="cabinet-documents-cta cabinet-documents-pending"><strong>Документы на проверке</strong><p>Все файлы получены. Менеджер сверит их и затем выставит защищённый счёт. Повторно загружать ничего не нужно.</p></section>' : '';
   const paymentStarted = ['awaiting_payment', 'paid', 'confirmed'].includes(String(order.payment?.status || ''));
+  const managerReplacementOffer = ['draft', 'pending_review'].includes(String(order.status || '')) && !paymentStarted && order.prepayment_replacement_offer_laptop_id
+    ? `<section class="cabinet-pickup-flow cabinet-manager-replacement-offer"><strong>Rentop предлагает заменить ноутбук</strong><p><b>${escape(order.prepayment_replacement_offer_title || 'Доступная модель')}</b> · новая сумма <b>${Number(order.prepayment_replacement_offer_total_amount || 0).toLocaleString('ru-RU')} сом</b>.</p><p>${escape(order.prepayment_replacement_offer_reason || 'Менеджер предложил доступную альтернативу на ваши даты.')}</p><p>Заявка не изменится без вашего решения. Перед подтверждением мы ещё раз проверим, свободна ли модель.</p><div class="cabinet-actions"><button class="cabinet-action" data-accept-prepayment-offer="${order.id}">Согласиться на замену</button><button class="cabinet-action secondary" data-decline-prepayment-offer="${order.id}">Не подходит</button></div></section>`
+    : '';
   const modelChange = ['draft', 'pending_review'].includes(String(order.status || '')) && !paymentStarted
     ? `<section class="cabinet-model-change"><strong>Не подошла модель?</strong><p>До выставления и оплаты счёта можно выбрать другой свободный ноутбук. Ваша заявка, даты и документы сохранятся, сумма пересчитается автоматически.</p><button class="cabinet-action secondary" data-panel="prepayment-replacement" data-order="${order.id}">Изменить модель</button></section>`
-    : '';
-  const deliveryChange = ['draft', 'pending_review'].includes(String(order.status || '')) && !paymentStarted
-    ? `<section class="cabinet-model-change"><strong>Нужен другой способ получения?</strong><p>До выставления и оплаты счёта можно сменить ARCHA POINT на курьерскую доставку или наоборот.</p><button class="cabinet-action ghost" data-panel="delivery" data-order="${order.id}">Изменить способ получения</button></section>`
     : '';
   const whatsapp = supportWhatsappUrl ? `<a class="cabinet-action ghost cabinet-whatsapp" href="${escape(supportWhatsappUrl)}?text=${encodeURIComponent(`Здравствуйте! Нужна помощь по заявке ${order.reference}.`)}" target="_blank" rel="noopener" aria-label="Написать в WhatsApp по заявке ${escape(order.reference)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5A10.6 10.6 0 0 0 3.1 16.1L2 22l6-1.6A10.5 10.5 0 1 0 20.5 3.5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8.2 6.9c.3-.7.7-.7 1.1-.6l1.5 2c.3.4.2.8-.1 1.1l-.7.7c.9 1.8 2.3 3.2 4.1 4.1l.7-.7c.3-.3.7-.4 1.1-.1l2 1.5c.1.4.1.8-.6 1.1-.8.3-1.7.5-2.5.3-4.4-1.1-7.4-4.1-8.5-8.5-.2-.8 0-1.7.3-2.5Z" fill="currentColor"/></svg><span>Написать в WhatsApp</span></a>` : '';
   if (['requested', 'submitted'].includes(order.alternative_security_status)) {
     const submitted = order.alternative_security_status === 'submitted';
     return `<section class="cabinet-documents-cta ${submitted ? 'cabinet-documents-pending' : ''}"><strong>${submitted ? 'Дополнительная проверка отправлена' : 'Менеджер запросил дополнительную проверку'}</strong><p>${submitted ? 'Файлы получены. Менеджер примет индивидуальное решение по залогу и покажет следующий шаг.' : 'Это индивидуальная проверка вместо залога. Ответственность по аренде всё равно остаётся за вами.'}</p>${submitted ? '' : `<button class="cabinet-action" data-panel="alternative-security" data-order="${order.id}">Открыть проверку без залога</button>`}</section><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
   }
-  if (docState.mode === 'upload') return `<div class="cabinet-documents-cta"><strong>Следующий шаг — документы</strong><p>Четыре файла: ID с двух сторон, селфи с ID и подтверждающий документ.</p>${documents}</div>${modelChange}${deliveryChange}<div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
-  if (order.status === 'pending_review' && docState.mode === 'approved') return `<section class="cabinet-documents-cta"><strong>Документы приняты</strong><p>Менеджер завершает сверку данных для договора. Защищённый счёт появится здесь только после этой проверки.</p></section>${modelChange}${deliveryChange}<div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Уточнить статус</button>${whatsapp}</div>`;
+  if (docState.mode === 'upload') return `${managerReplacementOffer}${modelChange}<div class="cabinet-documents-cta"><strong>Следующий шаг — документы</strong><p>Четыре файла: ID с двух сторон, селфи с ID и подтверждающий документ.</p>${documents}</div><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
+  if (order.status === 'pending_review' && docState.mode === 'approved') return `<section class="cabinet-documents-cta"><strong>Документы приняты</strong><p>Менеджер завершает сверку данных для договора. Защищённый счёт появится здесь только после этой проверки.</p></section>${managerReplacementOffer}${modelChange}<div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Уточнить статус</button>${whatsapp}</div>`;
   if (order.replacement_exchange_status === 'awaiting_exchange' && order.replacement_pending_laptop_id) return `${documents}<section class="cabinet-pickup-flow"><strong>Замена ноутбука согласована</strong><p>Оплата и срок аренды уже зафиксированы. Rentop согласует физическую передачу старого и нового ноутбуков; аренда продолжится без повторной подачи документов.</p><p>Не передавайте текущий ноутбук без согласованного способа и времени обмена.</p><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Уточнить передачу</button>${whatsapp}</div></section>`;
   if (order.delivery_type === 'delivery' && order.status === 'confirmed') return `${documents}<section class="cabinet-pickup-flow"><strong>Оплата подтверждена</strong><p>Менеджер согласует с вами точное время и отдельную стоимость платной доставки по адресу из заявки. Срок аренды ещё не начался.</p><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Уточнить доставку</button>${whatsapp}</div></section>`;
   if (order.status === 'awaiting_pickup') {
@@ -784,7 +805,7 @@ function actionPanel(order) {
     return `${documents}<div class="cabinet-request-state ${isExtension ? 'is-info cabinet-extension-pending' : ''}"><strong>${isExtension ? '⌛ Продление на рассмотрении' : '⌛ Запрос на возврат на рассмотрении'}</strong><p>${escape(requestLabel(pending))}. Менеджер проверяет доступность и подготовит следующий шаг.</p></div><div class="cabinet-actions">${cancelExtension}<button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
   }
   if (order.status === 'incident') return `${documents}<section class="cabinet-pickup-flow"><strong>Rentop проверяет ситуацию с ноутбуком</strong><p>Аренда и залог не списываются дополнительно, пока менеджер не зафиксирует решение. При необходимости мы предложим доступную замену и согласуем способ передачи.</p><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Связаться с менеджером</button>${whatsapp}</div></section>`;
-  if (!canAct) return `${documentsPending}${documents}${modelChange}${deliveryChange}<div class="cabinet-action-disabled">Продление и досрочный возврат станут доступны после выдачи ноутбука.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="support" data-order="${order.id}">Помощь</button>${whatsapp}</div>`;
+  if (!canAct) return `${documentsPending}${documents}${modelChange}<div class="cabinet-action-disabled">Продление и досрочный возврат станут доступны после выдачи ноутбука.</div><div class="cabinet-actions"><button class="cabinet-action secondary" data-panel="support" data-order="${order.id}">Помощь</button>${whatsapp}</div>`;
   const deadlineNotice = deadline ? `<div class="cabinet-request-state ${deadline.due ? 'is-warning' : ''}"><strong>${deadline.title}</strong><p>${deadline.text}</p></div>` : '';
   const returnLabel = 'Вернуть';
   const exactTerm = order.rental_ends_at ? `До ${moment(order.rental_ends_at)} (Бишкек).` : `До ${date(order.rental_end_date)}.`;
@@ -800,7 +821,9 @@ function replacementChoicesMarkup(orderId, days, alternatives = []) {
 
 function prepaymentReplacementChoicesMarkup(orderId, alternatives = []) {
   if (!alternatives.length) return `<div class="cabinet-request-state is-warning"><strong>Свободных моделей пока нет</strong><p>На эти даты другой свободной модели не найдено. Ваша текущая заявка сохранена — попробуйте позже или напишите в поддержку.</p></div>`;
-  return `<form class="cabinet-inline-form" data-request="replace_draft_laptop" data-order="${escape(orderId)}"><strong>Выберите модель для этой заявки</strong><p>Заменить можно только до выставления и оплаты счёта. Даты, доставка и документы останутся в этой же заявке.</p><div class="cabinet-replacement-options">${alternatives.map(item => `<label class="cabinet-replacement-option"><input type="radio" name="replacementLaptopId" value="${Number(item.id)}" required><span><b>${escape(item.title)}</b><small>${Number(item.daily_rate || 0).toLocaleString('ru-RU')} сом/день · скидка ${Number(item.discount_percent || 0)}%</small><em>Новая сумма: ${Number(item.total_amount || 0).toLocaleString('ru-RU')} сом · разница ${Number(item.difference || 0) >= 0 ? '+' : ''}${Number(item.difference || 0).toLocaleString('ru-RU')} сом</em></span></label>`).join('')}</div><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Заменить модель</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
+  const shown = alternatives.slice(0, 12);
+  const hiddenCount = Math.max(0, alternatives.length - shown.length);
+  return `<form class="cabinet-inline-form cabinet-prepayment-picker" data-request="replace_draft_laptop" data-order="${escape(orderId)}"><strong>Выберите замену ноутбука</strong><p>Показаны ближайшие свободные варианты по цене. Даты, способ получения и документы останутся в этой заявке.</p><div class="cabinet-replacement-options">${shown.map(item => `<label class="cabinet-replacement-option"><input type="radio" name="replacementLaptopId" value="${Number(item.id)}" required><span><b>${escape(item.title)}</b><small class="cabinet-replacement-rate">Ставка: ${Number(item.daily_rate || 0).toLocaleString('ru-RU')} сом / день · скидка ${Number(item.discount_percent || 0)}%</small><em>Итого за аренду: ${Number(item.total_amount || 0).toLocaleString('ru-RU')} сом <i>${Number(item.difference || 0) >= 0 ? '+' : '−'}${Math.abs(Number(item.difference || 0)).toLocaleString('ru-RU')} сом</i></em></span></label>`).join('')}</div>${hiddenCount ? `<p class="cabinet-form-hint">Показаны первые 12 вариантов из ${alternatives.length}. Если ни один не подходит, обратитесь в поддержку — менеджер подберёт модель из каталога.</p>` : ''}<div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Выбрать эту модель</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
 }
 function promoStatus(promo) {
   if (promo.status === 'redeemed') return 'Использован';
@@ -904,7 +927,10 @@ function orderDetailsMarkup(order) {
     return `<div class="cabinet-order-workspace-head"><button class="cabinet-workspace-close" type="button" data-close-order-workspace aria-label="Вернуться к списку заявок">← <span>Все заявки</span></button><div class="cabinet-order-workspace-head-actions"><button class="cabinet-workspace-refresh" type="button" data-refresh-order-workspace="${escape(order.id)}">Обновить</button><span class="cabinet-badge">${escape(state.title)}</span><button class="cabinet-order-archive" type="button" data-archive-order="${escape(order.id)}">В архив</button></div></div><div class="cabinet-order-hero"><div class="cabinet-order-visual">${visual}</div><div><p class="cabinet-eyebrow">ЗАЯВКА ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</p><h2>${escape(order.laptop_title || 'Ноутбук Rentop')}</h2><p>Спасибо, что выбрали Rentop. Аренда и возврат завершены.</p></div></div>${journeyMarkup}<section class="cabinet-terminal-summary"><span aria-hidden="true">✓</span><div><strong>Аренда завершена</strong><p>Ноутбук принят Rentop. Все действия по заявке сохранены в истории.</p></div></section>${settlement}${receipt}<section class="cabinet-completion"><strong>Спасибо, что выбрали Rentop!</strong><p>Будем рады помочь снова. Персональный промокод на следующую аренду появится в разделе «Скидки и промокоды».</p>${feedbackActions}</section><details class="cabinet-order-history"><summary>История заявки, документы и платежи</summary><div>${documentSummary(order)}${supportUpdates(order)}${paymentPanel(order)}</div></details>${requestForm(order)}`;
   }
   const discount = rentalDiscountDetails(order);
-  return `<div class="cabinet-order-workspace-head"><button class="cabinet-workspace-close" type="button" data-close-order-workspace aria-label="Вернуться к списку заявок">← <span>Все заявки</span></button><div class="cabinet-order-workspace-head-actions"><button class="cabinet-workspace-refresh" type="button" data-refresh-order-workspace="${escape(order.id)}">Обновить</button><span class="cabinet-badge">${escape(state.title)}</span></div></div><div class="cabinet-order-hero"><div class="cabinet-order-visual">${visual}</div><div><p class="cabinet-eyebrow">ЗАЯВКА ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</p><h2>${escape(order.laptop_title || 'Ноутбук Rentop')}</h2><p>${escape(state.text)}</p></div></div>${journeyMarkup}<section class="cabinet-order-summary"><div><span>Срок аренды</span><strong>${rentalTerm}</strong></div><div><span>Получение</span><strong>${escape(order.delivery_label)}</strong></div><div><span>Итого аренда</span><strong>${discount.pricing.finalAmount.toLocaleString('ru-RU')} сом</strong></div>${discount.card}</section>${documentSummary(order)}${supportUpdates(order)}${pickupInstruction(order)}${paymentPanel(order)}${actionPanel(order)}${requestForm(order)}`;
+  const groupSummary = Array.isArray(order.group_items) && order.group_items.length > 1
+    ? `<section class="cabinet-order-group"><strong>В одном заказе ${order.group_items.length} ноутбука</strong>${order.group_items.map(item => `<span>${escape(item.title || 'Ноутбук')}<b>${Number(item.total_amount || 0).toLocaleString('ru-RU')} сом</b></span>`).join('')}<small>Один комплект документов и один общий QR-счёт. Выдача и возврат фиксируются отдельно по каждому устройству.</small></section>`
+    : '';
+  return `<div class="cabinet-order-workspace-head"><button class="cabinet-workspace-close" type="button" data-close-order-workspace aria-label="Вернуться к списку заявок">← <span>Все заявки</span></button><div class="cabinet-order-workspace-head-actions"><button class="cabinet-workspace-refresh" type="button" data-refresh-order-workspace="${escape(order.id)}">Обновить</button><span class="cabinet-badge">${escape(state.title)}</span></div></div><div class="cabinet-order-hero"><div class="cabinet-order-visual">${visual}</div><div><p class="cabinet-eyebrow">ЗАЯВКА ${escape(order.reference || String(order.id || '').slice(0, 8).toUpperCase())}</p><h2>${escape(order.laptop_title || 'Ноутбук Rentop')}</h2><p>${escape(state.text)}</p></div></div>${journeyMarkup}<section class="cabinet-order-summary"><div><span>Срок аренды</span><strong>${rentalTerm}</strong></div><div><span>Получение</span><strong>${escape(order.delivery_label)}</strong></div><div><span>Итого аренда</span><strong>${discount.pricing.finalAmount.toLocaleString('ru-RU')} сом</strong></div>${discount.card}</section>${groupSummary}${actionPanel(order)}${documentSummary(order)}${supportUpdates(order)}${pickupInstruction(order)}${paymentPanel(order)}${requestForm(order)}`;
 }
 
 function openOrderWorkspace(orderId) {
@@ -1262,6 +1288,19 @@ document.addEventListener('click', event => {
       .finally(() => { documentToOpen.disabled = false; documentToOpen.textContent = initialText; });
     return;
   }
+  const replacementOffer = event.target.closest('[data-accept-prepayment-offer], [data-decline-prepayment-offer]');
+  if (replacementOffer) {
+    const accepting = Boolean(replacementOffer.dataset.acceptPrepaymentOffer);
+    if (!window.confirm(accepting ? 'Подтвердить замену модели? Сумма аренды будет пересчитана автоматически.' : 'Отклонить это предложение? Текущая заявка сохранится, а другую модель можно выбрать самостоятельно.')) return;
+    const originalText = replacementOffer.textContent;
+    replacementOffer.disabled = true;
+    replacementOffer.textContent = accepting ? 'Проверяем модель…' : 'Сохраняем решение…';
+    const orderId = replacementOffer.dataset.acceptPrepaymentOffer || replacementOffer.dataset.declinePrepaymentOffer;
+    request('POST', { action:accepting ? 'accept_prepayment_replacement_offer' : 'decline_prepayment_replacement_offer', orderId })
+      .then(async result => { message(result.message, 'success'); const fresh = await request('GET'); if (fresh.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos, fresh.benefits); })
+      .catch(error => { message(error.message, 'error'); replacementOffer.disabled = false; replacementOffer.textContent = originalText; });
+    return;
+  }
   const pickupConfirm = event.target.closest('[data-confirm-pickup]');
   if (pickupConfirm) {
     const pickupOrder = cabinetOrders.find(order => String(order.id) === String(pickupConfirm.dataset.confirmPickup));
@@ -1349,10 +1388,16 @@ document.addEventListener('click', event => {
       message('Черновик документов открыт. Сначала загрузите его или нажмите «Отмена», если действительно хотите удалить выбранные файлы.', 'error');
       return;
     }
-    // An action button must always open its workspace. Toggling here made a
-    // second tap (or a delayed mobile click) close “Уточнить статус” again
-    // before the customer could see the form.
     if (!panel.hidden) {
+      // The model picker is the only compact chooser that is intentionally
+      // toggleable: a second tap returns to the application immediately.
+      if (button.dataset.panel === 'prepayment-replacement') {
+        panel.hidden = true;
+        panel.innerHTML = '';
+        panel.classList.remove('is-document-result');
+        setWorkspaceMode(null);
+        return;
+      }
       // A form can already be open below the fold (for example after a
       // delivery-status update). A repeated tap must take the customer to it,
       // not look like a broken button.
@@ -1364,9 +1409,10 @@ document.addEventListener('click', event => {
     panel.hidden = false;
     panel.classList.toggle('is-document-result', button.dataset.panel === 'documents' && ['submitted', 'approved'].includes(button.dataset.documentMode || ''));
     const sourceOrder = cabinetOrders.find(order => String(order.id) === String(button.dataset.order));
-    panel.innerHTML = panel.hidden ? '' : `<button class="cabinet-workspace-close" type="button" data-close-workspace aria-label="Закрыть форму">× <span>К заявке</span></button>${panelMarkup(button.dataset.panel, button.dataset.order, { mode:button.dataset.documentMode, kinds:button.dataset.documentKinds, requestId:button.dataset.requestId, days:button.dataset.extensionDays, offerSmsVerified:Boolean(sourceOrder?.offer_otp_verified_at), benefitRequested:sourceOrder?.benefit_requested_type || '', deliveryType:sourceOrder?.delivery_type || '', deliveryAddress:sourceOrder?.delivery_address || '', deliveryPreferredTime:sourceOrder?.delivery_preferred_time || '', lockerAddress:sourceOrder?.locker_address || '', address:sourceOrder?.return_collection_address || sourceOrder?.residence_address || '', name:sourceOrder?.return_contact_name || sourceOrder?.customer_name || '', phone:sourceOrder?.return_contact_phone || sourceOrder?.customer_phone || '' })}`;
+    panel.innerHTML = button.dataset.panel === 'prepayment-replacement'
+      ? `<button class="cabinet-workspace-close" type="button" data-close-workspace aria-label="Закрыть выбор модели">× <span>К заявке</span></button><div class="cabinet-loading"><span></span>Проверяем свободные модели…</div>`
+      : `<button class="cabinet-workspace-close" type="button" data-close-workspace aria-label="Закрыть форму">× <span>К заявке</span></button>${panelMarkup(button.dataset.panel, button.dataset.order, { mode:button.dataset.documentMode, kinds:button.dataset.documentKinds, requestId:button.dataset.requestId, days:button.dataset.extensionDays, offerSmsVerified:Boolean(sourceOrder?.offer_otp_verified_at), benefitRequested:sourceOrder?.benefit_requested_type || '', deliveryType:sourceOrder?.delivery_type || '', deliveryAddress:sourceOrder?.delivery_address || '', deliveryPreferredTime:sourceOrder?.delivery_preferred_time || '', lockerAddress:sourceOrder?.locker_address || '', address:sourceOrder?.return_collection_address || sourceOrder?.residence_address || '', name:sourceOrder?.return_contact_name || sourceOrder?.customer_name || '', phone:sourceOrder?.return_contact_phone || sourceOrder?.customer_phone || '' })}`;
     if (button.dataset.panel === 'prepayment-replacement') {
-      panel.insertAdjacentHTML('beforeend', '<p class="cabinet-form-hint">Проверяем свободные модели на выбранные даты…</p>');
       request('POST', { action:'prepayment_replacement_options', orderId:button.dataset.order })
         .then((result) => {
           panel.innerHTML = `<button class="cabinet-workspace-close" type="button" data-close-workspace aria-label="Закрыть форму">× <span>К заявке</span></button>${prepaymentReplacementChoicesMarkup(button.dataset.order, result.alternatives || [])}`;
@@ -1479,23 +1525,6 @@ document.addEventListener('change', event => {
         hint.textContent = `Длительность: ${seconds} сек. · Размер: ${(file.size / 1024 / 1024).toFixed(1)} МБ из 50 МБ.`;
       }
     };
-function putDocumentFile(uploadUrl, token, contentType, file, onProgress) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('PUT', uploadUrl, true);
-    xhr.timeout = 90_000;
-    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-    xhr.setRequestHeader('x-upsert', 'false');
-    xhr.setRequestHeader('content-type', contentType);
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) onProgress?.(event.loaded, event.total);
-    };
-    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Хранилище ответило ${xhr.status || 'без статуса'}`)));
-    xhr.onerror = () => reject(new Error('Сеть оборвала загрузку файла.'));
-    xhr.ontimeout = () => reject(new Error('Загрузка файла слишком долго не отвечает.'));
-    xhr.send(file);
-  });
-}
     video.onerror = () => { URL.revokeObjectURL(objectUrl); if (hint) hint.textContent = 'Не удалось определить длительность — проверьте, что ролик короткий и меньше 50 МБ.'; };
     video.src = objectUrl;
   }
@@ -1618,13 +1647,13 @@ document.addEventListener('submit', async event => {
         if (file.size > (isVideo ? 50 : 8) * 1024 * 1024) throw new Error(`${isVideo ? 'Видео' : 'Фото или документ'} «${file.name}» больше ${isVideo ? 50 : 8} МБ. Уменьшите размер и выберите файл заново.`);
         const ticket = await request('POST', { action:'create_document_upload', orderId:documentForm.dataset.order, kind, fileName, contentType, byteSize:file.size });
         try {
-          await putDocumentFile(ticket.uploadUrl, ticket.token, contentType, file, (loaded) => {
+          await uploadDocumentFile(ticket.uploadUrl, ticket.token, contentType, file, (loaded) => {
             uploadedBytes.set(kind, loaded);
             showUploadProgress();
           });
         } catch (firstError) {
           button.textContent = `Повторяем загрузку файлов (${completedUploads}/${files.length})…`;
-          await putDocumentFile(ticket.uploadUrl, ticket.token, contentType, file, (loaded) => {
+          await uploadDocumentFile(ticket.uploadUrl, ticket.token, contentType, file, (loaded) => {
             uploadedBytes.set(kind, loaded);
             showUploadProgress();
           });

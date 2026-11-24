@@ -89,12 +89,16 @@ export default async function handler(request, response) {
     // name from the modal here was the source of "lost" first applications.
     const fullName = normalizeFullName(profile?.full_name, true);
     const laptopIds = [...new Set((Array.isArray(payload.laptopIds) ? payload.laptopIds : [payload.laptopId]).map(Number).filter(Number.isFinite))];
-    if (!laptopIds.length || laptopIds.length > 3 || !['delivery', 'arca_locker'].includes(payload.deliveryType)) throw new Error('Выберите от одного до трёх ноутбуков и способ получения.');
+    const isBusinessOrder = Boolean(payload.businessOrder);
+    const maximumItems = isBusinessOrder ? 12 : 3;
+    if (!laptopIds.length || laptopIds.length > maximumItems || (!isBusinessOrder && laptopIds.length > 3) || !['delivery', 'arca_locker'].includes(payload.deliveryType)) {
+      throw new Error(isBusinessOrder ? 'В корпоративной заявке можно указать от одного до двенадцати ноутбуков.' : 'Для обычной аренды выберите от одного до трёх ноутбуков и способ получения.');
+    }
     const laptops = await database.listLaptopsByIds(laptopIds);
     if (laptops.length !== laptopIds.length || laptops.some(laptop => laptop.category !== 'rent')) throw new Error('Один из выбранных ноутбуков больше недоступен для аренды.');
     const benefits = await database.listBenefitVerifications(session.phone).catch(() => []);
     const promoCode = normalizePromoCode(payload.promoCode);
-    if (laptopIds.length > 1 && promoCode) throw new Error('Промокод для заказа из нескольких ноутбуков добавим вместе с общим QR-счётом. Пока оформите заказ без него.');
+    if (laptopIds.length > 1 && promoCode) throw new Error('Промокод пока применяется только к одному ноутбуку. Общий счёт по нескольким позициям будет сформирован без промокода.');
     const promo = promoCode ? usablePromo(await database.getPromoByCode(promoCode), session.phone) : null;
     const rentals = laptops.map(laptop => {
       const tariffRental = quote(laptop, payload.startDate, payload.endDate);

@@ -392,7 +392,7 @@ function renderLaptops(items, append = false, target = catalogGrid) {
         <button class="btn-card" data-id="${laptop.id}">
           ${isRent ? (archaSelectionMode ? 'Выбрать для ARCHA POINT' : 'Забронировать') : 'Купить / Предзаказ'}
         </button>
-        ${isRent ? `<button class="catalog-compare-button" data-add-to-order="${laptop.id}">Добавить в заказ</button>` : ''}
+        ${isRent ? `<button class="catalog-compare-button ${bookingLaptopIds.has(laptop.id) ? 'is-selected' : ''}" data-add-to-order="${laptop.id}">${bookingLaptopIds.has(laptop.id) ? '✓ Добавлен в заказ' : 'Добавить в заказ'}</button>` : ''}
         <button class="catalog-compare-button ${isCompared ? 'is-selected' : ''}" data-compare-laptop="${laptop.id}" type="button" aria-pressed="${isCompared}">
           ${isCompared ? '✓ В сравнении' : 'Сравнить'}
         </button>
@@ -414,9 +414,10 @@ function renderLaptops(items, append = false, target = catalogGrid) {
     btn.onclick = () => {
       const id = Number(btn.dataset.addToOrder);
       if (bookingLaptopIds.has(id)) bookingLaptopIds.delete(id);
-      else if (bookingLaptopIds.size < 3) bookingLaptopIds.add(id);
-      else { alert('В одном заказе можно оформить не более трёх ноутбуков.'); return; }
+      else if (bookingLaptopIds.size < 12) bookingLaptopIds.add(id);
+      else { alert('В корпоративную заявку можно добавить не более 12 ноутбуков.'); return; }
       btn.textContent = bookingLaptopIds.has(id) ? '✓ Добавлен в заказ' : 'Добавить в заказ';
+      renderBookingCart();
     };
   });
 
@@ -668,6 +669,33 @@ function bookingItems() {
   return laptops.filter((laptop) => bookingLaptopIds.has(laptop.id) && laptop.category === 'rent');
 }
 
+function renderBookingCart() {
+  let cart = document.getElementById('booking-cart');
+  const items = bookingItems();
+  if (!items.length) {
+    cart?.remove();
+    return;
+  }
+  if (!cart) {
+    cart = document.createElement('aside');
+    cart.id = 'booking-cart';
+    cart.className = 'booking-cart';
+    cart.setAttribute('aria-live', 'polite');
+    document.body.append(cart);
+  }
+  const countLabel = items.length === 1 ? '1 ноутбук' : items.length < 5 ? `${items.length} ноутбука` : `${items.length} ноутбуков`;
+  cart.innerHTML = `<div><span>ВАШ ЗАКАЗ</span><strong>${countLabel}</strong><small>${items.map(item => item.title).join(' · ')}</small></div><button type="button" data-open-booking-cart>Оформить <b>→</b></button><button class="booking-cart-clear" type="button" data-clear-booking-cart aria-label="Очистить заказ">×</button>`;
+  cart.querySelector('[data-open-booking-cart]')?.addEventListener('click', () => {
+    const first = bookingItems()[0];
+    if (first) openOrderModal(first.id, { deliveryType: archaSelectionMode ? 'arca_locker' : 'delivery' });
+  });
+  cart.querySelector('[data-clear-booking-cart]')?.addEventListener('click', () => {
+    bookingLaptopIds.clear();
+    renderBookingCart();
+    filterAndSearch();
+  });
+}
+
 function renderBookingOrderItems() {
   if (!modalOrderItems) return;
   const items = bookingItems();
@@ -685,9 +713,10 @@ function renderBookingOrderItems() {
       if (!bookingLaptopIds.has(currentLaptop?.id)) currentLaptop = bookingItems()[0] || null;
       const selected = bookingItems();
       if (modalLaptopTitle) modalLaptopTitle.textContent = selected.length > 1
-        ? `В заказе ${selected.length} ноутбука`
+        ? `В заказе ${selected.length} ${selected.length < 5 ? 'ноутбука' : 'ноутбуков'}`
         : `Вы выбрали: ${selected[0]?.title || 'ноутбук'}`;
       renderBookingOrderItems();
+      renderBookingCart();
       updateCalculator();
     });
   });
@@ -820,7 +849,7 @@ function selectBookingAlternative(laptopId) {
   if (previousId) bookingLaptopIds.delete(previousId);
   bookingLaptopIds.add(nextLaptop.id);
   const selected = bookingItems();
-  modalLaptopTitle.textContent = selected.length > 1 ? `В заказе ${selected.length} ноутбука` : `Вы выбрали: ${currentLaptop.title}`;
+  modalLaptopTitle.textContent = selected.length > 1 ? `В заказе ${selected.length} ${selected.length < 5 ? 'ноутбука' : 'ноутбуков'}` : `Вы выбрали: ${currentLaptop.title}`;
   renderBookingOrderItems();
   updateCalculator({ text: 'Модель заменена. Этот ноутбук свободен на выбранные даты.', isError: false });
 }
@@ -956,9 +985,10 @@ async function openOrderModal(id, { deliveryType = 'delivery' } = {}) {
   // redirectToCabinet() then preserves this completed draft.
   currentLaptop = selectedLaptop;
   bookingLaptopIds.add(selectedLaptop.id);
+  renderBookingCart();
   const selectedItems = bookingItems();
 
-  modalLaptopTitle.textContent = selectedItems.length > 1 ? `В заказе ${selectedItems.length} ноутбука` : `Вы выбрали: ${currentLaptop.title}`;
+  modalLaptopTitle.textContent = selectedItems.length > 1 ? `В заказе ${selectedItems.length} ${selectedItems.length < 5 ? 'ноутбука' : 'ноутбуков'}` : `Вы выбрали: ${currentLaptop.title}`;
   renderBookingOrderItems();
 
   if (currentLaptop.category === 'rent') {
@@ -1762,6 +1792,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           body: JSON.stringify({
             laptopId: currentLaptop.id,
             laptopIds:[...bookingLaptopIds],
+            businessOrder: bookingLaptopIds.size > 3,
             customerName: name,
             customerPhone: cabinetSession.phone,
             startDate: draft.startDate,

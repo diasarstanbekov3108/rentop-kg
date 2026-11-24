@@ -56,6 +56,11 @@ function catalogPayload(payload) {
   if (category === 'sale' && !record.price_text) throw new Error('Для продажи укажите цену или текст цены.');
   return record;
 }
+async function invoiceOrders(database, order) {
+  if (!order?.order_group_id) return [order];
+  const grouped = await database.listOrdersByGroupId(order.order_group_id).catch(() => []);
+  return grouped.length ? grouped : [order];
+}
 async function mapWithConcurrency(items, limit, mapper) {
   const result = new Array(items.length);
   let cursor = 0;
@@ -363,7 +368,7 @@ export default async function handler(request, response) {
       if (!promo) return reply(response, 409, { error:'Промокод уже использован, отозван или не найден.' });
       return reply(response, 200, { ok:true, promo, message:'Промокод отозван. В новой заявке он больше не сработает.' });
     }
-    if (payload.action === 'admin_close_rental_early' || payload.action === 'admin_cancel_unissued_order' || payload.action === 'admin_replace_pre_payment_laptop' || payload.action === 'admin_open_incident' || payload.action === 'admin_resolve_incident' || payload.action === 'admin_offer_incident_replacement' || payload.action === 'admin_update_laptop_asset') {
+    if (payload.action === 'admin_close_rental_early' || payload.action === 'admin_cancel_unissued_order' || payload.action === 'admin_replace_pre_payment_laptop' || payload.action === 'admin_offer_pre_payment_replacement' || payload.action === 'admin_open_incident' || payload.action === 'admin_resolve_incident' || payload.action === 'admin_offer_incident_replacement' || payload.action === 'admin_update_laptop_asset') {
       if (!isChiefAdmin) return reply(response, 403, { error:'Это действие доступно только главному администратору.' });
       if (payload.action === 'admin_update_laptop_asset') {
         const laptopId = String(payload.laptopId || '');
@@ -398,6 +403,21 @@ export default async function handler(request, response) {
         const updated = await database.updateOrder(order.id, { laptop_id:replacement.id, daily_rate:rate, total_amount:total, admin_note:`Модель заменена до счёта: ${reason}` });
         await database.createEvent({ order_id:order.id, event_type:'chief_admin_replaced_pre_payment_laptop_from_web', actor_type:'chief_admin', metadata:{ previous_laptop_id:order.laptop_id, replacement_laptop_id:replacement.id, daily_rate:rate, total_amount:total, reason, manager_phone:session.phone } });
         return reply(response, 200, { ok:true, order:updated, message:`Модель заменена на «${replacement.title}». Сумма аренды пересчитана до счёта.` });
+      }
+      if (payload.action === 'admin_offer_pre_payment_replacement') {
+        if (!['draft','pending_review'].includes(order.status)) return reply(response, 409, { error:'Предложить замену можно только до выставления счёта.' });
+        const laptopId = Number(payload.laptopId);
+        const replacement = await database.getLaptop(laptopId);
+        if (!Number.isInteger(laptopId) || !replacement || replacement.category !== 'rent' || String(replacement.id) === String(order.laptop_id)) return reply(response, 400, { error:'Выберите другую доступную модель из аренды.' });
+        const conflict = await database.findOverlappingBlockingOrder(order.id, replacement.id, order.rental_start_date, order.rental_end_date);
+        if (conflict) return reply(response, 409, { error:'Эта модель занята на выбранные даты. Выберите вариант из доступного каталога.' });
+        const rate = Number(replacement.daily_rate || replacement.dailyRate || replacement.dailyrate || 0);
+        if (!Number.isFinite(rate) || rate <= 0) return reply(response, 409, { error:'У выбранной модели не указана корректная ставка аренды.' });
+        const reason = String(payload.reason || '').trim().replace(/\s+/g, ' ').slice(0, 700) || 'Предлагаем доступную альтернативу на ваши даты.';
+        const total = Math.round(Number(order.rental_days || 0) * rate * (100 - Number(order.discount_percent || 0)) / 100);
+        const updated = await database.updateOrder(order.id, { prepayment_replacement_offer_laptop_id:replacement.id, prepayment_replacement_offer_reason:reason, prepayment_replacement_offer_total_amount:total, prepayment_replacement_offer_created_at:new Date().toISOString() });
+        await database.createEvent({ order_id:order.id, event_type:'manager_offered_prepayment_replacement', actor_type:'chief_admin', metadata:{ previous_laptop_id:order.laptop_id, replacement_laptop_id:replacement.id, daily_rate:rate, total_amount:total, reason, manager_phone:session.phone } });
+        return reply(response, 200, { ok:true, order:updated, message:`Клиенту отправлено предложение: «${replacement.title}» за ${total.toLocaleString('ru-RU')} сом. Заявка изменится только после его согласия.` });
       }
       if (payload.action === 'admin_open_incident') {
         if (['completed','cancelled','rejected'].includes(order.status)) return reply(response, 409, { error:'По завершённой или отменённой заявке инцидент не открывается.' });
@@ -561,10 +581,17 @@ export default async function handler(request, response) {
         if (returnVideo?.status !== 'accepted') return reply(response, 409, { error:'До завершения возврата менеджер должен принять видео состояния устройства.' });
       }
       if (nextStatus === 'completed' && String(order.return_condition_note || '').trim().length < 3) return reply(response, 409, { error:'После физического осмотра заполните в реестре «Состояние при возврате» и сохраните его. Затем завершите аренду.' });
-      const updated = await database.updateOrder(order.id, nextStatus === 'awaiting_payment'
+      const patch = nextStatus === 'awaiting_payment'
         ? { status:nextStatus, hold_expires_at:new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() }
-        : { status:nextStatus });
-      await database.createEvent({ order_id:order.id, event_type:`manager_changed_status_to_${nextStatus}_from_web`, actor_type:'manager', metadata:{ previous_status:order.status } }).catch(error => console.error('Manager transition audit event failed:', error.message));
+        : { status:nextStatus };
+      const groupedOrders = nextStatus === 'awaiting_payment' ? await invoiceOrders(database, order) : [order];
+      let updated = order;
+      for (const item of groupedOrders) {
+        if (item.status !== order.status && item.status !== 'draft' && item.status !== 'pending_review') continue;
+        const changed = await database.updateOrder(item.id, patch);
+        if (String(item.id) === String(order.id)) updated = changed || item;
+        await database.createEvent({ order_id:item.id, event_type:`manager_changed_status_to_${nextStatus}_from_web`, actor_type:'manager', metadata:{ previous_status:item.status, order_group_id:order.order_group_id || null } }).catch(error => console.error('Manager transition audit event failed:', error.message));
+      }
       return reply(response, 200, { ok:true, order:updated });
     }
     if (payload.action === 'complete_return_acceptance') {
@@ -716,11 +743,15 @@ export default async function handler(request, response) {
       const order = await database.getOrder(String(payload.orderId || ''));
       if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
       if (order.status !== 'awaiting_payment') return reply(response, 409, { error:'QR можно создать только для заявки, ожидающей оплату.' });
-      const existing = await database.getOrderPayment(order.id).catch(() => null);
-      if (existing?.status === 'paid') return reply(response, 409, { error:'Эта заявка уже оплачена.' });
-      if (existing?.status === 'awaiting_payment' && new Date(existing.expires_at) > new Date()) return reply(response, 409, { error:'Для этой заявки уже создан активный QR. Сначала отзовите его, если нужен новый счёт.' });
-      const defaultRentalAmount = Number(order.total_amount || 0);
-      const defaultDepositAmount = Number(order.deposit_amount || 0);
+      const groupedOrders = await invoiceOrders(database, order);
+      if (groupedOrders.some(item => item.status !== 'awaiting_payment')) return reply(response, 409, { error:'Не все ноутбуки в этом заказе готовы к оплате. Сначала завершите проверку документов по каждой позиции.' });
+      const groupPayments = (await Promise.all(groupedOrders.map(item => database.getOrderPayment(item.id).catch(() => null)))).filter(Boolean);
+      const existing = groupPayments.find(item => item.status === 'paid');
+      if (existing) return reply(response, 409, { error:'Этот заказ уже оплачен.' });
+      const activeInvoice = groupPayments.find(item => item.status === 'awaiting_payment' && new Date(item.expires_at) > new Date());
+      if (activeInvoice) return reply(response, 409, { error:'Для этого заказа уже создан активный QR. Сначала отзовите его, если нужен новый счёт.' });
+      const defaultRentalAmount = groupedOrders.reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
+      const defaultDepositAmount = groupedOrders.reduce((sum, item) => sum + Number(item.deposit_amount || 0), 0);
       const hasSeparateAmounts = Object.prototype.hasOwnProperty.call(payload, 'rentalAmount') || Object.prototype.hasOwnProperty.call(payload, 'depositAmount');
       const legacyCombinedAmount = Number(payload.amount || defaultRentalAmount + defaultDepositAmount);
       const rentalAmount = hasSeparateAmounts ? Number(payload.rentalAmount ?? defaultRentalAmount) : Math.max(0, legacyCombinedAmount - defaultDepositAmount);
@@ -734,8 +765,9 @@ export default async function handler(request, response) {
       if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) return reply(response, 400, { error:'Укажите корректную сумму оплаты.' });
       const operationId = makePaymentOperationId(order.id);
       const reference = String(order.id).slice(0, 8).toUpperCase();
-      const comment = `Rentop ${reference}`;
+      const comment = `Rentop ${reference}${groupedOrders.length > 1 ? ` · ${groupedOrders.length} laptops` : ''}`;
       const qr = await generateBakaiQr(config, { operationId, amount, comment, ttlHours:24 });
+      const itemBreakdown = groupedOrders.map(item => ({ order_id:item.id, laptop_id:item.laptop_id, rental_amount:Number(item.total_amount || 0), deposit_amount:Number(item.deposit_amount || 0) }));
       const payment = await database.createOrderPayment({
         order_id:order.id,
         provider:'bakai',
@@ -746,11 +778,11 @@ export default async function handler(request, response) {
         qr_image:qr.qrImage || null,
         qr_image_with_frame:qr.qrImageWithFrame || null,
         qr_link:qr.qrLink || null,
-        bank_payload:{ source:'manager_invoice', breakdown:{ rental_amount:rentalAmount, deposit_amount:depositAmount, rental_and_deposit_amount:rentalAndDepositAmount, delivery_fee:deliveryFee, delivery_charge_mode:deliveryChargeMode } },
+        bank_payload:{ source:'manager_invoice', breakdown:{ rental_amount:rentalAmount, deposit_amount:depositAmount, rental_and_deposit_amount:rentalAndDepositAmount, delivery_fee:deliveryFee, delivery_charge_mode:deliveryChargeMode, items:itemBreakdown, order_group_id:order.order_group_id || null, order_ids:groupedOrders.map(item => item.id) } },
         status:'awaiting_payment',
         expires_at:new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
       });
-      await database.createEvent({ order_id:order.id, event_type:'bakai_qr_created_from_web', actor_type:'manager', metadata:{ operation_id:operationId, amount, rental_amount:rentalAmount, deposit_amount:depositAmount, rental_and_deposit_amount:rentalAndDepositAmount, delivery_fee:deliveryFee, delivery_charge_mode:deliveryChargeMode } }).catch(error => console.error('Bakai payment audit event failed:', error.message));
+      await Promise.all(groupedOrders.map(item => database.createEvent({ order_id:item.id, event_type:'bakai_qr_created_from_web', actor_type:'manager', metadata:{ operation_id:operationId, amount, rental_amount:rentalAmount, deposit_amount:depositAmount, rental_and_deposit_amount:rentalAndDepositAmount, delivery_fee:deliveryFee, delivery_charge_mode:deliveryChargeMode, order_group_id:order.order_group_id || null, order_ids:groupedOrders.map(grouped => grouped.id) } }).catch(error => console.error('Bakai payment audit event failed:', error.message))));
       return reply(response, 201, { ok:true, payment });
     }
     if (payload.action === 'create_extension_bakai_payment') {
@@ -884,10 +916,16 @@ export default async function handler(request, response) {
         if (payment.request_id) await database.updateCustomerRequest(payment.request_id, customerRequest?.kind === 'replacement' ? { status:'in_progress' } : { status:'resolved', resolved_at:now });
         await database.createEvent({ order_id:order.id, event_type:'bakai_extension_payment_manually_confirmed_from_web', actor_type:'manager', metadata:{ operation_id:payment.operation_id, reference, amount:payment.amount, proposed_return_date:payment.proposed_return_date, request_kind:customerRequest?.kind || 'extension', replacement_laptop_id:customerRequest?.replacement_laptop_id || null } }).catch(error => console.error('Manual Bakai extension payment audit failed:', error.message));
       } else {
-        if (order.status === 'awaiting_payment') {
-          updatedOrder = await database.updateOrder(order.id, { status:'confirmed', payment_channel:'bakai_manual_review', payment_receipt_received_at:now, payment_confirmed_at:now });
-        } else updatedOrder = order;
-        await database.createEvent({ order_id:order.id, event_type:'bakai_payment_manually_confirmed_from_web', actor_type:'manager', metadata:{ operation_id:payment.operation_id, reference, amount:payment.amount } }).catch(error => console.error('Manual Bakai payment audit event failed:', error.message));
+        const groupId = String(paymentPayloadObject(payment.bank_payload).breakdown?.order_group_id || '').trim();
+        const groupedOrders = groupId ? await database.listOrdersByGroupId(groupId).catch(() => []) : [];
+        const paidOrders = groupedOrders.length ? groupedOrders : [order];
+        for (const item of paidOrders) {
+          if (item.status === 'awaiting_payment') {
+            const confirmed = await database.updateOrder(item.id, { status:'confirmed', payment_channel:'bakai_manual_review', payment_receipt_received_at:now, payment_confirmed_at:now });
+            if (String(item.id) === String(order.id)) updatedOrder = confirmed || item;
+          }
+          await database.createEvent({ order_id:item.id, event_type:'bakai_payment_manually_confirmed_from_web', actor_type:'manager', metadata:{ operation_id:payment.operation_id, reference, amount:payment.amount, order_group_id:groupId || null, order_ids:paidOrders.map(grouped => grouped.id) } }).catch(error => console.error('Manual Bakai payment audit event failed:', error.message));
+        }
       }
       return reply(response, 200, { ok:true, payment:updatedPayment, order:updatedOrder });
     }
