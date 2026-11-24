@@ -816,14 +816,36 @@ function requestForm(order) {
 }
 function replacementChoicesMarkup(orderId, days, alternatives = []) {
   if (!alternatives.length) return `<div class="cabinet-request-state is-warning"><strong>Продлить эту модель нельзя</strong><p>На нужные даты свободной замены пока нет. Оформите возврат или напишите в поддержку — менеджер проверит другие варианты.</p></div>`;
-  return `<form class="cabinet-inline-form" data-request="replacement_request" data-order="${escape(orderId)}"><input name="days" type="hidden" value="${Number(days)}"><label>Выберите замену на период продления</label><p>Документы и текущая заявка сохраняются. Менеджер подтвердит модель и откроет один счёт с перерасчётом.</p><div class="cabinet-replacement-options">${alternatives.map(item => `<label class="cabinet-replacement-option"><input type="radio" name="replacementLaptopId" value="${Number(item.id)}" required><span><b>${escape(item.title)}</b><small>${Number(item.daily_rate || 0).toLocaleString('ru-RU')} сом/день · скидка ${Number(item.discount_percent || 0)}%</small><em>За ${Number(days)} дн.: ${Number(item.estimated_amount || 0).toLocaleString('ru-RU')} сом · разница ${Number(item.difference || 0) >= 0 ? '+' : ''}${Number(item.difference || 0).toLocaleString('ru-RU')} сом</em></span></label>`).join('')}</div><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Выбрать замену</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
+  return `<form class="cabinet-inline-form" data-request="replacement_request" data-order="${escape(orderId)}"><label>Выберите замену на период продления</label><p>Документы и текущая заявка сохраняются. Менеджер подтвердит модель и откроет один счёт с перерасчётом.</p><div class="cabinet-replacement-options">${alternatives.map(item => `<label class="cabinet-replacement-option"><input type="radio" name="replacementLaptopId" value="${Number(item.id)}" required><div class="cabinet-replacement-option-content"><div class="cabinet-replacement-option-head"><b>${escape(item.title)}</b><strong>${Number(item.daily_rate || 0).toLocaleString('ru-RU')} сом/день</strong></div><small>Скидка ${Number(item.discount_percent || 0)}%</small><em>За ${Number(days)} дн.: ${Number(item.estimated_amount || 0).toLocaleString('ru-RU')} сом <i>${Number(item.difference || 0) >= 0 ? '+' : ''}${Number(item.difference || 0).toLocaleString('ru-RU')} сом</i></em></div></label>`).join('')}</div><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Выбрать замену</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
+}
+
+function replacementCategory(item = {}) {
+  const source = `${item.title || ''} ${Array.isArray(item.tags) ? item.tags.join(' ') : item.tags || ''}`.toLowerCase();
+  if (/(игр|3d|vfx|blender|гейм|rtx|gtx)/.test(source)) return 'gaming';
+  if (/(монтаж|график|дизайн|video|видео|photoshop|adobe)/.test(source)) return 'creative';
+  if (/(офис|уч[её]б|word|excel|экзамен|toefl|ielts|браузер)/.test(source)) return 'office';
+  return 'universal';
+}
+
+function syncPrepaymentReplacementOptions(form) {
+  if (!form) return;
+  const category = form.dataset.replacementFilter || 'all';
+  const query = String(form.querySelector('[data-prepayment-search]')?.value || '').trim().toLowerCase();
+  const options = [...form.querySelectorAll('[data-replacement-choice]')];
+  const matches = options.filter(option => {
+    const categoryMatch = category === 'all' || option.dataset.replacementCategory === category;
+    return categoryMatch && (!query || String(option.dataset.replacementSearch || '').includes(query));
+  });
+  options.forEach(option => { option.hidden = !matches.includes(option) || matches.indexOf(option) >= 4; });
+  form.querySelectorAll('[data-prepayment-filter]').forEach(button => button.classList.toggle('is-active', button.dataset.prepaymentFilter === category));
+  const result = form.querySelector('[data-replacement-results]');
+  if (result) result.textContent = matches.length > 4 ? `Показаны 4 из ${matches.length} моделей. Уточните поиск или категорию.` : matches.length ? `Найдено моделей: ${matches.length}.` : 'По этому запросу свободных моделей нет.';
 }
 
 function prepaymentReplacementChoicesMarkup(orderId, alternatives = []) {
   if (!alternatives.length) return `<div class="cabinet-request-state is-warning"><strong>Свободных моделей пока нет</strong><p>На эти даты другой свободной модели не найдено. Ваша текущая заявка сохранена — попробуйте позже или напишите в поддержку.</p></div>`;
-  const shown = alternatives.slice(0, 12);
-  const hiddenCount = Math.max(0, alternatives.length - shown.length);
-  return `<form class="cabinet-inline-form cabinet-prepayment-picker" data-request="replace_draft_laptop" data-order="${escape(orderId)}"><strong>Выберите замену ноутбука</strong><p>Показаны ближайшие свободные варианты по цене. Даты, способ получения и документы останутся в этой заявке.</p><div class="cabinet-replacement-options">${shown.map(item => `<label class="cabinet-replacement-option"><input type="radio" name="replacementLaptopId" value="${Number(item.id)}" required><span><b>${escape(item.title)}</b><small class="cabinet-replacement-rate">Ставка: ${Number(item.daily_rate || 0).toLocaleString('ru-RU')} сом / день · скидка ${Number(item.discount_percent || 0)}%</small><em>Итого за аренду: ${Number(item.total_amount || 0).toLocaleString('ru-RU')} сом <i>${Number(item.difference || 0) >= 0 ? '+' : '−'}${Math.abs(Number(item.difference || 0)).toLocaleString('ru-RU')} сом</i></em></span></label>`).join('')}</div>${hiddenCount ? `<p class="cabinet-form-hint">Показаны первые 12 вариантов из ${alternatives.length}. Если ни один не подходит, обратитесь в поддержку — менеджер подберёт модель из каталога.</p>` : ''}<div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Выбрать эту модель</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
+  const categories = [['all', 'Все'], ['office', 'Офис / учёба'], ['creative', 'Монтаж'], ['gaming', 'Игры / 3D'], ['universal', 'Универсальные']];
+  return `<form class="cabinet-inline-form cabinet-prepayment-picker" data-request="replace_draft_laptop" data-order="${escape(orderId)}" data-replacement-filter="all"><div class="cabinet-picker-heading"><div><strong>Выберите замену ноутбука</strong><p>Даты, способ получения и документы сохранятся. После выбора покажем новую сумму.</p></div><span>До оплаты</span></div><label class="cabinet-replacement-search"><span>Поиск модели</span><input data-prepayment-search type="search" placeholder="Название, процессор или задача" autocomplete="off"></label><div class="cabinet-replacement-filters" role="group" aria-label="Категория ноутбука">${categories.map(([key, label]) => `<button type="button" data-prepayment-filter="${key}" class="${key === 'all' ? 'is-active' : ''}">${label}</button>`).join('')}</div><p class="cabinet-form-hint" data-replacement-results></p><div class="cabinet-replacement-options">${alternatives.map((item, index) => { const category = replacementCategory(item); const difference = Number(item.difference || 0); return `<label class="cabinet-replacement-option" data-replacement-choice data-replacement-category="${category}" data-replacement-search="${escape(`${item.title || ''} ${Array.isArray(item.tags) ? item.tags.join(' ') : item.tags || ''}`.toLowerCase())}"${index >= 4 ? ' hidden' : ''}><input type="radio" name="replacementLaptopId" value="${Number(item.id)}" required><div class="cabinet-replacement-option-content"><div class="cabinet-replacement-option-head"><b>${escape(item.title)}</b><strong>${Number(item.daily_rate || 0).toLocaleString('ru-RU')} сом/день</strong></div><small>${({ office:'Офис / учёба', creative:'Монтаж / дизайн', gaming:'Игры / 3D', universal:'Универсальные' }[category])} · скидка ${Number(item.discount_percent || 0)}%</small><em><span>Итого за аренду: ${Number(item.total_amount || 0).toLocaleString('ru-RU')} сом</span><i>${difference >= 0 ? '+' : '−'}${Math.abs(difference).toLocaleString('ru-RU')} сом</i></em></div></label>`; }).join('')}</div><div class="cabinet-inline-row"><button class="cabinet-action" type="submit">Выбрать эту модель</button><button class="cabinet-cancel-panel" type="button">Отмена</button></div></form>`;
 }
 function promoStatus(promo) {
   if (promo.status === 'redeemed') return 'Использован';
@@ -1378,10 +1400,27 @@ document.addEventListener('click', event => {
       .catch(error => { message(error.message, 'error'); refreshWorkspace.disabled = false; refreshWorkspace.textContent = originalText; });
     return;
   }
+  const replacementFilter = event.target.closest('[data-prepayment-filter]');
+  if (replacementFilter) {
+    const form = replacementFilter.closest('.cabinet-prepayment-picker');
+    if (!form) return;
+    form.dataset.replacementFilter = replacementFilter.dataset.prepaymentFilter || 'all';
+    syncPrepaymentReplacementOptions(form);
+    return;
+  }
   const button = event.target.closest('[data-panel]');
   if (button) {
     const panel = document.getElementById(`panel-${button.dataset.order}`);
     if (!panel) return;
+    const requestedPanel = button.dataset.panel;
+    if (!panel.hidden && panel.dataset.currentPanel === requestedPanel) {
+      if (hasUnsavedDocumentDraft() && !window.confirm('Выбранные фото, видео и заполненные данные будут удалены. Закрыть форму?')) return;
+      panel.hidden = true;
+      panel.innerHTML = '';
+      delete panel.dataset.currentPanel;
+      setWorkspaceMode(panel.closest('#cabinet-order-workspace'));
+      return;
+    }
     if (!panel.hidden && hasUnsavedDocumentDraft()) {
       // A second tap on "Documents" or a tap on support must not silently
       // close the document form and discard local files.
@@ -1389,37 +1428,34 @@ document.addEventListener('click', event => {
       return;
     }
     if (!panel.hidden) {
-      // The model picker is the only compact chooser that is intentionally
-      // toggleable: a second tap returns to the application immediately.
-      if (button.dataset.panel === 'prepayment-replacement') {
-        panel.hidden = true;
-        panel.innerHTML = '';
-        panel.classList.remove('is-document-result');
-        setWorkspaceMode(null);
-        return;
-      }
-      // A form can already be open below the fold (for example after a
-      // delivery-status update). A repeated tap must take the customer to it,
-      // not look like a broken button.
-      window.requestAnimationFrame(() => panel.scrollIntoView({ behavior:'smooth', block:'start' }));
-      return;
+      // Moving to another step replaces the old panel; phone users must never
+      // have a model picker and a document form competing on the same screen.
+      panel.innerHTML = '';
+      panel.classList.remove('is-document-result');
     }
+    const originalText = button.textContent;
     button.disabled = true;
     button.textContent = 'Открываем…';
     panel.hidden = false;
-    panel.classList.toggle('is-document-result', button.dataset.panel === 'documents' && ['submitted', 'approved'].includes(button.dataset.documentMode || ''));
+    panel.dataset.currentPanel = requestedPanel;
+    panel.classList.toggle('is-document-result', requestedPanel === 'documents' && ['submitted', 'approved'].includes(button.dataset.documentMode || ''));
     const sourceOrder = cabinetOrders.find(order => String(order.id) === String(button.dataset.order));
-    panel.innerHTML = button.dataset.panel === 'prepayment-replacement'
+    panel.innerHTML = requestedPanel === 'prepayment-replacement'
       ? `<button class="cabinet-workspace-close" type="button" data-close-workspace aria-label="Закрыть выбор модели">× <span>К заявке</span></button><div class="cabinet-loading"><span></span>Проверяем свободные модели…</div>`
-      : `<button class="cabinet-workspace-close" type="button" data-close-workspace aria-label="Закрыть форму">× <span>К заявке</span></button>${panelMarkup(button.dataset.panel, button.dataset.order, { mode:button.dataset.documentMode, kinds:button.dataset.documentKinds, requestId:button.dataset.requestId, days:button.dataset.extensionDays, offerSmsVerified:Boolean(sourceOrder?.offer_otp_verified_at), benefitRequested:sourceOrder?.benefit_requested_type || '', deliveryType:sourceOrder?.delivery_type || '', deliveryAddress:sourceOrder?.delivery_address || '', deliveryPreferredTime:sourceOrder?.delivery_preferred_time || '', lockerAddress:sourceOrder?.locker_address || '', address:sourceOrder?.return_collection_address || sourceOrder?.residence_address || '', name:sourceOrder?.return_contact_name || sourceOrder?.customer_name || '', phone:sourceOrder?.return_contact_phone || sourceOrder?.customer_phone || '' })}`;
-    if (button.dataset.panel === 'prepayment-replacement') {
+      : `<button class="cabinet-workspace-close" type="button" data-close-workspace aria-label="Закрыть форму">× <span>К заявке</span></button>${panelMarkup(requestedPanel, button.dataset.order, { mode:button.dataset.documentMode, kinds:button.dataset.documentKinds, requestId:button.dataset.requestId, days:button.dataset.extensionDays, offerSmsVerified:Boolean(sourceOrder?.offer_otp_verified_at), benefitRequested:sourceOrder?.benefit_requested_type || '', deliveryType:sourceOrder?.delivery_type || '', deliveryAddress:sourceOrder?.delivery_address || '', deliveryPreferredTime:sourceOrder?.delivery_preferred_time || '', lockerAddress:sourceOrder?.locker_address || '', address:sourceOrder?.return_collection_address || sourceOrder?.residence_address || '', name:sourceOrder?.return_contact_name || sourceOrder?.customer_name || '', phone:sourceOrder?.return_contact_phone || sourceOrder?.customer_phone || '' })}`;
+    if (requestedPanel === 'prepayment-replacement') {
       request('POST', { action:'prepayment_replacement_options', orderId:button.dataset.order })
         .then((result) => {
           panel.innerHTML = `<button class="cabinet-workspace-close" type="button" data-close-workspace aria-label="Закрыть форму">× <span>К заявке</span></button>${prepaymentReplacementChoicesMarkup(button.dataset.order, result.alternatives || [])}`;
+          syncPrepaymentReplacementOptions(panel.querySelector('.cabinet-prepayment-picker'));
         })
         .catch((error) => {
           panel.innerHTML = `<button class="cabinet-workspace-close" type="button" data-close-workspace aria-label="Закрыть форму">× <span>К заявке</span></button><div class="cabinet-request-state is-error"><strong>Модель пока нельзя заменить</strong><p>${escape(error.message)}</p></div>`;
-        });
+        })
+        .finally(() => { button.disabled = false; button.textContent = originalText; });
+    } else {
+      button.disabled = false;
+      button.textContent = originalText;
     }
     setWorkspaceMode(panel.hidden ? null : panel);
     // Action forms are rendered after the order details. On a phone they can
@@ -1441,14 +1477,18 @@ document.addEventListener('click', event => {
   if (event.target.closest('.cabinet-cancel-panel')) {
     const panel = event.target.closest('.cabinet-request-panel');
     if (hasUnsavedDocumentDraft() && !window.confirm('Выбранные фото, видео и заполненные данные будут удалены. Закрыть форму?')) return;
-    panel.hidden = true; panel.innerHTML = ''; setWorkspaceMode(panel.closest('#cabinet-order-workspace'));
+    panel.hidden = true; panel.innerHTML = ''; delete panel.dataset.currentPanel; setWorkspaceMode(panel.closest('#cabinet-order-workspace'));
     return;
   }
   if (event.target.closest('[data-close-workspace]')) {
     const panel = event.target.closest('.cabinet-request-panel');
     if (hasUnsavedDocumentDraft() && !window.confirm('Выбранные фото, видео и заполненные данные будут удалены. Закрыть форму?')) return;
-    panel.hidden = true; panel.innerHTML = ''; setWorkspaceMode(panel.closest('#cabinet-order-workspace'));
+    panel.hidden = true; panel.innerHTML = ''; delete panel.dataset.currentPanel; setWorkspaceMode(panel.closest('#cabinet-order-workspace'));
   }
+});
+document.addEventListener('input', event => {
+  if (!event.target.matches('[data-prepayment-search]')) return;
+  syncPrepaymentReplacementOptions(event.target.closest('.cabinet-prepayment-picker'));
 });
 document.getElementById('cabinet-document-viewer-close')?.addEventListener('click', closeDocumentViewer);
 documentViewer?.addEventListener('click', event => { if (event.target === documentViewer) closeDocumentViewer(); });
