@@ -798,6 +798,14 @@ function renderBookingCart() {
   });
 }
 
+function discardSelectedOrder() {
+  if (!bookingLaptopIds.size) return;
+  bookingLaptopIds.clear();
+  currentLaptop = null;
+  renderBookingCart();
+  filterAndSearch();
+}
+
 function renderBookingOrderItems() {
   if (!modalOrderItems) return;
   const items = bookingItems();
@@ -1695,8 +1703,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       openCatalogForLaptop(previewCard.dataset.laptopId);
     }
   });
-  closeFullCatalog?.addEventListener('click', () => { if (!exitPrepaymentReplacementCatalog()) setCatalogBrowser(false); });
-  closeFullCatalogBottom?.addEventListener('click', () => { if (!exitPrepaymentReplacementCatalog()) setCatalogBrowser(false); });
+  const closeCatalogAndDiscardOrder = () => {
+    if (exitPrepaymentReplacementCatalog()) return;
+    setCatalogBrowser(false);
+    discardSelectedOrder();
+  };
+  closeFullCatalog?.addEventListener('click', closeCatalogAndDiscardOrder);
+  closeFullCatalogBottom?.addEventListener('click', closeCatalogAndDiscardOrder);
   // The full catalogue redraws its cards during every search/filter change.
   // One delegated handler keeps model selection alive on Safari and Chrome
   // even when the card was just re-rendered under the user's finger.
@@ -1715,10 +1728,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   catalogBrowser?.addEventListener('click', (event) => {
     if (event.target.closest('[data-cancel-prepayment-replacement]')) { exitPrepaymentReplacementCatalog(); return; }
-    if (event.target === catalogBrowser) { if (!exitPrepaymentReplacementCatalog()) setCatalogBrowser(false); }
+    if (event.target === catalogBrowser) closeCatalogAndDiscardOrder();
   });
   window.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && !catalogBrowser?.hidden) { if (!exitPrepaymentReplacementCatalog()) setCatalogBrowser(false); }
+    if (event.key === 'Escape' && !catalogBrowser?.hidden) closeCatalogAndDiscardOrder();
   });
   window.addEventListener('resize', () => {
     syncCatalogShowcaseLayout();
@@ -1788,7 +1801,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     modal?.classList.remove('active');
     setOrderModalScrollLock(false);
     resetOrderSubmit();
-    renderBookingCart();
+    discardSelectedOrder();
     if (clearSharedModelFromUrl()) document.getElementById('catalog')?.scrollIntoView({ behavior:'smooth', block:'start' });
   }
 
