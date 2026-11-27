@@ -31,6 +31,7 @@ function clientIp(request) { return String(request.headers['x-forwarded-for'] ||
 function allowOrigin(request, response) { const origin = request.headers.origin; if (origin && /^https:\/\/(?:[a-z0-9-]+\.)?rentop(?:\.com\.kg|-[-a-z0-9]+\.vercel\.app)$/i.test(origin)) response.setHeader('Access-Control-Allow-Origin', origin); response.setHeader('Vary', 'Origin'); }
 function label(delivery) { return ({ arca_locker:'ARCHA POINT 24/7', delivery:'Доставка курьером', pickup:'Архивный способ получения' }[delivery] || 'Уточняется'); }
 function addDays(isoDate, days) { const date = new Date(`${isoDate}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); }
+function todayInBishkek() { const parts = new Intl.DateTimeFormat('en-US', { timeZone:'Asia/Bishkek', year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(new Date()); const value = Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value])); return `${value.year}-${value.month}-${value.day}`; }
 function discountForTerm(days, benefits = []) {
   const tariff = days >= 15 ? 30 : days >= 7 ? 15 : 0;
   const benefit = benefits.some(item => item.status === 'approved' && (!item.expires_at || new Date(item.expires_at) > new Date())) ? 10 : 0;
@@ -84,6 +85,40 @@ export default async function handler(request, response) {
   if (!secret) return json(response, 503, { error:'Вход в кабинет скоро будет доступен. Настраиваем защищённое подтверждение номера.' });
   const database = createSupabaseApi(config);
   const now = new Date();
+  // A draft can sit in the cabinet for several days before the customer comes
+  // back. Never let a past unpaid period prevent document saving or silently
+  // leave the customer with an impossible rental date. We preserve its term,
+  // move the whole order (including every item in a grouped order) to the
+  // earliest available future period, and keep paid/reserved orders untouched.
+  const refreshExpiredDraftSchedule = async (order) => {
+    if (!['draft', 'pending_review'].includes(String(order.status || ''))) return order;
+    const today = todayInBishkek();
+    if (!order.rental_start_date || String(order.rental_start_date) >= today) return order;
+    const group = order.order_group_id ? await database.listOrdersByGroupId(order.order_group_id) : [order];
+    const orders = group.length ? group : [order];
+    const payments = (await Promise.all(orders.map(item => database.listOrderPayments(item.id).catch(() => [])))).flat();
+    if (payments.some(payment => ['awaiting_payment', 'paid', 'confirmed'].includes(String(payment.status || '')))) return order;
+    const candidateStart = addDays(today, 1);
+    let startDate = candidateStart;
+    let endDates = [];
+    let found = false;
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+      endDates = orders.map(item => addDays(startDate, Math.max(1, Number(item.rental_days || 0))));
+      const conflicts = await Promise.all(orders.map((item, index) => database.findOverlappingBlockingOrder(item.id, item.laptop_id, startDate, endDates[index])));
+      if (!conflicts.some(Boolean)) { found = true; break; }
+      startDate = addDays(startDate, 1);
+      endDates = [];
+    }
+    if (!found || !endDates.length) return order;
+    const previousStart = order.rental_start_date;
+    const updatedRows = await Promise.all(orders.map(async (item, index) => {
+      const updated = await database.updateOrder(item.id, { rental_start_date:startDate, rental_end_date:endDates[index], draft_archived_at:null, draft_archived_by:null });
+      await database.createEvent({ order_id:item.id, event_type:'customer_rescheduled_expired_unpaid_draft_from_cabinet', actor_type:'system', metadata:{ previous_start_date:item.rental_start_date, previous_end_date:item.rental_end_date, rental_start_date:startDate, rental_end_date:endDates[index] } });
+      return updated;
+    }));
+    const own = updatedRows.find(item => String(item?.id) === String(order.id)) || order;
+    return { ...order, ...own, schedule_adjusted:true, previous_rental_start_date:previousStart };
+  };
   const hydrate = async (phone) => {
     // The cabinet opens current work plus recent history. A bounded history
     // avoids multiplying six data reads for every old test application.
@@ -221,8 +256,10 @@ export default async function handler(request, response) {
         const profile = await database.saveCustomerProfile({ phone:session.phone, full_name:fullName });
         return json(response, 200, { ok:true, profile });
       }
-      const order = await database.getOrder(String(payload.orderId || ''));
+      let order = await database.getOrder(String(payload.orderId || ''));
       if (!order || order.customer_phone !== session.phone) return json(response, 404, { error:'Заявка не найдена.' });
+      const draftActions = new Set(['save_residence_address', 'save_delivery_preferences', 'accept_offer', 'request_offer_sms_consent', 'verify_offer_sms_consent', 'create_document_upload', 'register_document', 'delete_draft_document', 'save_order_comment', 'prepayment_replacement_options', 'replace_draft_laptop']);
+      if (draftActions.has(payload.action)) order = await refreshExpiredDraftSchedule(order);
       if (payload.action === 'create_document_download') {
         const document = await database.getOrderDocument(String(payload.documentId || ''));
         if (!document || document.order_id !== order.id) return json(response, 404, { error:'Файл не найден.' });
