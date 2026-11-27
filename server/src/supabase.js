@@ -104,10 +104,15 @@ export function createSupabaseApi(config) {
       // URL safely, preventing an empty edge-cached lookup from surviving
       // after a customer creates an order for the same phone.
       const readStamp = encodeURIComponent(new Date().toISOString());
-      const exact = await request(
-        `rental_orders?customer_phone=eq.${encodeURIComponent(phone)}` +
-        `&created_at=lte.${readStamp}&select=${customerOrderSelect}&order=updated_at.desc&limit=${safeLimit}`
-      );
+      const orderUrl = `rental_orders?customer_phone=eq.${encodeURIComponent(phone)}` +
+        `&created_at=lte.${readStamp}&select=${customerOrderSelect}&order=updated_at.desc&limit=${safeLimit}`;
+      // The web deployment can arrive a moment before the SQL migration. Keep
+      // existing customer cabinets readable in that short window, then use
+      // the richer reservation fields as soon as the migration is present.
+      const withoutReservationFields = orderUrl.replace(',draft_archived_at,reservation_amount,reservation_paid_at,reservation_balance_due_at', '');
+      let exact;
+      try { exact = await request(orderUrl); }
+      catch (error) { exact = await request(withoutReservationFields); }
       if (exact?.length) return exact;
 
       // Older orders may have been imported with a different visual phone
@@ -117,10 +122,11 @@ export function createSupabaseApi(config) {
       const digits = phoneDigits(phone);
       const suffix = digits.slice(-6);
       if (!suffix) return [];
-      const similar = await request(
-        `rental_orders?customer_phone=ilike.*${encodeURIComponent(suffix)}` +
-        `&created_at=lte.${readStamp}&select=${customerOrderSelect}&order=updated_at.desc&limit=${safeLimit}`
-      );
+      const similarUrl = `rental_orders?customer_phone=ilike.*${encodeURIComponent(suffix)}` +
+        `&created_at=lte.${readStamp}&select=${customerOrderSelect}&order=updated_at.desc&limit=${safeLimit}`;
+      let similar;
+      try { similar = await request(similarUrl); }
+      catch (error) { similar = await request(similarUrl.replace(',draft_archived_at,reservation_amount,reservation_paid_at,reservation_balance_due_at', '')); }
       return (similar || []).filter((order) => phoneDigits(order.customer_phone) === digits);
     },
     getOrderPayment: (orderId) => getOne(`rental_order_payments?order_id=eq.${encodeURIComponent(orderId)}&select=*&order=created_at.desc&limit=1`),
@@ -243,13 +249,14 @@ export function createSupabaseApi(config) {
     }).then((rows) => rows?.[0] || null),
     getAdminAction: (orderId) => getOne(`rental_order_admin_actions?order_id=eq.${encodeURIComponent(orderId)}&select=*`),
     clearAdminAction: (orderId) => request(`rental_order_admin_actions?order_id=eq.${encodeURIComponent(orderId)}`, { method: 'DELETE' }),
-    listRecentOrders: (limit = 12, statuses = []) => {
+    listRecentOrders: async (limit = 12, statuses = []) => {
       const allowedStatuses = Array.isArray(statuses) ? statuses.filter(Boolean) : [];
       const statusFilter = allowedStatuses.length ? `&status=in.(${allowedStatuses.map(encodeURIComponent).join(',')})` : '';
       const readStamp = encodeURIComponent(new Date().toISOString());
-      return request(
-        `rental_orders?updated_at=lte.${readStamp}&select=id,laptop_id,customer_name,customer_phone,rental_start_date,rental_end_date,rental_days,daily_rate,discount_percent,status,total_amount,deposit_amount,delivery_type,locker_address,locker_status,delivery_address,delivery_contact_name,delivery_contact_phone,delivery_preferred_time,delivery_dispatch_mode,delivery_dispatched_at,benefit_requested_type,offer_version,offer_accepted_at,offer_otp_verified_at,residence_address,supporting_document_type,identity_document_number,identity_document_issuer,identity_verified_at,identity_verified_by,customer_note,rental_purpose,manager_note,return_condition_note,admin_note,archa_handoff_sent_at,locker_loading_reference,locker_loading_code,locker_loaded_at,customer_access_sent_at,replacement_pending_laptop_id,replacement_exchange_method,replacement_exchange_status,replacement_incident_reason,draft_archived_at,draft_archived_by,reservation_amount,reservation_paid_at,reservation_balance_due_at,return_method,return_locker_address,return_collection_address,return_contact_name,return_contact_phone,return_preferred_time,return_delivery_payer,return_destination_address,return_destination_note,return_access_code,return_access_sent_at,alternative_security_status,alternative_security_requirements,alternative_security_note,alternative_security_expires_at,alternative_security_decided_at,alternative_security_decided_by,emergency_contact_name,emergency_contact_relationship,emergency_contact_phone,emergency_contact_consent_at,operation_city,representative_name,representative_phone,early_return_settlement_type,early_return_settlement_amount,early_return_settlement_note,early_return_settled_at,early_return_settled_by,created_at,updated_at&order=updated_at.desc&limit=${Math.min(Math.max(Number(limit) || 12, 1), 100)}${statusFilter}`
-      );
+      const url = `rental_orders?updated_at=lte.${readStamp}&select=id,laptop_id,customer_name,customer_phone,rental_start_date,rental_end_date,rental_days,daily_rate,discount_percent,status,total_amount,deposit_amount,delivery_type,locker_address,locker_status,delivery_address,delivery_contact_name,delivery_contact_phone,delivery_preferred_time,delivery_dispatch_mode,delivery_dispatched_at,benefit_requested_type,offer_version,offer_accepted_at,offer_otp_verified_at,residence_address,supporting_document_type,identity_document_number,identity_document_issuer,identity_verified_at,identity_verified_by,customer_note,rental_purpose,manager_note,return_condition_note,admin_note,archa_handoff_sent_at,locker_loading_reference,locker_loading_code,locker_loaded_at,customer_access_sent_at,replacement_pending_laptop_id,replacement_exchange_method,replacement_exchange_status,replacement_incident_reason,draft_archived_at,draft_archived_by,reservation_amount,reservation_paid_at,reservation_balance_due_at,return_method,return_locker_address,return_collection_address,return_contact_name,return_contact_phone,return_preferred_time,return_delivery_payer,return_destination_address,return_destination_note,return_access_code,return_access_sent_at,alternative_security_status,alternative_security_requirements,alternative_security_note,alternative_security_expires_at,alternative_security_decided_at,alternative_security_decided_by,emergency_contact_name,emergency_contact_relationship,emergency_contact_phone,emergency_contact_consent_at,operation_city,representative_name,representative_phone,early_return_settlement_type,early_return_settlement_amount,early_return_settlement_note,early_return_settled_at,early_return_settled_by,created_at,updated_at&order=updated_at.desc&limit=${Math.min(Math.max(Number(limit) || 12, 1), 100)}${statusFilter}`;
+      const legacyUrl = url.replace(',draft_archived_at,draft_archived_by,reservation_amount,reservation_paid_at,reservation_balance_due_at', '');
+      try { return await request(url); }
+      catch (error) { return request(legacyUrl); }
     },
     listRentalReminderCandidates: () => request(
       'rental_orders?select=id,customer_name,customer_phone,rental_end_date,rental_ends_at,status' +
