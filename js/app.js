@@ -34,6 +34,8 @@ let catalogOpening = false;
 let archaSelectionMode = false;
 let cabinetSession = null;
 const CABINET_BOOKING_KEY = 'rentop-pending-booking-v1';
+const PREPAYMENT_REPLACEMENT_CATALOG_KEY = 'rentop-prepayment-replacement-v1';
+let prepaymentReplacementContext = null;
 
 // A new customer leaves the storefront briefly to confirm their phone. Keep
 // the selected model in both session and local storage: some mobile browsers
@@ -58,6 +60,23 @@ function clearPendingBooking() {
     try { storage.removeItem(CABINET_BOOKING_KEY); } catch { /* no-op */ }
   });
 }
+
+function readPrepaymentReplacementContext() {
+  for (const storage of [window.sessionStorage, window.localStorage]) {
+    try {
+      const saved = JSON.parse(storage.getItem(PREPAYMENT_REPLACEMENT_CATALOG_KEY) || 'null');
+      if (saved?.orderId) return saved;
+    } catch { /* Try the other storage before giving up. */ }
+  }
+  return null;
+}
+function clearPrepaymentReplacementContext() {
+  [window.sessionStorage, window.localStorage].forEach((storage) => {
+    try { storage.removeItem(PREPAYMENT_REPLACEMENT_CATALOG_KEY); } catch { /* no-op */ }
+  });
+  prepaymentReplacementContext = null;
+}
+const isPrepaymentReplacementMode = () => Boolean(prepaymentReplacementContext?.orderId);
 
 // Каталог показывает небольшой набор за раз: это избавляет мобильный экран
 // от бесконечной ленты, но сохраняет доступ ко всем моделям.
@@ -320,6 +339,7 @@ function updateCatalogPager() {
 // ========== RENDER CATALOG ==========
 function renderLaptops(items, append = false, target = catalogGrid) {
   if (!target) return;
+  const replacementMode = isPrepaymentReplacementMode();
 
   if (!append) {
     target.innerHTML = '';
@@ -348,14 +368,14 @@ function renderLaptops(items, append = false, target = catalogGrid) {
         : '';
 
     const card = document.createElement('div');
-    card.className = 'card';
+    card.className = `card${replacementMode ? ' replacement-catalog-card' : ''}`;
     card.dataset.laptopId = String(laptop.id);
     card.innerHTML = `
       <div class="card-topline">
         <span class="availability-status ${statusClass}">
           ${availability.label}
         </span>
-        <div class="card-topline-actions">
+        <div class="card-topline-actions" ${replacementMode ? 'hidden' : ''}>
           <button class="catalog-share-button" data-share-laptop="${laptop.id}" type="button" aria-label="Скопировать ссылку на ${laptop.title}" title="Скопировать ссылку">↗</button>
           <button class="save-laptop ${isSaved ? 'is-saved' : ''}" data-id="${laptop.id}" type="button" aria-label="${isSaved ? 'Убрать из избранного' : 'Сохранить ноутбук'}" aria-pressed="${isSaved}">
             ${isSaved ? '♥' : '♡'}
@@ -389,13 +409,13 @@ function renderLaptops(items, append = false, target = catalogGrid) {
           <div class="price-main">${laptop.priceText || '—'}</div>
           <div class="price-sub">${isRent ? 'при аренде от 2-х дней' : 'в наличии / под заказ'}</div>
         </div>
-        <button class="btn-card" data-id="${laptop.id}">
-          ${isRent ? (archaSelectionMode ? 'Выбрать для ARCHA POINT' : 'Забронировать') : 'Купить / Предзаказ'}
+        <button class="btn-card" data-id="${laptop.id}" ${replacementMode && !isRent ? 'disabled' : ''}>
+          ${replacementMode ? (isRent ? 'Выбрать для замены' : 'Недоступно для аренды') : (isRent ? (archaSelectionMode ? 'Выбрать для ARCHA POINT' : 'Забронировать') : 'Купить / Предзаказ')}
         </button>
-        ${isRent ? `<button class="catalog-compare-button ${bookingLaptopIds.has(laptop.id) ? 'is-selected' : ''}" data-add-to-order="${laptop.id}">${bookingLaptopIds.has(laptop.id) ? '✓ Добавлен в заказ' : 'Добавить в заказ'}</button>` : ''}
-        <button class="catalog-compare-button ${isCompared ? 'is-selected' : ''}" data-compare-laptop="${laptop.id}" type="button" aria-pressed="${isCompared}">
+        ${isRent && !replacementMode ? `<button class="catalog-compare-button ${bookingLaptopIds.has(laptop.id) ? 'is-selected' : ''}" data-add-to-order="${laptop.id}">${bookingLaptopIds.has(laptop.id) ? '✓ Добавлен в заказ' : 'Добавить в заказ'}</button>` : ''}
+        ${replacementMode ? '' : `<button class="catalog-compare-button ${isCompared ? 'is-selected' : ''}" data-compare-laptop="${laptop.id}" type="button" aria-pressed="${isCompared}">
           ${isCompared ? '✓ В сравнении' : 'Сравнить'}
-        </button>
+        </button>`}
       </div>
     `;
 
@@ -406,6 +426,7 @@ function renderLaptops(items, append = false, target = catalogGrid) {
   target.querySelectorAll('.btn-card').forEach(btn => {
     btn.onclick = (e) => {
       const id = Number(e.currentTarget.dataset.id);
+      if (replacementMode) { choosePrepaymentReplacement(id, e.currentTarget); return; }
       if (catalogBrowser && !catalogBrowser.hidden) setCatalogBrowser(false);
       openOrderModal(id, { deliveryType: archaSelectionMode ? 'arca_locker' : 'delivery' });
     };
@@ -546,6 +567,59 @@ function setCatalogBrowser(open, { render = true } = {}) {
     renderLaptops(filteredLaptops, false, catalogGrid);
     catalogBrowser.querySelector('.catalog-browser-dialog')?.focus();
   }
+}
+
+function renderPrepaymentReplacementCatalogUi() {
+  const active = isPrepaymentReplacementMode();
+  document.documentElement.classList.toggle('prepayment-replacement-catalog', active);
+  const title = document.getElementById('catalog-browser-title');
+  const copy = document.querySelector('.catalog-browser-copy p');
+  const utilityStrip = document.querySelector('.catalog-utility-strip');
+  let notice = document.getElementById('prepayment-replacement-catalog-notice');
+  if (!active) {
+    title && (title.textContent = 'Каталог ноутбуков');
+    copy && (copy.textContent = 'Выберите задачу, найдите подходящую модель и забронируйте онлайн.');
+    notice?.remove();
+    return;
+  }
+  title && (title.textContent = 'Выберите замену ноутбука');
+  copy && (copy.textContent = 'Вы выбираете модель для уже созданной заявки. Даты, способ получения и документы сохранятся.');
+  if (!notice && utilityStrip) {
+    notice = document.createElement('div');
+    notice.id = 'prepayment-replacement-catalog-notice';
+    utilityStrip.before(notice);
+  }
+  if (notice) notice.innerHTML = `<strong>Заявка ${prepaymentReplacementContext.reference || ''}</strong><span>Выберите одну свободную модель. После нажатия «Выбрать для замены» сумма пересчитается автоматически.</span><button type="button" data-cancel-prepayment-replacement>Вернуться к заявке</button>`;
+}
+
+async function choosePrepaymentReplacement(laptopId, button) {
+  if (!isPrepaymentReplacementMode()) return;
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Проверяем…';
+  try {
+    const response = await fetch('/api/account', {
+      method: 'POST', credentials: 'same-origin', headers: { 'content-type':'application/json' },
+      body:JSON.stringify({ action:'replace_draft_laptop', orderId:prepaymentReplacementContext.orderId, replacementLaptopId:laptopId })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Не удалось заменить модель.');
+    const orderId = prepaymentReplacementContext.orderId;
+    clearPrepaymentReplacementContext();
+    window.location.assign(`/account?replacement_done=${encodeURIComponent(orderId)}`);
+  } catch (error) {
+    alert(error.message || 'Не удалось заменить модель. Попробуйте другую.');
+    button.disabled = false;
+    button.textContent = originalText;
+  }
+}
+
+function exitPrepaymentReplacementCatalog() {
+  if (!isPrepaymentReplacementMode()) return false;
+  const orderId = prepaymentReplacementContext.orderId;
+  clearPrepaymentReplacementContext();
+  window.location.assign(`/account?replacement_cancelled=${encodeURIComponent(orderId)}`);
+  return true;
 }
 
 function openCatalogWithLoading() {
@@ -1524,6 +1598,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   availabilityLoaded = availability.ok;
   await getCabinetSession();
   updateOrderAuthUi();
+  prepaymentReplacementContext = readPrepaymentReplacementContext();
+  if (isPrepaymentReplacementMode()) {
+    const order = cabinetSession?.orders?.find(item => String(item.id) === String(prepaymentReplacementContext.orderId));
+    const paymentStarted = ['awaiting_payment', 'paid', 'confirmed'].includes(String(order?.payment?.status || ''));
+    if (!cabinetSession || !order || !['draft', 'pending_review'].includes(String(order.status || '')) || paymentStarted) {
+      clearPrepaymentReplacementContext();
+      window.location.replace('/account');
+      return;
+    }
+    activeCategoryFilter = 'rent';
+    activeUseFilter = 'all';
+    savedOnly = false;
+    categoryFilterButtons.forEach(button => button.classList.toggle('active', button.dataset.filter === 'rent'));
+    useFilterButtons.forEach(button => button.classList.toggle('active', button.dataset.use === 'all'));
+    renderPrepaymentReplacementCatalogUi();
+    filterAndSearch();
+    openCatalogWithLoading();
+  }
   const linkedLaptopId = new URLSearchParams(window.location.search).get('model');
   if (linkedLaptopId && laptops.some(laptop => String(laptop.id) === String(linkedLaptopId))) {
     // A shared link is for viewing and comparing a model. Opening a booking
@@ -1570,8 +1662,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       openCatalogForLaptop(previewCard.dataset.laptopId);
     }
   });
-  closeFullCatalog?.addEventListener('click', () => setCatalogBrowser(false));
-  closeFullCatalogBottom?.addEventListener('click', () => setCatalogBrowser(false));
+  closeFullCatalog?.addEventListener('click', () => { if (!exitPrepaymentReplacementCatalog()) setCatalogBrowser(false); });
+  closeFullCatalogBottom?.addEventListener('click', () => { if (!exitPrepaymentReplacementCatalog()) setCatalogBrowser(false); });
   savedOnlyButton?.addEventListener('click', () => {
     savedOnly = !savedOnly;
     filterAndSearch();
@@ -1580,10 +1672,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (comparisonLaptopIds.size) comparisonPanel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
   catalogBrowser?.addEventListener('click', (event) => {
-    if (event.target === catalogBrowser) setCatalogBrowser(false);
+    if (event.target.closest('[data-cancel-prepayment-replacement]')) { exitPrepaymentReplacementCatalog(); return; }
+    if (event.target === catalogBrowser) { if (!exitPrepaymentReplacementCatalog()) setCatalogBrowser(false); }
   });
   window.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && !catalogBrowser?.hidden) setCatalogBrowser(false);
+    if (event.key === 'Escape' && !catalogBrowser?.hidden) { if (!exitPrepaymentReplacementCatalog()) setCatalogBrowser(false); }
   });
   window.addEventListener('resize', () => {
     syncCatalogShowcaseLayout();

@@ -72,6 +72,7 @@ let showingArchivedOrders = false;
 const canArchiveOrder = order => ['completed', 'cancelled', 'rejected'].includes(String(order?.status || ''));
 const activeWorkspaceOrderId = () => String(rentalsEl?.querySelector('#cabinet-order-workspace')?.dataset.orderWorkspace || '');
 const PENDING_BOOKING_KEY = 'rentop-pending-booking-v1';
+const PREPAYMENT_REPLACEMENT_CATALOG_KEY = 'rentop-prepayment-replacement-v1';
 // Prevent an older "check session" response from replacing a newer SMS login.
 let sessionViewEpoch = 0;
 const ARCHA_LOCATIONS = [
@@ -718,7 +719,7 @@ function actionPanel(order) {
     ? `<section class="cabinet-pickup-flow cabinet-manager-replacement-offer"><strong>Rentop предлагает заменить ноутбук</strong><p><b>${escape(order.prepayment_replacement_offer_title || 'Доступная модель')}</b> · новая сумма <b>${Number(order.prepayment_replacement_offer_total_amount || 0).toLocaleString('ru-RU')} сом</b>.</p><p>${escape(order.prepayment_replacement_offer_reason || 'Менеджер предложил доступную альтернативу на ваши даты.')}</p><p>Заявка не изменится без вашего решения. Перед подтверждением мы ещё раз проверим, свободна ли модель.</p><div class="cabinet-actions"><button class="cabinet-action" data-accept-prepayment-offer="${order.id}">Согласиться на замену</button><button class="cabinet-action secondary" data-decline-prepayment-offer="${order.id}">Не подходит</button></div></section>`
     : '';
   const modelChange = ['draft', 'pending_review'].includes(String(order.status || '')) && !paymentStarted
-    ? `<section class="cabinet-model-change"><span class="cabinet-step-icon" aria-hidden="true">↻</span><div><strong>Не подошла модель?</strong><p>Выберите другой свободный ноутбук. Заявка, даты и документы сохранятся, а сумма пересчитается автоматически.</p><button class="cabinet-action secondary" data-panel="prepayment-replacement" data-order="${order.id}">Изменить модель <span aria-hidden="true">→</span></button></div></section>`
+    ? `<section class="cabinet-model-change"><span class="cabinet-step-icon" aria-hidden="true">↻</span><div><strong>Не подошла модель?</strong><p>Откроется основной каталог Rentop. Заявка, даты и документы сохранятся, а сумма пересчитается автоматически.</p><button class="cabinet-action secondary" data-open-replacement-catalog="${order.id}">Изменить модель <span aria-hidden="true">→</span></button></div></section>`
     : '';
   const whatsapp = supportWhatsappUrl ? `<a class="cabinet-action ghost cabinet-whatsapp" href="${escape(supportWhatsappUrl)}?text=${encodeURIComponent(`Здравствуйте! Нужна помощь по заявке ${order.reference}.`)}" target="_blank" rel="noopener" aria-label="Написать в WhatsApp по заявке ${escape(order.reference)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5A10.6 10.6 0 0 0 3.1 16.1L2 22l6-1.6A10.5 10.5 0 1 0 20.5 3.5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8.2 6.9c.3-.7.7-.7 1.1-.6l1.5 2c.3.4.2.8-.1 1.1l-.7.7c.9 1.8 2.3 3.2 4.1 4.1l.7-.7c.3-.3.7-.4 1.1-.1l2 1.5c.1.4.1.8-.6 1.1-.8.3-1.7.5-2.5.3-4.4-1.1-7.4-4.1-8.5-8.5-.2-.8 0-1.7.3-2.5Z" fill="currentColor"/></svg><span>Написать в WhatsApp</span></a>` : '';
   if (['requested', 'submitted'].includes(order.alternative_security_status)) {
@@ -1030,6 +1031,8 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   const accountParams = new URLSearchParams(window.location.search);
   const created = accountParams.get('created');
   const autoOpenDocuments = accountParams.get('open') === 'documents';
+  const replacementDone = accountParams.get('replacement_done');
+  const replacementCancelled = accountParams.get('replacement_cancelled');
   dashboardNotice.hidden = !created;
   if (created) {
     const createdOrder = cabinetOrders.find(order => String(order.id) === String(created));
@@ -1085,6 +1088,18 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
     cleanUrl.searchParams.delete('open');
     window.history.replaceState({}, '', `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
     window.requestAnimationFrame(() => document.querySelector(`#cabinet-order-workspace [data-panel="documents"][data-order="${CSS.escape(String(created))}"]`)?.click());
+  }
+  else if ((replacementDone || replacementCancelled) && displayedOrders.some(order => String(order.id) === String(replacementDone || replacementCancelled))) {
+    const orderId = replacementDone || replacementCancelled;
+    openOrderWorkspace(orderId);
+    dashboardNotice.hidden = false;
+    dashboardNotice.textContent = replacementDone
+      ? 'Модель заменена. Сумма аренды пересчитана автоматически.'
+      : 'Выбор другой модели отменён. Ваша заявка сохранена без изменений.';
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete('replacement_done');
+    cleanUrl.searchParams.delete('replacement_cancelled');
+    window.history.replaceState({}, '', `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
   }
   // A live update may replace the workspace markup. Restore the exact page
   // position so a customer recording or uploading evidence is never thrown
@@ -1425,6 +1440,23 @@ document.addEventListener('click', event => {
     if (!form) return;
     form.dataset.replacementFilter = replacementFilter.dataset.prepaymentFilter || 'all';
     syncPrepaymentReplacementOptions(form);
+    return;
+  }
+  const openReplacementCatalog = event.target.closest('[data-open-replacement-catalog]');
+  if (openReplacementCatalog) {
+    const order = cabinetOrders.find(item => String(item.id) === String(openReplacementCatalog.dataset.openReplacementCatalog));
+    if (!order) { message('Заявка не найдена. Обновите кабинет и попробуйте снова.', 'error'); return; }
+    const context = JSON.stringify({
+      orderId:String(order.id),
+      reference:order.reference || '',
+      laptopTitle:order.laptop_title || '',
+      startDate:order.rental_start_date || '',
+      endDate:order.rental_end_date || ''
+    });
+    [window.sessionStorage, window.localStorage].forEach(storage => {
+      try { storage.setItem(PREPAYMENT_REPLACEMENT_CATALOG_KEY, context); } catch { /* The catalogue can still open without storage in rare private modes. */ }
+    });
+    window.location.assign('/?replacement_catalog=1');
     return;
   }
   const button = event.target.closest('[data-panel]');
