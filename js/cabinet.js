@@ -333,8 +333,19 @@ function hasUnsavedDocumentDraft() {
   const form = rentalsEl?.querySelector('.cabinet-request-panel:not([hidden]) [data-document-upload]');
   if (!form) return false;
   if ([...form.querySelectorAll('input[type="file"]')].some(input => input.files?.length)) return true;
-  return [...form.querySelectorAll('input:not([type="file"]), textarea, select')]
-    .some(input => input.type === 'checkbox' ? input.checked : String(input.value || '').trim().length > 0);
+  // Values that were already present when the form opened (for example the
+  // customer's saved name or delivery details) are not an unsaved draft.
+  // Treat only a real change, selected file or checked consent as a reason to
+  // ask before closing. Otherwise a brand-new application can show Safari's
+  // alarming system dialog without the customer doing anything.
+  return [...form.querySelectorAll('input:not([type="file"]), textarea, select')].some(input => {
+    if (input.type === 'checkbox' || input.type === 'radio') return input.checked !== input.defaultChecked;
+    if (input.tagName === 'SELECT') {
+      const initial = [...input.options].find(option => option.defaultSelected)?.value ?? input.options[0]?.value ?? '';
+      return input.value !== initial;
+    }
+    return String(input.value || '') !== String(input.defaultValue || '');
+  });
 }
 
 function watchPayment(orderId) {
@@ -1095,8 +1106,9 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
     if (restoredWorkspace) restoredWorkspace.scrollTop = workspaceScrollTop;
   }
   else if (created && autoOpenDocuments && displayedOrders.some(order => String(order.id) === String(created))) {
-    // A fresh booking must land directly on the next real task. Leaving a
-    // customer on a card list caused unfinished document steps and repeats.
+    // A new booking opens its own application, but never opens the document
+    // form by itself. On a phone an unexpected form looks like the site is
+    // demanding data before the customer has chosen the next step.
     openOrderWorkspace(created);
     // `created` is a one-time route instruction, not a permanent cabinet
     // state. Remove it before background refreshes so «Все заявки» remains
@@ -1105,7 +1117,6 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
     cleanUrl.searchParams.delete('created');
     cleanUrl.searchParams.delete('open');
     window.history.replaceState({}, '', `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
-    window.requestAnimationFrame(() => document.querySelector(`#cabinet-order-workspace [data-panel="documents"][data-order="${CSS.escape(String(created))}"]`)?.click());
   }
   else if ((replacementDone || replacementCancelled) && displayedOrders.some(order => String(order.id) === String(replacementDone || replacementCancelled))) {
     const orderId = replacementDone || replacementCancelled;
