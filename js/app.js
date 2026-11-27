@@ -765,7 +765,11 @@ function bookingItems() {
 function renderBookingCart() {
   let cart = document.getElementById('booking-cart');
   const items = bookingItems();
-  if (!items.length) {
+  // A single model is already being configured in the order form. Showing a
+  // second “Оформить” button over that form made the next step ambiguous.
+  // The floating panel is reserved for a genuinely multi-model order.
+  const orderFormIsOpen = Boolean(modal?.classList.contains('active'));
+  if (items.length < 2 || orderFormIsOpen) {
     cart?.remove();
     return;
   }
@@ -777,7 +781,7 @@ function renderBookingCart() {
     document.body.append(cart);
   }
   const countLabel = items.length === 1 ? '1 ноутбук' : items.length < 5 ? `${items.length} ноутбука` : `${items.length} ноутбуков`;
-  cart.innerHTML = `<div><span>ВАШ ЗАКАЗ</span><strong>${countLabel}</strong><small>${items.map(item => item.title).join(' · ')}</small></div><button type="button" data-open-booking-cart>Оформить <b>→</b></button><button class="booking-cart-clear" type="button" data-clear-booking-cart aria-label="Очистить заказ">×</button>`;
+  cart.innerHTML = `<div><span>ВАШ ЗАКАЗ</span><strong>${countLabel}</strong><small>${items.map(item => item.title).join(' · ')}</small></div><button type="button" data-open-booking-cart>К оформлению <b>→</b></button><button class="booking-cart-clear" type="button" data-clear-booking-cart aria-label="Очистить заказ">×</button>`;
   cart.querySelector('[data-open-booking-cart]')?.addEventListener('click', () => {
     const first = bookingItems()[0];
     if (first) openOrderModal(first.id, { deliveryType: archaSelectionMode ? 'arca_locker' : 'delivery' });
@@ -1078,7 +1082,6 @@ async function openOrderModal(id, { deliveryType = 'delivery' } = {}) {
   // redirectToCabinet() then preserves this completed draft.
   currentLaptop = selectedLaptop;
   bookingLaptopIds.add(selectedLaptop.id);
-  renderBookingCart();
   const selectedItems = bookingItems();
 
   modalLaptopTitle.textContent = selectedItems.length > 1 ? `В заказе ${selectedItems.length} ${selectedItems.length < 5 ? 'ноутбука' : 'ноутбуков'}` : `Вы выбрали: ${currentLaptop.title}`;
@@ -1106,6 +1109,7 @@ async function openOrderModal(id, { deliveryType = 'delivery' } = {}) {
 
   modal.classList.add('active');
   setOrderModalScrollLock(true);
+  renderBookingCart();
   modal.scrollTop = 0;
   const card = modal.querySelector('.modal-card');
   if (card) card.scrollTop = 0;
@@ -1779,6 +1783,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     modal?.classList.remove('active');
     setOrderModalScrollLock(false);
     resetOrderSubmit();
+    renderBookingCart();
     if (clearSharedModelFromUrl()) document.getElementById('catalog')?.scrollIntoView({ behavior:'smooth', block:'start' });
   }
 
