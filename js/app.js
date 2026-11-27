@@ -31,6 +31,7 @@ let catalogReady = false;
 let catalogRenderVersion = 0;
 let pendingFilterFrame = null;
 let catalogOpening = false;
+let catalogOpenRequested = false;
 let archaSelectionMode = false;
 let cabinetSession = null;
 const CABINET_BOOKING_KEY = 'rentop-pending-booking-v1';
@@ -649,10 +650,32 @@ function openCatalogWithLoading() {
   window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
     if (!catalogBrowser.hidden) renderLaptops(filteredLaptops, false, catalogGrid);
     catalogOpening = false;
+    if (catalogOpenRequested) {
+      catalogOpenRequested = false;
+      setFullCatalogButtonLoading(false);
+    }
     // The full-screen handoff remains over the storefront until the replacement
     // catalogue itself has been rendered. This prevents a confusing homepage flash.
     if (isPrepaymentReplacementMode()) window.requestAnimationFrame(finishReplacementHandoff);
   }));
+}
+
+function setFullCatalogButtonLoading(loading) {
+  if (!openFullCatalog) return;
+  if (!openFullCatalog.dataset.defaultLabel) openFullCatalog.dataset.defaultLabel = openFullCatalog.innerHTML;
+  openFullCatalog.disabled = loading;
+  openFullCatalog.classList.toggle('is-loading', loading);
+  openFullCatalog.setAttribute('aria-busy', String(loading));
+  openFullCatalog.innerHTML = loading
+    ? '<span class="catalog-open-loading-spinner" aria-hidden="true"></span>Загружаем каталог…'
+    : openFullCatalog.dataset.defaultLabel;
+}
+
+function requestFullCatalog() {
+  if (catalogOpening || catalogOpenRequested) return;
+  catalogOpenRequested = true;
+  setFullCatalogButtonLoading(true);
+  if (catalogReady) openCatalogWithLoading();
 }
 
 function laptopShareUrl(laptopId) {
@@ -1271,6 +1294,9 @@ function closeInfoModal(m) {
 // ========== INIT ==========
 document.addEventListener('DOMContentLoaded', async () => {
   syncCatalogShowcaseLayout();
+  // The button is wired before the data requests begin. A first tap on a slow
+  // mobile connection is therefore acknowledged instead of being ignored.
+  openFullCatalog?.addEventListener('click', requestFullCatalog);
   // Start validating a saved replacement request immediately, in parallel with
   // the catalogue data. On mobile this avoids several seconds of waiting.
   prepaymentReplacementContext = readPrepaymentReplacementContext();
@@ -1632,6 +1658,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   catalogReady = true;
   renderComparison();
   filterAndSearch();
+  if (catalogOpenRequested && !replacementHandoffRequested) openCatalogWithLoading();
 
   // Availability is used by the full catalog and booking flow. It must not
   // rebuild the homepage showcase after its images have already rendered.
@@ -1687,7 +1714,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   catalogPageNext?.addEventListener('click', () => changeCatalogPage(1));
   catalogShowcasePrev?.addEventListener('click', () => changeCatalogPage(-1));
   catalogShowcaseNext?.addEventListener('click', () => changeCatalogPage(1));
-  openFullCatalog?.addEventListener('click', () => openCatalogWithLoading());
   // Preview cards are rendered repeatedly after every filter change. Delegation
   // keeps the “Подробнее” action reliable for every current and future card.
   catalogPreviewGrid?.addEventListener('click', (event) => {
