@@ -2369,6 +2369,20 @@ html.is-replacement-handoff .replacement-handoff{display:flex}
 @keyframes replacement-handoff-spin{to{transform:rotate(360deg)}}
 @media(max-width:520px){.replacement-handoff{padding:18px;align-items:flex-start;padding-top:max(132px,calc(env(safe-area-inset-top) + 96px))}.replacement-handoff-card{padding:28px 20px;border-radius:20px}.replacement-handoff-card>span:last-child{font-size:13px}}
 
+/* Multi-laptop checkout must remain a phone-width sheet. Long catalogue names
+   used to stretch the flex rows wider than Safari's viewport and pushed the
+   whole form sideways. Keep labels clipped inside their row instead. */
+@media(max-width:768px){
+  #order-modal.modal-overlay{overflow-x:hidden}
+  #order-modal .modal-card{min-width:0;max-width:100%;overflow-x:hidden}
+  #order-modal .modal-title,#order-modal .modal-subtitle,#order-modal .calc-box,#order-modal #order-form,#order-modal .booking-order-items{box-sizing:border-box;min-width:0;max-width:100%}
+  #order-modal .booking-order-items{width:100%;max-height:154px;overflow-x:hidden;overflow-y:auto;padding-right:2px}
+  #order-modal .booking-order-items span{box-sizing:border-box;width:100%;min-width:0;max-width:100%}
+  #order-modal .booking-order-items b{flex:1 1 0;width:0;min-width:0}
+  #order-modal .booking-order-items button{max-width:72px;white-space:nowrap}
+  #order-modal .rental-dates,#order-modal .rental-duration-presets,#order-modal .rental-duration-manual{min-width:0;max-width:100%}
+}
+
 /* A model opened from the storefront is centered and briefly outlined in the
    full catalogue, so the customer can immediately see the exact selection. */
 .catalog-browser .card.catalog-card-target {
