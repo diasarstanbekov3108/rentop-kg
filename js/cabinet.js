@@ -752,7 +752,13 @@ function actionPanel(order) {
     return `<section class="cabinet-documents-cta ${submitted ? 'cabinet-documents-pending' : ''}"><strong>${submitted ? 'Дополнительная проверка отправлена' : 'Менеджер запросил дополнительную проверку'}</strong><p>${submitted ? 'Файлы получены. Менеджер примет индивидуальное решение по залогу и покажет следующий шаг.' : 'Это индивидуальная проверка вместо залога. Ответственность по аренде всё равно остаётся за вами.'}</p>${submitted ? '' : `<button class="cabinet-action" data-panel="alternative-security" data-order="${order.id}">Открыть проверку без залога</button>`}</section><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Нужна помощь</button>${whatsapp}</div>`;
   }
   if (docState.mode === 'upload') return `${managerReplacementOffer}${modelChange}<div class="cabinet-documents-cta"><span class="cabinet-step-icon" aria-hidden="true">▤</span><div><strong>Следующий шаг — документы</strong><p>Четыре файла: ID с двух сторон, селфи с ID и подтверждающий документ.</p>${documents}<small class="cabinet-documents-status">○ Документы ещё не загружены</small></div></div><div class="cabinet-actions cabinet-help-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">◔&nbsp; Нужна помощь</button>${whatsapp}</div>`;
-  if (order.status === 'pending_review' && docState.mode === 'approved') return `<section class="cabinet-documents-cta"><strong>Документы приняты</strong><p>Менеджер завершает сверку данных для договора. Защищённый счёт появится здесь только после этой проверки.</p>${documentSummary(order)}</section><section class="cabinet-reservation-hint"><strong>Нужно зафиксировать ноутбук заранее?</strong><p>После сверки менеджер может выставить отдельный QR предоплаты для брони на выбранные даты. Полный счёт при этом не создаётся: остаток аренды и возвратный залог выставляются отдельным QR перед выдачей.</p></section>${managerReplacementOffer}${modelChange}<div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Уточнить статус</button>${whatsapp}</div>`;
+  if (order.status === 'pending_review' && docState.mode === 'approved') {
+    const reservationRequested = (order.supportCases || []).some(item => item.status === 'open' && String(item.customer_message || '').startsWith('[БРОНЬ]'));
+    const reservationAction = reservationRequested
+      ? '<span class="cabinet-request-state is-success">✓ Запрос на бронь передан менеджеру. Он подготовит отдельный QR предоплаты после сверки.</span>'
+      : `<button class="cabinet-action secondary" type="button" data-request-reservation="${escape(order.id)}">Запросить бронь по предоплате</button>`;
+    return `<section class="cabinet-documents-cta"><strong>Документы приняты</strong><p>Менеджер завершает сверку данных для договора. Защищённый счёт появится здесь только после этой проверки.</p>${documentSummary(order)}</section><section class="cabinet-reservation-hint"><strong>Нужно зафиксировать ноутбук заранее?</strong><p>Нажмите кнопку — менеджер получит отдельный запрос на QR предоплаты для брони именно этой заявки и выбранных дат. Полный счёт при этом не создаётся.</p>${reservationAction}</section>${managerReplacementOffer}${modelChange}<div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Уточнить статус</button>${whatsapp}</div>`;
+  }
   if (order.replacement_exchange_status === 'awaiting_exchange' && order.replacement_pending_laptop_id) return `${documents}<section class="cabinet-pickup-flow"><strong>Замена ноутбука согласована</strong><p>Оплата и срок аренды уже зафиксированы. Rentop согласует физическую передачу старого и нового ноутбуков; аренда продолжится без повторной подачи документов.</p><p>Не передавайте текущий ноутбук без согласованного способа и времени обмена.</p><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Уточнить передачу</button>${whatsapp}</div></section>`;
   if (order.delivery_type === 'delivery' && order.status === 'confirmed') return `${documents}<section class="cabinet-pickup-flow"><strong>Оплата подтверждена</strong><p>Менеджер согласует с вами точное время и отдельную стоимость платной доставки по адресу из заявки. Срок аренды ещё не начался.</p><div class="cabinet-actions"><button class="cabinet-action ghost" data-panel="support" data-order="${order.id}">Уточнить доставку</button>${whatsapp}</div></section>`;
   if (order.status === 'awaiting_pickup') {
@@ -1493,6 +1499,23 @@ document.addEventListener('click', event => {
       try { storage.setItem(PREPAYMENT_REPLACEMENT_CATALOG_KEY, context); } catch { /* The catalogue can still open without storage in rare private modes. */ }
     });
     window.location.assign('/?replacement_catalog=1');
+    return;
+  }
+  const requestReservation = event.target.closest('[data-request-reservation]');
+  if (requestReservation) {
+    const order = cabinetOrders.find(item => String(item.id) === String(requestReservation.dataset.requestReservation));
+    if (!order) { message('Заявка не найдена. Обновите кабинет и попробуйте снова.', 'error'); return; }
+    requestReservation.disabled = true;
+    requestReservation.textContent = 'Передаём запрос…';
+    const period = `${date(order.rental_start_date)} — ${date(order.rental_end_date)}`;
+    request('POST', { action:'support_request', orderId:order.id, kind:'rentop', message:`[БРОНЬ] Клиент просит выставить QR предоплаты для фиксации ноутбука на даты: ${period}. Полный счёт пока не выставлять.` })
+      .then(result => {
+        requestReservation.textContent = 'Запрос на бронь отправлен';
+        message(result.message || 'Запрос на бронь передан менеджеру.', 'success');
+        return request('GET');
+      })
+      .then(fresh => { if (fresh?.authenticated) showRentals(fresh.orders || [], fresh.phone, fresh.profile, fresh.whatsappUrl, fresh.offerSmsConsentRequired, fresh.promos, fresh.benefits); })
+      .catch(error => { requestReservation.disabled = false; requestReservation.textContent = 'Запросить бронь по предоплате'; message(error.message, 'error'); });
     return;
   }
   const button = event.target.closest('[data-panel]');
