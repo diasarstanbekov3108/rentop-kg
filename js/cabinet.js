@@ -1033,6 +1033,9 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   const autoOpenDocuments = accountParams.get('open') === 'documents';
   const replacementDone = accountParams.get('replacement_done');
   const replacementCancelled = accountParams.get('replacement_cancelled');
+  const replacementTitle = accountParams.get('replacement_title');
+  const replacementTotal = Number(accountParams.get('replacement_total') || 0);
+  const replacementDifference = Number(accountParams.get('replacement_difference') || 0);
   dashboardNotice.hidden = !created;
   if (created) {
     const createdOrder = cabinetOrders.find(order => String(order.id) === String(created));
@@ -1094,11 +1097,14 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
     openOrderWorkspace(orderId);
     dashboardNotice.hidden = false;
     dashboardNotice.textContent = replacementDone
-      ? 'Модель заменена. Сумма аренды пересчитана автоматически.'
+      ? `Модель${replacementTitle ? ` заменена на «${replacementTitle}»` : ' заменена'}. Новая сумма аренды: ${(replacementTotal || Number(cabinetOrders.find(order => String(order.id) === String(orderId))?.total_amount || 0)).toLocaleString('ru-RU')} сом${replacementDifference ? ` (${replacementDifference > 0 ? '+' : '−'}${Math.abs(replacementDifference).toLocaleString('ru-RU')} сом)` : ''}.`
       : 'Выбор другой модели отменён. Ваша заявка сохранена без изменений.';
     const cleanUrl = new URL(window.location.href);
     cleanUrl.searchParams.delete('replacement_done');
     cleanUrl.searchParams.delete('replacement_cancelled');
+    cleanUrl.searchParams.delete('replacement_title');
+    cleanUrl.searchParams.delete('replacement_total');
+    cleanUrl.searchParams.delete('replacement_difference');
     window.history.replaceState({}, '', `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
   }
   // A live update may replace the workspace markup. Restore the exact page
@@ -1450,8 +1456,12 @@ document.addEventListener('click', event => {
       orderId:String(order.id),
       reference:order.reference || '',
       laptopTitle:order.laptop_title || '',
+      laptopId:order.laptop_id || '',
       startDate:order.rental_start_date || '',
-      endDate:order.rental_end_date || ''
+      endDate:order.rental_end_date || '',
+      rentalDays:Number(order.rental_days || 0),
+      currentTotal:Number(order.total_amount || 0),
+      discountPercent:Number(order.discount_percent || 0)
     });
     [window.sessionStorage, window.localStorage].forEach(storage => {
       try { storage.setItem(PREPAYMENT_REPLACEMENT_CATALOG_KEY, context); } catch { /* The catalogue can still open without storage in rare private modes. */ }

@@ -409,7 +409,7 @@ function renderLaptops(items, append = false, target = catalogGrid) {
           <div class="price-main">${laptop.priceText || '—'}</div>
           <div class="price-sub">${isRent ? 'при аренде от 2-х дней' : 'в наличии / под заказ'}</div>
         </div>
-        <button class="btn-card" data-id="${laptop.id}" ${replacementMode && !isRent ? 'disabled' : ''}>
+        <button class="btn-card" data-id="${laptop.id}" ${replacementMode && isRent ? 'data-select-prepayment-replacement' : ''} ${replacementMode && !isRent ? 'disabled' : ''}>
           ${replacementMode ? (isRent ? 'Выбрать для замены' : 'Недоступно для аренды') : (isRent ? (archaSelectionMode ? 'Выбрать для ARCHA POINT' : 'Забронировать') : 'Купить / Предзаказ')}
         </button>
         ${isRent && !replacementMode ? `<button class="catalog-compare-button ${bookingLaptopIds.has(laptop.id) ? 'is-selected' : ''}" data-add-to-order="${laptop.id}">${bookingLaptopIds.has(laptop.id) ? '✓ Добавлен в заказ' : 'Добавить в заказ'}</button>` : ''}
@@ -426,7 +426,7 @@ function renderLaptops(items, append = false, target = catalogGrid) {
   target.querySelectorAll('.btn-card').forEach(btn => {
     btn.onclick = (e) => {
       const id = Number(e.currentTarget.dataset.id);
-      if (replacementMode) { choosePrepaymentReplacement(id, e.currentTarget); return; }
+      if (replacementMode) return;
       if (catalogBrowser && !catalogBrowser.hidden) setCatalogBrowser(false);
       openOrderModal(id, { deliveryType: archaSelectionMode ? 'arca_locker' : 'delivery' });
     };
@@ -594,9 +594,12 @@ function renderPrepaymentReplacementCatalogUi() {
 
 async function choosePrepaymentReplacement(laptopId, button) {
   if (!isPrepaymentReplacementMode()) return;
+  const selectedLaptop = laptops.find((item) => String(item.id) === String(laptopId));
+  const notice = document.getElementById('prepayment-replacement-catalog-notice');
   const originalText = button.textContent;
   button.disabled = true;
-  button.textContent = 'Проверяем…';
+  button.textContent = 'Пересчитываем…';
+  if (notice) notice.innerHTML = `<strong>Выбрано: ${selectedLaptop?.title || 'ноутбук'}</strong><span>Проверяем доступность на ваши даты и пересчитываем сумму аренды…</span>`;
   try {
     const response = await fetch('/api/account', {
       method: 'POST', credentials: 'same-origin', headers: { 'content-type':'application/json' },
@@ -605,10 +608,18 @@ async function choosePrepaymentReplacement(laptopId, button) {
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.error || 'Не удалось заменить модель.');
     const orderId = prepaymentReplacementContext.orderId;
-    clearPrepaymentReplacementContext();
-    window.location.assign(`/account?replacement_done=${encodeURIComponent(orderId)}`);
+    const replacement = result.replacement || {};
+    const total = Number(replacement.total_amount ?? result.order?.total_amount ?? 0);
+    const difference = Number(replacement.difference ?? (total - Number(prepaymentReplacementContext.currentTotal || 0)));
+    const title = replacement.title || selectedLaptop?.title || '';
+    if (notice) notice.innerHTML = `<strong>Готово: ${title}</strong><span>Новая сумма аренды: <b>${total.toLocaleString('ru-RU')} сом</b>${difference ? ` · ${difference > 0 ? '+' : '−'}${Math.abs(difference).toLocaleString('ru-RU')} сом` : ''}. Возвращаем в вашу заявку…</span>`;
+    const destination = `/account?replacement_done=${encodeURIComponent(orderId)}&replacement_title=${encodeURIComponent(title)}&replacement_total=${encodeURIComponent(total)}&replacement_difference=${encodeURIComponent(difference)}`;
+    window.setTimeout(() => {
+      clearPrepaymentReplacementContext();
+      window.location.replace(destination);
+    }, 420);
   } catch (error) {
-    alert(error.message || 'Не удалось заменить модель. Попробуйте другую.');
+    if (notice) notice.innerHTML = `<strong>Модель пока не заменена</strong><span>${error.message || 'Не удалось заменить модель. Выберите другую свободную модель.'}</span><button type="button" data-cancel-prepayment-replacement>Вернуться к заявке</button>`;
     button.disabled = false;
     button.textContent = originalText;
   }
@@ -725,7 +736,8 @@ function filterAndSearch() {
       const categoryMatches = activeCategoryFilter === 'all' || laptop.category === activeCategoryFilter;
       const useMatches = matchesTask(laptop, activeUseFilter);
       const savedMatches = !savedOnly || savedLaptopIds.has(String(laptop.id));
-      return categoryMatches && useMatches && savedMatches;
+      const isCurrentReplacementModel = isPrepaymentReplacementMode() && String(laptop.id) === String(prepaymentReplacementContext?.laptopId || '');
+      return categoryMatches && useMatches && savedMatches && !isCurrentReplacementModel;
     });
 
     if (version !== catalogRenderVersion) return;
@@ -1664,6 +1676,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   closeFullCatalog?.addEventListener('click', () => { if (!exitPrepaymentReplacementCatalog()) setCatalogBrowser(false); });
   closeFullCatalogBottom?.addEventListener('click', () => { if (!exitPrepaymentReplacementCatalog()) setCatalogBrowser(false); });
+  // The full catalogue redraws its cards during every search/filter change.
+  // One delegated handler keeps model selection alive on Safari and Chrome
+  // even when the card was just re-rendered under the user's finger.
+  catalogGrid?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-select-prepayment-replacement]');
+    if (!button || !isPrepaymentReplacementMode()) return;
+    event.preventDefault();
+    void choosePrepaymentReplacement(button.dataset.id, button);
+  });
   savedOnlyButton?.addEventListener('click', () => {
     savedOnly = !savedOnly;
     filterAndSearch();

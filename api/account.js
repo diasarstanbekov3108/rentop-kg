@@ -494,7 +494,7 @@ export default async function handler(request, response) {
         const updated = await database.updateOrder(order.id, { laptop_id:replacementLaptop.id, daily_rate:Number(replacementLaptop.daily_rate || 0), discount_percent:discount, total_amount:total });
         await database.createEvent({ order_id:order.id, event_type:'customer_replaced_laptop_before_payment_from_cabinet', actor_type:'customer', metadata:{ previous_laptop_id:order.laptop_id, replacement_laptop_id:replacementLaptop.id, total_amount:total, discount_percent:discount } });
         await notifyManager(`🔁 Клиент заменил модель до оплаты\n\nЗаявка ${orderRef(order)}\n${laptop?.title || 'Предыдущая модель'} → ${replacementLaptop.title}\nСумма пересчитана: ${total.toLocaleString('ru-RU')} сом\nПолучение: ${order.delivery_type === 'arca_locker' ? 'ARCHA POINT' : 'доставка'}`);
-        return json(response, 200, { ok:true, order:updated, message:`Модель заменена на «${replacementLaptop.title}». Сумма пересчитана: ${total.toLocaleString('ru-RU')} сом.` });
+        return json(response, 200, { ok:true, order:updated, replacement:{ title:replacementLaptop.title, daily_rate:Number(replacementLaptop.daily_rate || 0), total_amount:total, difference:total - Number(order.total_amount || 0) }, message:`Модель заменена на «${replacementLaptop.title}». Сумма пересчитана: ${total.toLocaleString('ru-RU')} сом.` });
       }
       if (payload.action === 'save_order_comment') {
         const note = String(payload.message || '').trim().replace(/\s+/g, ' ').slice(0, 1000);
