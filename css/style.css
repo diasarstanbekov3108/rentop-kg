@@ -2356,6 +2356,19 @@ html.catalog-showcase-compact #catalog .catalog-showcase-featured .catalog-open-
 }
 .catalog-loading span{display:inline-block;width:17px;height:17px;margin:0 9px -4px 0;border:2px solid rgba(121,224,251,.26);border-top-color:#72e2ff;border-radius:50%;animation:catalog-loading-spin .72s linear infinite}@keyframes catalog-loading-spin{to{transform:rotate(360deg)}}
 
+/* The customer enters replacement mode from the cabinet.  Keep the storefront
+   completely covered until the saved order context and its catalogue are ready. */
+.replacement-handoff{display:none;position:fixed;z-index:10000;inset:0;align-items:center;justify-content:center;padding:24px;background:radial-gradient(circle at 50% 25%,rgba(28,129,175,.28),transparent 38%),linear-gradient(150deg,#04111e,#071b2d 58%,#06111e);color:#ecfbff;text-align:center}
+html.is-replacement-handoff,.is-replacement-handoff body{overflow:hidden!important}
+html.is-replacement-handoff .replacement-handoff{display:flex}
+.replacement-handoff-card{width:min(100%,430px);padding:32px 24px;border:1px solid rgba(100,220,252,.48);border-radius:24px;background:linear-gradient(145deg,rgba(13,52,73,.96),rgba(5,22,37,.97));box-shadow:0 24px 70px rgba(0,0,0,.46)}
+.replacement-handoff-spinner{display:block;width:42px;height:42px;margin:0 auto 22px;border:3px solid rgba(117,227,255,.22);border-top-color:#74e5ff;border-radius:50%;animation:replacement-handoff-spin .72s linear infinite}
+.replacement-handoff-card p{margin:0 0 10px;color:#6ee4ff;font-size:11px;font-weight:900;letter-spacing:.16em}
+.replacement-handoff-card h1{margin:0;color:#f5fdff;font-size:clamp(24px,5vw,34px);line-height:1.16}
+.replacement-handoff-card>span:last-child{display:block;margin-top:13px;color:#aec9d9;font-size:14px;line-height:1.5}
+@keyframes replacement-handoff-spin{to{transform:rotate(360deg)}}
+@media(max-width:520px){.replacement-handoff{padding:18px;align-items:flex-start;padding-top:max(132px,calc(env(safe-area-inset-top) + 96px))}.replacement-handoff-card{padding:28px 20px;border-radius:20px}.replacement-handoff-card>span:last-child{font-size:13px}}
+
 /* A model opened from the storefront is centered and briefly outlined in the
    full catalogue, so the customer can immediately see the exact selection. */
 .catalog-browser .card.catalog-card-target {

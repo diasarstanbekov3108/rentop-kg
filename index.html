@@ -36,8 +36,17 @@
   
   <!-- Fonts & Styles -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261127-replacement-catalog-v1">
+  <link rel="stylesheet" href="css/style.css?v=20261127-replacement-handoff-v1">
   <link rel="stylesheet" href="css/premium.css?v=20261123-topik-drag-v1">
+  <script>
+    // This runs before the page body paints.  A replacement must never look
+    // like a return to the storefront while its catalogue is being prepared.
+    try {
+      if (sessionStorage.getItem('rentop-prepayment-replacement-v1') || localStorage.getItem('rentop-prepayment-replacement-v1')) {
+        document.documentElement.classList.add('is-replacement-handoff');
+      }
+    } catch (_) { /* Private browsing may not expose storage. */ }
+  </script>
 
   <!-- Микроразметка Schema.org для Google -->
   <script type="application/ld+json">
@@ -69,6 +78,14 @@
   </script>
 </head>
 <body>
+  <section id="replacement-handoff" class="replacement-handoff" aria-live="assertive" aria-atomic="true">
+    <div class="replacement-handoff-card">
+      <span class="replacement-handoff-spinner" aria-hidden="true"></span>
+      <p>ЗАМЕНА НОУТБУКА</p>
+      <h1>Подготавливаем доступные модели…</h1>
+      <span>Проверяем вашу заявку, даты аренды и свободные ноутбуки.</span>
+    </div>
+  </section>
 
  <!-- Шапка -->
 <header class="header">
@@ -852,6 +869,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script type="module" src="js/app.js?v=20261127-replacement-catalog-v2"></script>
+  <script type="module" src="js/app.js?v=20261127-replacement-handoff-v1"></script>
 </body>
 </html>

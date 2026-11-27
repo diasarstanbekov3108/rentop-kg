@@ -78,6 +78,10 @@ function clearPrepaymentReplacementContext() {
 }
 const isPrepaymentReplacementMode = () => Boolean(prepaymentReplacementContext?.orderId);
 
+function finishReplacementHandoff() {
+  document.documentElement.classList.remove('is-replacement-handoff');
+}
+
 // Каталог показывает небольшой набор за раз: это избавляет мобильный экран
 // от бесконечной ленты, но сохраняет доступ ко всем моделям.
 // On phones the storefront is a swipeable three-model carousel: the central
@@ -645,6 +649,9 @@ function openCatalogWithLoading() {
   window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
     if (!catalogBrowser.hidden) renderLaptops(filteredLaptops, false, catalogGrid);
     catalogOpening = false;
+    // The full-screen handoff remains over the storefront until the replacement
+    // catalogue itself has been rendered. This prevents a confusing homepage flash.
+    if (isPrepaymentReplacementMode()) window.requestAnimationFrame(finishReplacementHandoff);
   }));
 }
 
@@ -1247,6 +1254,11 @@ function closeInfoModal(m) {
 // ========== INIT ==========
 document.addEventListener('DOMContentLoaded', async () => {
   syncCatalogShowcaseLayout();
+  // Start validating a saved replacement request immediately, in parallel with
+  // the catalogue data. On mobile this avoids several seconds of waiting.
+  prepaymentReplacementContext = readPrepaymentReplacementContext();
+  const replacementHandoffRequested = isPrepaymentReplacementMode();
+  const initialCabinetSession = replacementHandoffRequested ? getCabinetSession() : null;
   const mascotStops = ['.hero h1', '#catalog .section-title', '#archa-point h2', '#b2b h2', '#faq .section-title'];
   let mascotFrame;
   let mascotMoveTimer;
@@ -1597,7 +1609,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadSavedLaptops();
   // The storefront renders only real catalog records. Until Supabase responds,
   // the static loading state stays visible instead of substituting demo items.
-  laptops = await fetchLaptops();
+  const [catalogRows, availability] = await Promise.all([fetchLaptops(), fetchBlockingRentals()]);
+  laptops = catalogRows;
   filteredLaptops = [...laptops];
   catalogReady = true;
   renderComparison();
@@ -1605,12 +1618,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Availability is used by the full catalog and booking flow. It must not
   // rebuild the homepage showcase after its images have already rendered.
-  const availability = await fetchBlockingRentals();
   blockingRentals = availability.rows;
   availabilityLoaded = availability.ok;
-  await getCabinetSession();
+  if (initialCabinetSession) await initialCabinetSession;
+  else await getCabinetSession();
   updateOrderAuthUi();
-  prepaymentReplacementContext = readPrepaymentReplacementContext();
   if (isPrepaymentReplacementMode()) {
     const order = cabinetSession?.orders?.find(item => String(item.id) === String(prepaymentReplacementContext.orderId));
     const paymentStarted = ['awaiting_payment', 'paid', 'confirmed'].includes(String(order?.payment?.status || ''));
