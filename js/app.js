@@ -784,7 +784,12 @@ function renderBookingCart() {
   cart.innerHTML = `<div><span>ВАШ ЗАКАЗ</span><strong>${countLabel}</strong><small>${items.map(item => item.title).join(' · ')}</small></div><button type="button" data-open-booking-cart>К оформлению <b>→</b></button><button class="booking-cart-clear" type="button" data-clear-booking-cart aria-label="Очистить заказ">×</button>`;
   cart.querySelector('[data-open-booking-cart]')?.addEventListener('click', () => {
     const first = bookingItems()[0];
-    if (first) openOrderModal(first.id, { deliveryType: archaSelectionMode ? 'arca_locker' : 'delivery' });
+    if (!first) return;
+    // The full catalogue is a fixed overlay. Without closing it first, the
+    // order form opens underneath and becomes visible only after leaving the
+    // catalogue, which looks as if the button did nothing.
+    if (catalogBrowser && !catalogBrowser.hidden) setCatalogBrowser(false);
+    openOrderModal(first.id, { deliveryType: archaSelectionMode ? 'arca_locker' : 'delivery' });
   });
   cart.querySelector('[data-clear-booking-cart]')?.addEventListener('click', () => {
     bookingLaptopIds.clear();
