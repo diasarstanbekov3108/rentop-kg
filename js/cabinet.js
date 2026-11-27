@@ -154,6 +154,7 @@ const statusInfo = (status) => ({
   draft:{ title:'Нужны документы', text:'Отправьте документы и подтвердите условия аренды, чтобы менеджер мог проверить заявку.', step:1 },
   pending_review:{ title:'Проверяем документы', text:'Документы получены. Менеджер проверяет их перед созданием счёта.', step:1 },
   awaiting_payment:{ title:'Ожидает оплаты', text:'Оплатите счёт в этом кабинете. После банковского подтверждения менеджер подготовит выдачу.', step:1 },
+  reserved:{ title:'Ноутбук забронирован', text:'Предоплата принята, ноутбук закреплён за вами на выбранные даты. Перед выдачей менеджер выставит QR на остаток.', step:1 },
   payment_review:{ title:'Проверяем оплату', text:'Менеджер проверяет поступление оплаты.', step:2 },
   confirmed:{ title:'Оплата подтверждена', text:'Менеджер готовит выбранный способ выдачи. Срок аренды начнётся только после фактического получения ноутбука.', step:2 },
   awaiting_archa_reservation:{ title:'Резервируем ячейку', text:'ARCHA POINT готовит ячейку. Пока не приезжайте к постамату.', step:2 },
@@ -532,6 +533,19 @@ function paymentPanel(order) {
   const payment = order.extensionPayment || order.payment;
   const documentsApproved = documentMode(order).mode === 'approved';
   const documentNotice = !isExtension && documentsApproved ? `<div class="cabinet-payment-docs-success"><strong>✓ Документы проверены</strong><span>Можно переходить к оплате, как только появится защищённый QR-счёт.</span></div>` : '';
+  if (!isExtension && order.status === 'reserved' && order.reservationPayment?.status === 'paid') {
+    const reservation = order.reservationPayment;
+    const balance = order.balancePayment;
+    const rentalBalance = Math.max(0, Number(order.total_amount || 0) - Number(reservation.amount || 0));
+    const due = rentalBalance + Number(order.deposit_amount || 0);
+    if (balance?.status === 'awaiting_payment') {
+      const rawImage = String(balance.qr_image || balance.qr_image_with_frame || '');
+      const image = rawImage && !rawImage.startsWith('data:') && !rawImage.startsWith('http') ? `data:image/png;base64,${rawImage}` : rawImage;
+      const expires = dateTime(balance.expires_at, { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+      return `<section class="cabinet-payment"><div><strong>Бронь подтверждена · оплатите остаток</strong><span>Предоплата ${Number(reservation.amount || 0).toLocaleString('ru-RU')} сом учтена</span></div><p>К выдаче осталось оплатить <b>${Number(balance.amount || due).toLocaleString('ru-RU')} сом</b>. Ноутбук уже закреплён за вами; после оплаты менеджер подготовит выдачу.</p>${image ? `<button class="cabinet-action cabinet-payment-open" type="button" data-open-payment="${escape(order.id)}">Оплатить остаток по QR</button>` : ''}${balance.qr_link ? `<a class="cabinet-action cabinet-payment-link secondary" href="${escape(balance.qr_link)}" target="_blank" rel="noopener">Открыть платёжную ссылку Банка</a>` : ''}<small>QR действует до ${escape(expires)}.</small></section>`;
+    }
+    return `<section class="cabinet-payment success"><div><strong>✓ Бронь подтверждена</strong><span>Предоплата ${Number(reservation.amount || 0).toLocaleString('ru-RU')} сом принята</span></div><p>Ноутбук закреплён за вами на выбранные даты. Перед выдачей менеджер подготовит отдельный QR на остаток: ориентировочно ${due.toLocaleString('ru-RU')} сом (аренда и возвратный залог).</p></section>`;
+  }
   if (payment?.status === 'paid') {
     const amount = Number(payment.amount || order.total_amount || 0).toLocaleString('ru-RU');
     const reference = payment.payment_reference || payment.provider_reference || payment.id || order.reference || String(order.id || '').slice(0, 8).toUpperCase();
@@ -1007,7 +1021,7 @@ function showRentals(orders, phone, profile = null, whatsappUrl = '', smsRequire
   customerBenefits = Array.isArray(benefits) ? benefits : [];
   cabinetOrders = Array.isArray(orders) ? orders : [];
   supportWhatsappUrl = whatsappUrl || '';
-  paymentByOrder = new Map(cabinetOrders.filter(order => order.payment || order.extensionPayment).map(order => [String(order.id), order.extensionPayment || order.payment]));
+  paymentByOrder = new Map(cabinetOrders.filter(order => order.payment || order.extensionPayment || order.balancePayment).map(order => [String(order.id), order.extensionPayment || order.balancePayment || order.payment]));
   updateCabinetTopik();
   cabinetOrders.filter(order => (order.extensionPayment || order.payment)?.status === 'paid').slice(0, 1).forEach(celebrateTopikPayment);
   cabinetOrders.filter(order => order.status === 'completed').slice(0, 1).forEach(celebrateTopikCompletion);

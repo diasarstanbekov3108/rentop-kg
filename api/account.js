@@ -127,9 +127,8 @@ export default async function handler(request, response) {
     const ordersByGroup = by(orders.filter(order => order.order_group_id), 'order_group_id');
     const groupPayment = new Map();
     for (const [groupId, groupedOrders] of ordersByGroup) {
-      const payment = groupedOrders
-        .flatMap(item => paymentsByOrder.get(String(item.id)) || [])
-        .find(item => item.purpose !== 'extension');
+      const candidates = groupedOrders.flatMap(item => paymentsByOrder.get(String(item.id)) || []);
+      const payment = candidates.find(item => item.purpose === 'balance') || candidates.find(item => item.purpose === 'rental') || candidates.find(item => item.purpose === 'reservation');
       if (payment) groupPayment.set(groupId, payment);
     }
     const hydratedOrders = orders.map(order => {
@@ -137,7 +136,9 @@ export default async function handler(request, response) {
       const offeredLaptop = laptopById.get(String(order.prepayment_replacement_offer_laptop_id || ''));
       const payments = paymentsByOrder.get(String(order.id)) || [];
       const sharedPayment = order.order_group_id ? groupPayment.get(String(order.order_group_id)) || null : null;
-      const invoicePayment = payments.find(payment => payment.purpose !== 'extension') || sharedPayment;
+      const reservationPayment = payments.find(payment => payment.purpose === 'reservation') || (sharedPayment?.purpose === 'reservation' ? sharedPayment : null);
+      const balancePayment = payments.find(payment => payment.purpose === 'balance') || (sharedPayment?.purpose === 'balance' ? sharedPayment : null);
+      const invoicePayment = balancePayment || payments.find(payment => payment.purpose === 'rental') || reservationPayment || sharedPayment;
       const groupedItems = (ordersByGroup.get(String(order.order_group_id)) || [order]).map(item => {
         const itemLaptop = laptopById.get(String(item.laptop_id));
         return { id:item.id, title:itemLaptop?.title || item.laptop_title || 'Ноутбук Rentop', total_amount:Number(item.total_amount || 0) };
@@ -155,6 +156,8 @@ export default async function handler(request, response) {
       supportCases:supportCasesByOrder.get(String(order.id)) || [],
       group_items:groupedItems,
       payment:paymentWithRecoveredBreakdown(invoicePayment, invoiceEventsByOrder.get(String(order.id)) || []),
+      reservationPayment,
+      balancePayment,
       extensionPayment:payments.find(payment => payment.purpose === 'extension' && ['awaiting_payment', 'paid'].includes(payment.status)) || null
     };
     });
@@ -404,7 +407,7 @@ export default async function handler(request, response) {
         const latestKinds = new Set(uploaded.filter(item => item.status !== 'rejected').map(item => item.kind));
         const hasFront = latestKinds.has('identity_front') || latestKinds.has('identity');
         if (hasFront && ['identity_back', 'selfie', 'supporting'].every(requiredKind => latestKinds.has(requiredKind)) && String(order.residence_address || '').trim().length >= 8 && String(order.supporting_document_type || '').trim().length >= 3 && order.status === 'draft') {
-          await database.updateOrder(order.id, { status:'pending_review' });
+          await database.updateOrder(order.id, { status:'pending_review', draft_archived_at:null, draft_archived_by:null });
         }
         if (ALTERNATIVE_SECURITY_TYPES.has(kind)) {
           const requirements = Array.isArray(order.alternative_security_requirements) ? order.alternative_security_requirements : [];

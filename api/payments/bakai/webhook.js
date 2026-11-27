@@ -119,15 +119,22 @@ export default async function handler(request, response) {
       const paidOrders = groupedOrders.length ? groupedOrders : order ? [order] : [];
       const confirmedOrders = [];
       for (const item of paidOrders) {
-        if (item.status === 'awaiting_payment') {
+        if (payment.purpose === 'reservation' && item.status === 'awaiting_payment') {
+          const reserved = await database.updateOrder(item.id, {
+            status:'reserved', reservation_amount:Number(payment.amount || 0), reservation_paid_at:now,
+            reservation_balance_due_at:`${item.rental_start_date}T00:00:00+06:00`, payment_channel:'bakai',
+            payment_receipt_received_at:now, payment_confirmed_at:now, hold_expires_at:null
+          });
+          confirmedOrders.push(reserved || item);
+        } else if (payment.purpose !== 'reservation' && ['awaiting_payment','reserved'].includes(item.status)) {
           const confirmed = await database.updateOrder(item.id, {
-            status:'confirmed', payment_channel:'bakai', payment_receipt_received_at:now, payment_confirmed_at:now
+            status:'confirmed', payment_channel:'bakai', payment_receipt_received_at:now, payment_confirmed_at:now, hold_expires_at:null
           });
           confirmedOrders.push(confirmed || item);
         } else confirmedOrders.push(item);
-        await database.createEvent({ order_id:item.id, event_type:'bakai_payment_confirmed_webhook', actor_type:'bank', metadata:{ operation_id:operationId, elqr_id:bankElqrId, amount, order_group_id:groupId || null, order_ids:paidOrders.map(grouped => grouped.id) } }).catch(error => console.error('Bakai webhook audit event failed:', error.message));
+        await database.createEvent({ order_id:item.id, event_type:payment.purpose === 'reservation' ? 'bakai_reservation_confirmed_webhook' : 'bakai_payment_confirmed_webhook', actor_type:'bank', metadata:{ operation_id:operationId, elqr_id:bankElqrId, amount, purpose:payment.purpose || 'rental', order_group_id:groupId || null, order_ids:paidOrders.map(grouped => grouped.id) } }).catch(error => console.error('Bakai webhook audit event failed:', error.message));
       }
-      if (confirmedOrders.length) await notifyManagerAboutPaidOrder(config, confirmedOrders[0]);
+      if (confirmedOrders.length && payment.purpose !== 'reservation') await notifyManagerAboutPaidOrder(config, confirmedOrders[0]);
     }
     return reply(response, 200, { ok:true });
   } catch (error) {

@@ -303,7 +303,7 @@ function renderComparison() {
     ['Накопитель', selected.map(item => item.storage || '—')],
     ['Цена', selected.map(item => item.priceText || '—')]
   ];
-  comparisonContent.innerHTML = `<div class="catalog-compare-table"><div class="catalog-compare-row is-head" style="--compare-count:${selected.length}"><span>Характеристика</span>${selected.map(item => `<strong>${formatLaptopTitle(item.title)}</strong>`).join('')}</div>${rows.map(([label, values]) => `<div class="catalog-compare-row" style="--compare-count:${selected.length}"><span>${label}</span>${values.map(value => `<b>${value}</b>`).join('')}</div>`).join('')}</div><div class="catalog-compare-actions">${selected.map(item => `<button type="button" class="btn-card" data-id="${item.id}">Забронировать ${item.title}</button>`).join('')}</div>`;
+  comparisonContent.innerHTML = `<div class="catalog-compare-table"><div class="catalog-compare-row is-head" style="--compare-count:${selected.length}"><span>Характеристика</span>${selected.map(item => `<strong>${formatLaptopTitle(item.title)}</strong>`).join('')}</div>${rows.map(([label, values]) => `<div class="catalog-compare-row" style="--compare-count:${selected.length}"><span>${label}</span>${values.map(value => `<b>${value}</b>`).join('')}</div>`).join('')}</div><div class="catalog-compare-actions">${selected.map(item => `<button type="button" class="btn-card" data-id="${item.id}">Оформить заявку · ${item.title}</button>`).join('')}</div>`;
   comparisonContent.querySelectorAll('.btn-card').forEach(button => button.addEventListener('click', () => {
     if (catalogBrowser && !catalogBrowser.hidden) setCatalogBrowser(false);
     openOrderModal(Number(button.dataset.id), { deliveryType: archaSelectionMode ? 'arca_locker' : 'delivery' });
@@ -410,7 +410,7 @@ function renderLaptops(items, append = false, target = catalogGrid) {
           <div class="price-sub">${isRent ? 'при аренде от 2-х дней' : 'в наличии / под заказ'}</div>
         </div>
         <button class="btn-card" data-id="${laptop.id}" ${replacementMode && isRent ? 'data-select-prepayment-replacement' : ''} ${replacementMode && !isRent ? 'disabled' : ''}>
-          ${replacementMode ? (isRent ? 'Выбрать для замены' : 'Недоступно для аренды') : (isRent ? (archaSelectionMode ? 'Выбрать для ARCHA POINT' : 'Забронировать') : 'Купить / Предзаказ')}
+          ${replacementMode ? (isRent ? 'Выбрать для замены' : 'Недоступно для аренды') : (isRent ? (archaSelectionMode ? 'Выбрать для ARCHA POINT' : 'Оформить заявку') : 'Купить / Предзаказ')}
         </button>
         ${isRent && !replacementMode ? `<button class="catalog-compare-button ${bookingLaptopIds.has(laptop.id) ? 'is-selected' : ''}" data-add-to-order="${laptop.id}">${bookingLaptopIds.has(laptop.id) ? '✓ Добавлен в заказ' : 'Добавить в заказ'}</button>` : ''}
         ${replacementMode ? '' : `<button class="catalog-compare-button ${isCompared ? 'is-selected' : ''}" data-compare-laptop="${laptop.id}" type="button" aria-pressed="${isCompared}">
@@ -1286,7 +1286,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         : 'Оформление: выбрана доставка Rentop. Указанное время — ориентир, точный интервал подтвердит менеджер.';
       return `${delivery} Проверьте срок и контактные данные перед продолжением.`;
     }
-    if (catalogBrowser && !catalogBrowser.hidden) return 'Каталог: выберите модель, затем нажмите «Забронировать» и укажите даты.';
+    if (catalogBrowser && !catalogBrowser.hidden) return 'Каталог: выберите модель, затем нажмите «Оформить заявку» и укажите даты.';
     return 'Начало пути: выберите задачу, а Топик покажет подходящие модели.';
   };
 
@@ -1341,7 +1341,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     if (catalogBrowser && !catalogBrowser.hidden) {
-      if (mascotAnswer) mascotAnswer.textContent = 'Выберите подходящую модель, затем нажмите «Забронировать» и укажите даты.';
+      if (mascotAnswer) mascotAnswer.textContent = 'Выберите подходящую модель, затем нажмите «Оформить заявку» и укажите даты.';
       return;
     }
     if (mascotAnswer) mascotAnswer.textContent = 'Начнём с задачи: выберите учёбу, офис, экзамен или игры — я открою подходящие модели.';

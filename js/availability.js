@@ -48,7 +48,7 @@ export function rangesOverlap(startDate, endDate, otherStart, otherEnd) {
 
 export function isBlockingRental(order, now = new Date()) {
   if (!order) return false;
-  if (order.status === 'confirmed' || order.status === 'issued') return true;
+  if (['reserved', 'confirmed', 'issued'].includes(order.status)) return true;
   if (order.status !== 'awaiting_payment' || !order.hold_expires_at) return false;
   return new Date(order.hold_expires_at).getTime() > now.getTime();
 }
