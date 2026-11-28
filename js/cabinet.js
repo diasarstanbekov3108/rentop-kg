@@ -542,6 +542,7 @@ function deliveryReceiptDetails(order, breakdown) {
 function paymentPanel(order) {
   const isExtension = Boolean(order.extensionPayment);
   const payment = order.extensionPayment || order.payment;
+  const isReservationPayment = !isExtension && payment?.purpose === 'reservation';
   const documentsApproved = documentMode(order).mode === 'approved';
   const documentNotice = !isExtension && documentsApproved ? `<div class="cabinet-payment-docs-success"><strong>✓ Документы проверены</strong><span>Можно переходить к оплате, как только появится защищённый QR-счёт.</span></div>` : '';
   if (!isExtension && order.status === 'reserved' && order.reservationPayment?.status === 'paid') {
@@ -574,7 +575,7 @@ function paymentPanel(order) {
   const rawImage = String(payment.qr_image || payment.qr_image_with_frame || '');
   const image = rawImage && !rawImage.startsWith('data:') && !rawImage.startsWith('http') ? `data:image/png;base64,${rawImage}` : rawImage;
   const expires = dateTime(payment.expires_at, { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
-  return `<section class="cabinet-payment"><div><strong>${isExtension ? 'Оплата продления' : 'Оплата аренды и залога'}</strong><span>${Number(payment.amount || 0).toLocaleString('ru-RU')} сом · до ${escape(expires)}</span></div><p>${image ? 'Нажмите «Оплатить по QR»: код откроется крупно на весь экран. Платёжная ссылка Банка доступна как дополнительный способ, но её поддержка зависит от приложения банка.' : 'Банк создал ссылку на QR. Откройте её в поддерживаемом банковском приложении или попросите менеджера перевыпустить счёт.'} Не переводите сумму вручную на другие реквизиты.</p>${documentNotice}${image ? `<button class="cabinet-action cabinet-payment-open" type="button" data-open-payment="${escape(order.id)}">Оплатить по QR</button>` : ''}${payment.qr_link ? `<a class="cabinet-action cabinet-payment-link secondary" href="${escape(payment.qr_link)}" target="_blank" rel="noopener">Открыть платёжную ссылку Банка</a>` : ''}</section>`;
+  return `<section class="cabinet-payment"><div><strong>${isExtension ? 'Оплата продления' : isReservationPayment ? 'Предоплата для брони' : 'Оплата аренды и залога'}</strong><span>${Number(payment.amount || 0).toLocaleString('ru-RU')} сом · до ${escape(expires)}</span></div><p>${isReservationPayment ? 'После подтверждения этой предоплаты ноутбук будет закреплён за вами на выбранные даты. Остаток аренды и возвратный залог оплачиваются отдельным QR только перед выдачей.' : image ? 'Нажмите «Оплатить по QR»: код откроется крупно на весь экран. Платёжная ссылка Банка доступна как дополнительный способ, но её поддержка зависит от приложения банка.' : 'Банк создал ссылку на QR. Откройте её в поддерживаемом банковском приложении или попросите менеджера перевыпустить счёт.'} Не переводите сумму вручную на другие реквизиты.</p>${documentNotice}${image ? `<button class="cabinet-action cabinet-payment-open" type="button" data-open-payment="${escape(order.id)}">${isReservationPayment ? 'Оплатить предоплату по QR' : 'Оплатить по QR'}</button>` : ''}${payment.qr_link ? `<a class="cabinet-action cabinet-payment-link secondary" href="${escape(payment.qr_link)}" target="_blank" rel="noopener">Открыть платёжную ссылку Банка</a>` : ''}</section>`;
 }
 function openReceiptPrintWindow(order) {
   if (!order) return;
