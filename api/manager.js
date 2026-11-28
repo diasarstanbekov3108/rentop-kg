@@ -569,6 +569,32 @@ export default async function handler(request, response) {
       await database.deleteOrder(order.id);
       return reply(response, 200, { ok:true, message:'Тестовая заявка и её прикреплённые файлы удалены.' });
     }
+    if (payload.action === 'delete_test_orders_by_phone') {
+      if (!isChiefAdmin) return reply(response, 403, { error:'Очищать тестовые заявки может только главный администратор.' });
+      const digits = String(payload.phone || '').replace(/\D/g, '');
+      const phone = /^996\d{9}$/.test(digits) ? `+${digits}` : '';
+      if (!phone) return reply(response, 400, { error:'Введите номер в формате +996XXXXXXXXX.' });
+      const confirmationDigits = String(payload.confirmation || '').replace(/\D/g, '');
+      if (confirmationDigits !== digits) return reply(response, 400, { error:'Для очистки повторно подтвердите тот же номер телефона.' });
+      const phoneOrders = await database.listOrdersByCustomerPhone(phone, 50);
+      const orderIds = phoneOrders.map(order => order.id);
+      const testEvents = await database.listOrdersWithEvent(orderIds, 'chief_admin_marked_test_order_from_web');
+      const testIds = new Set(testEvents.map(event => String(event.order_id)));
+      const protectedStatuses = new Set(['awaiting_pickup','issued','in_use','awaiting_return_reservation','awaiting_return_dropoff','awaiting_return_collection','returned']);
+      const removable = phoneOrders.filter(order => testIds.has(String(order.id)) && !protectedStatuses.has(order.status));
+      const skipped = phoneOrders.filter(order => testIds.has(String(order.id)) && protectedStatuses.has(order.status));
+      await mapWithConcurrency(removable, 3, async order => {
+        const documents = await database.listOrderDocuments(order.id);
+        await Promise.all(documents.map(document => document.storage_path ? database.deleteDocumentFile(document.storage_path).catch(error => console.error('Bulk test document storage cleanup failed:', error.message)) : Promise.resolve()));
+        await database.deleteOrder(order.id);
+      });
+      return reply(response, 200, {
+        ok:true,
+        deletedOrderIds:removable.map(order => order.id),
+        skippedCount:skipped.length,
+        message:removable.length ? `Удалено тестовых заявок: ${removable.length}.` : 'Помеченных тестовых заявок для удаления не найдено.'
+      });
+    }
     if (payload.action === 'check_bakai_connection') {
       await verifyBakaiToken(config);
       return reply(response, 200, { ok:true, message:'Токен Bakai сохранён. Для проверки доступа создайте тестовый QR на 1 сом.' });

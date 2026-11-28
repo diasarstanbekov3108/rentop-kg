@@ -14,6 +14,7 @@ const managerLoginStatus = document.getElementById('manager-login-status');
 const clearTestsButton = document.getElementById('manager-clear-tests');
 const testBakaiButton = document.getElementById('manager-test-bakai');
 const testTelegramButton = document.getElementById('manager-test-telegram');
+const clearTestOrdersButton = document.getElementById('manager-clear-test-orders');
 const bakaiCheck = document.getElementById('manager-bakai-check');
 const returnAlert = document.getElementById('manager-return-alert');
 const catalogOpenButton = document.getElementById('manager-catalog-open');
@@ -376,6 +377,7 @@ function openReplacementPicker(orderId) {
 }
 
 function render() {
+  if (clearTestOrdersButton) clearTestOrdersButton.hidden = !isChiefAdmin;
   // Refreshing a queue must not throw the manager to the beginning of a long
   // card while they review a return or a document.
   const scrollPosition = window.scrollY;
@@ -571,6 +573,24 @@ function setMobileNav(open) {
 function setFilter(nextFilter) { if (!catalogPanel.hidden) catalogPanel.hidden = true; if (promoPanel && !promoPanel.hidden) promoPanel.hidden = true; if (b2bPanel && !b2bPanel.hidden) b2bPanel.hidden = true; if (helpPanel && !helpPanel.hidden) helpPanel.hidden = true; dashboard.hidden = false; filter = nextFilter; setMobileNav(false); document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item.dataset.filter === filter)); render(); }
 
 refreshButton?.addEventListener('click', () => load(false));
+clearTestOrdersButton?.addEventListener('click', async () => {
+  const phone = normalizePhone(window.prompt('Введите номер, для которого нужно удалить только помеченные тестовые заявки:', ''));
+  if (!phone) { statusEl.textContent = 'Введите номер в формате +996XXXXXXXXX.'; return; }
+  if (!window.confirm(`Удалить все помеченные тестовые заявки номера ${phone}? Реальные заявки не затрагиваются. Активные и выданные тестовые заявки будут пропущены.`)) return;
+  const original = clearTestOrdersButton.textContent;
+  clearTestOrdersButton.disabled = true;
+  clearTestOrdersButton.textContent = 'Очищаем…';
+  try {
+    const result = await api('POST', { action:'delete_test_orders_by_phone', phone, confirmation:phone });
+    const deleted = new Set((result.deletedOrderIds || []).map(String));
+    orders = orders.filter(order => !deleted.has(String(order.id)));
+    if (deleted.has(String(selectedOrderId || ''))) selectedOrderId = '';
+    const skipped = Number(result.skippedCount || 0);
+    statusEl.textContent = `${result.message}${skipped ? ` Активных/выданных пропущено: ${skipped}.` : ''}`;
+    await load(true);
+  } catch (error) { statusEl.textContent = error.message; }
+  finally { clearTestOrdersButton.disabled = false; clearTestOrdersButton.textContent = original; }
+});
 window.setInterval(() => {
   // The manual refresh remains instant. Background refresh is deliberately
   // slow, and is entirely skipped while a manager edits a selected order.
