@@ -753,6 +753,32 @@ export default async function handler(request, response) {
       await database.createEvent({ order_id:order.id, event_type:'manager_sent_manual_archa_return_code_from_web', actor_type:'manager', metadata:{ recipient:'arca_courier' === order.return_method ? 'courier' : 'customer' } });
       return reply(response, 200, { ok:true, order:updated });
     }
+    if (payload.action === 'set_agreed_rental_price') {
+      const order = await database.getOrder(String(payload.orderId || ''));
+      if (!order || !['draft', 'pending_review', 'awaiting_payment'].includes(order.status)) return reply(response, 409, { error:'Согласованную цену можно менять только до создания и оплаты QR-счёта.' });
+      const groupedOrders = await invoiceOrders(database, order);
+      const existingPayments = (await Promise.all(groupedOrders.map(item => database.listOrderPayments(item.id).catch(() => [])))).flat();
+      if (existingPayments.some(item => ['awaiting_payment', 'paid', 'confirmed'].includes(String(item.status || '')))) return reply(response, 409, { error:'По этой заявке уже есть счёт или оплата. Согласованную цену менять нельзя.' });
+      const agreedAmount = Math.round(Number(payload.agreedAmount));
+      const note = String(payload.note || '').trim().replace(/\s+/g, ' ').slice(0, 500);
+      if (!Number.isFinite(agreedAmount) || agreedAmount < 1 || agreedAmount > 1_000_000) return reply(response, 400, { error:'Укажите согласованную стоимость аренды от 1 до 1 000 000 сом.' });
+      if (note.length < 3) return reply(response, 400, { error:'Коротко укажите причину договорённости по цене.' });
+      const standardAmount = groupedOrders.reduce((sum, item) => sum + Math.round(Number(item.daily_rate || 0) * Number(item.rental_days || 0) * (100 - Number(item.discount_percent || 0)) / 100), 0);
+      const currentAmount = groupedOrders.reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
+      let remaining = agreedAmount;
+      const updatedOrders = [];
+      for (let index = 0; index < groupedOrders.length; index += 1) {
+        const item = groupedOrders[index];
+        const itemAmount = index === groupedOrders.length - 1
+          ? remaining
+          : Math.max(0, Math.round(agreedAmount * Number(item.total_amount || 0) / Math.max(1, currentAmount)));
+        remaining -= itemAmount;
+        updatedOrders.push(await database.updateOrder(item.id, { total_amount:itemAmount }));
+        await database.createEvent({ order_id:item.id, event_type:'manager_set_agreed_rental_price_from_web', actor_type:'manager', metadata:{ agreed_rental_amount:itemAmount, agreed_group_amount:agreedAmount, previous_rental_amount:Number(item.total_amount || 0), standard_group_amount:standardAmount, note, manager_phone:session.phone } });
+      }
+      const updated = updatedOrders.find(item => String(item?.id) === String(order.id)) || updatedOrders[0] || order;
+      return reply(response, 200, { ok:true, order:updated, message:`Согласованная цена ${agreedAmount.toLocaleString('ru-RU')} сом сохранена в заявке. Все последующие QR будут считать аренду от этой суммы.` });
+    }
     if (payload.action === 'create_bakai_payment') {
       const order = await database.getOrder(String(payload.orderId || ''));
       if (!order) return reply(response, 404, { error:'Заявка не найдена.' });

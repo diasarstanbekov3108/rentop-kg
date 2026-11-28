@@ -434,6 +434,12 @@ function render() {
     const hasActivePayment = sharedInvoice?.status === 'awaiting_payment' && new Date(sharedInvoice.expires_at) > new Date();
     const deliveryCharge = order.delivery_type === 'delivery' ? `<label>Как оплачивается доставка<select data-delivery-charge-mode><option value="external" ${paymentDraft.deliveryMode === 'external' ? 'selected' : ''}>Клиент оплачивает курьера при встрече</option><option value="rentop" ${paymentDraft.deliveryMode === 'rentop' ? 'selected' : ''}>Включить доставку Rentop в QR-счёт</option></select></label><label class="manager-delivery-fee">Доставка Rentop, сом<input data-delivery-fee type="number" min="0" max="100000" step="1" value="${Number(paymentDraft.deliveryFee || 0)}" ${paymentDraft.deliveryMode === 'rentop' ? '' : 'disabled'}></label>` : '';
     const reservationDefault = invoiceGroup.reduce((sum, item) => sum + Number(item.daily_rate || 0), 0);
+    const standardRentalAmount = invoiceGroup.reduce((sum, item) => sum + Math.round(Number(item.daily_rate || 0) * Number(item.rental_days || 0) * (100 - Number(item.discount_percent || 0)) / 100), 0);
+    const agreedRentalAmount = invoiceGroup.reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
+    const canSetAgreedPrice = ['draft','pending_review','awaiting_payment'].includes(order.status) && !hasActivePayment;
+    const agreedPriceAction = canSetAgreedPrice && isInvoiceGroupMaster
+      ? `<section class="manager-section manager-agreed-price"><h3>Индивидуальная цена аренды</h3><p>Стандартно по ставке: <b>${standardRentalAmount.toLocaleString('ru-RU')} сом</b>. Эта цена сохранится в заявке и станет основой для полного QR, брони и остатка.</p><div class="manager-payment-create"><label>Согласованная сумма за весь срок, сом<input data-agreed-rental-amount type="number" min="1" max="1000000" step="1" value="${agreedRentalAmount}"></label><label>Причина договорённости<input data-agreed-rental-note type="text" maxlength="500" placeholder="Например: месяц аренды по договорённости"></label><button class="secondary" data-save-agreed-rental-price="${order.id}">Сохранить цену</button></div></section>`
+      : '';
     const paymentAction = order.status === 'awaiting_payment' && !hasActivePayment
       ? (isInvoiceGroupMaster
         ? `<div class="manager-payment-create" data-payment-draft="${order.id}"><h4>Как принять оплату?</h4><p class="manager-action-note">Выберите один сценарий. Полный QR и QR предоплаты не создаются одновременно.</p>${invoiceGroup.length > 1 ? `<p class="manager-action-note">Один общий QR для ${invoiceGroup.length} ноутбуков: ${invoiceGroup.map(item => escape(item.laptop_title || 'Ноутбук')).join(' · ')}.</p>` : ''}<label>Аренда, сом<input data-payment-rental type="number" min="0" max="1000000" step="1" value="${paymentDraft.rentalAmount}"></label><label>Возвратный залог, сом<input data-payment-deposit type="number" min="0" max="1000000" step="1" value="${paymentDraft.depositAmount}"></label>${deliveryCharge}<small data-payment-summary>Полный QR: ${(paymentDraft.rentalAmount + paymentDraft.depositAmount + (paymentDraft.deliveryMode === 'rentop' ? paymentDraft.deliveryFee : 0)).toLocaleString('ru-RU')} сом.</small><button class="secondary" data-create-payment="${order.id}">Выставить полный QR-счёт сейчас</button><hr><strong>Или бронь на дату</strong><label>Предоплата для брони, сом<input data-reservation-amount type="number" min="1" max="${paymentDraft.rentalAmount}" step="1" value="${Math.min(paymentDraft.rentalAmount, reservationDefault || paymentDraft.rentalAmount)}"></label><small>После оплаты ноутбук закрепится за клиентом на выбранные даты. Остаток аренды и возвратный залог выставляются отдельным QR только перед выдачей.</small><button class="secondary" data-create-reservation-payment="${order.id}">Выставить QR предоплаты для брони</button></div>`
@@ -497,7 +503,7 @@ function render() {
     const directDocuments = pending ? (compactMobileQueue
       ? `<details class="manager-mobile-stage"><summary>Документы <small>${pending} на проверке</small></summary>${documentsPanel}</details>`
       : documentsPanel) : '';
-    const details = `${pending ? '' : documentsPanel}${offerEvidence}${customerNote}${registry}${paymentState}${lockerInstruction(order)}${assetTools}${benefitPanel}${loyaltyAction}${earlySettlement}${adminTools}${requestsPanel}`;
+    const details = `${pending ? '' : documentsPanel}${offerEvidence}${customerNote}${registry}${agreedPriceAction}${paymentState}${lockerInstruction(order)}${assetTools}${benefitPanel}${loyaltyAction}${earlySettlement}${adminTools}${requestsPanel}`;
     const acceptedReturnVideo = order.documents.some(document => document.kind === 'return_video' && document.status === 'accepted');
     const returnAcceptance = order.status === 'returned'
       ? (acceptedReturnVideo
@@ -749,6 +755,7 @@ ordersEl.addEventListener('click', async event => {
   const deleteTestOrder = event.target.closest('[data-delete-test-order]');
   const saveAsset = event.target.closest('[data-save-asset]');
   const saveRegistry = event.target.closest('[data-save-registry]');
+  const saveAgreedRentalPrice = event.target.closest('[data-save-agreed-rental-price]');
   const issuePromo = event.target.closest('[data-issue-promo]');
   const resolveSupport = event.target.closest('[data-resolve-support]');
   const replySupport = event.target.closest('[data-reply-support]');
@@ -757,8 +764,8 @@ ordersEl.addEventListener('click', async event => {
   const settleEarlyReturn = event.target.closest('[data-settle-early-return]');
   const archiveDraft = event.target.closest('[data-archive-draft]');
   const button = event.target.closest('[data-document], [data-order-action]');
-  if (!rejectAll && !createPayment && !createReservationPayment && !createBalancePayment && !createExtensionPayment && !approveFreeExtension && !confirmReturnCollected && !saveReturnHandoff && !confirmReplacementExchange && !rejectExtension && !revokePayment && !manualPayment && !prepareArcha && !recordArchaReservation && !markLockerLoaded && !markDeliveryDispatched && !sendDeliveryMessage && !archaSmsSent && !manualPickupCode && !manualReturnCode && !confirmCourierReturnDropoff && !prepareArchaReturn && !completeReturn && !adminClose && !cancelUnissuedOrder && !replacePrepaymentLaptop && !offerPrepaymentReplacement && !adminIncident && !adminResolveIncident && !adminOfferIncidentReplacement && !markTestOrder && !deleteTestOrder && !saveAsset && !saveRegistry && !issuePromo && !resolveSupport && !replySupport && !offerAlternativeSecurity && !decideAlternativeSecurity && !settleEarlyReturn && !archiveDraft && !button) return;
-  const target = rejectAll || createPayment || createReservationPayment || createBalancePayment || createExtensionPayment || approveFreeExtension || confirmReturnCollected || saveReturnHandoff || confirmReplacementExchange || rejectExtension || revokePayment || manualPayment || prepareArcha || recordArchaReservation || markLockerLoaded || markDeliveryDispatched || sendDeliveryMessage || archaSmsSent || manualPickupCode || manualReturnCode || confirmCourierReturnDropoff || prepareArchaReturn || completeReturn || adminClose || cancelUnissuedOrder || replacePrepaymentLaptop || offerPrepaymentReplacement || adminIncident || adminResolveIncident || adminOfferIncidentReplacement || markTestOrder || deleteTestOrder || saveAsset || saveRegistry || issuePromo || resolveSupport || replySupport || offerAlternativeSecurity || decideAlternativeSecurity || settleEarlyReturn || archiveDraft || button;
+  if (!rejectAll && !createPayment && !createReservationPayment && !createBalancePayment && !createExtensionPayment && !approveFreeExtension && !confirmReturnCollected && !saveReturnHandoff && !confirmReplacementExchange && !rejectExtension && !revokePayment && !manualPayment && !prepareArcha && !recordArchaReservation && !markLockerLoaded && !markDeliveryDispatched && !sendDeliveryMessage && !archaSmsSent && !manualPickupCode && !manualReturnCode && !confirmCourierReturnDropoff && !prepareArchaReturn && !completeReturn && !adminClose && !cancelUnissuedOrder && !replacePrepaymentLaptop && !offerPrepaymentReplacement && !adminIncident && !adminResolveIncident && !adminOfferIncidentReplacement && !markTestOrder && !deleteTestOrder && !saveAsset && !saveRegistry && !saveAgreedRentalPrice && !issuePromo && !resolveSupport && !replySupport && !offerAlternativeSecurity && !decideAlternativeSecurity && !settleEarlyReturn && !archiveDraft && !button) return;
+  const target = rejectAll || createPayment || createReservationPayment || createBalancePayment || createExtensionPayment || approveFreeExtension || confirmReturnCollected || saveReturnHandoff || confirmReplacementExchange || rejectExtension || revokePayment || manualPayment || prepareArcha || recordArchaReservation || markLockerLoaded || markDeliveryDispatched || sendDeliveryMessage || archaSmsSent || manualPickupCode || manualReturnCode || confirmCourierReturnDropoff || prepareArchaReturn || completeReturn || adminClose || cancelUnissuedOrder || replacePrepaymentLaptop || offerPrepaymentReplacement || adminIncident || adminResolveIncident || adminOfferIncidentReplacement || markTestOrder || deleteTestOrder || saveAsset || saveRegistry || saveAgreedRentalPrice || issuePromo || resolveSupport || replySupport || offerAlternativeSecurity || decideAlternativeSecurity || settleEarlyReturn || archiveDraft || button;
   if (target.disabled) return;
   const feedback = target.closest('.manager-order')?.querySelector('[data-order-feedback]');
   const showFeedback = (text, type = '') => { if (!feedback) return; feedback.textContent = text; feedback.className = `manager-order-feedback${type ? ` is-${type}` : ''}`; feedback.hidden = !text; };
@@ -769,6 +776,15 @@ ordersEl.addEventListener('click', async event => {
     if (!note?.trim()) return;
     payload = { action:'reject_all_documents', orderId:rejectAll.dataset.rejectAll, note:note.trim() };
     successMessage = 'Документы отклонены, причина отправлена клиенту.';
+  } else if (saveAgreedRentalPrice) {
+    const card = saveAgreedRentalPrice.closest('.manager-order');
+    const agreedAmount = Number(card?.querySelector('[data-agreed-rental-amount]')?.value);
+    const note = card?.querySelector('[data-agreed-rental-note]')?.value?.trim() || '';
+    if (!Number.isFinite(agreedAmount) || agreedAmount <= 0) { showFeedback('Укажите согласованную сумму аренды.', 'error'); return; }
+    if (note.length < 3) { showFeedback('Укажите короткую причину договорённости по цене.', 'error'); return; }
+    if (!window.confirm(`Сохранить согласованную цену аренды ${agreedAmount.toLocaleString('ru-RU')} сом? Эту сумму будут использовать полный QR, бронь и доплата.`)) return;
+    payload = { action:'set_agreed_rental_price', orderId:saveAgreedRentalPrice.dataset.saveAgreedRentalPrice, agreedAmount, note };
+    successMessage = 'Согласованная цена сохранена в заявке.';
   } else if (offerAlternativeSecurity) {
     const card = offerAlternativeSecurity.closest('.manager-order');
     const requirements = [...(card?.querySelectorAll('[data-alternative-security-requirement]:checked') || [])].map(item => item.value);
@@ -1045,6 +1061,7 @@ ordersEl.addEventListener('click', async event => {
     if (payload.action === 'delete_test_order') { orders = orders.filter(order => order.id !== payload.orderId); if (String(selectedOrderId) === String(payload.orderId)) selectedOrderId = ''; }
     if (payload.action === 'admin_update_laptop_asset') { orders.forEach(order => { if (order.laptop_id === payload.laptopId) { order.laptop_serial_number = result.laptop?.serial_number || ''; order.laptop_inventory_code = result.laptop?.inventory_code || ''; } }); }
     if (payload.action === 'save_order_registry') { const order = orders.find(item => item.id === payload.orderId); if (order && result.order) Object.assign(order, result.order); }
+    if (payload.action === 'set_agreed_rental_price') { const order = orders.find(item => item.id === payload.orderId); if (order && result.order) Object.assign(order, result.order); }
     if (payload.action === 'resolve_support_case') { const order = orders.find(item => item.id === payload.orderId); if (order) order.supportCases = (order.supportCases || []).map(item => item.kind === payload.kind ? { ...item, status:'resolved' } : item); }
     if (payload.action === 'reply_support_case') { const order = orders.find(item => item.id === payload.orderId); if (order && result.supportCase) order.supportCases = (order.supportCases || []).map(item => item.kind === payload.kind ? { ...item, ...result.supportCase } : item); }
     if (['prepare_archa_handoff','record_archa_reservation','mark_locker_loaded','mark_delivery_dispatched','send_manual_pickup_code','send_manual_return_code','confirm_archa_courier_return_dropoff'].includes(payload.action)) { const order = orders.find(item => item.id === payload.orderId); if (order && result.order) Object.assign(order, result.order); }
@@ -1059,7 +1076,7 @@ ordersEl.addEventListener('click', async event => {
     // Payment readiness depends on the server-side document and ID registry
     // checks. Reload them immediately so the action cannot be shown from a
     // stale local card after the manager just accepted a file or saved ID data.
-    if (['review_document', 'save_order_registry'].includes(payload.action)) { await load(true); statusEl.textContent = successMessage; }
+    if (['review_document', 'save_order_registry', 'set_agreed_rental_price'].includes(payload.action)) { await load(true); statusEl.textContent = successMessage; }
     else { render(); window.setTimeout(load, 900); }
   } catch (error) { statusEl.textContent = error.message; showFeedback(error.message, 'error'); target.disabled = false; target.textContent = original; }
 });
