@@ -122,7 +122,11 @@ export default async function handler(request, response) {
   const hydrate = async (phone) => {
     // The cabinet opens current work plus recent history. A bounded history
     // avoids multiplying six data reads for every old test application.
-    const orders = await database.listOrdersByCustomerPhone(phone, 12);
+    const storedOrders = await database.listOrdersByCustomerPhone(phone, 12);
+    // Opening the cabinet is itself enough to repair an unpaid past period.
+    // The customer must never see or pay an impossible date just because they
+    // returned to an unfinished application several days later.
+    const orders = await Promise.all(storedOrders.map(order => refreshExpiredDraftSchedule(order).catch(() => order)));
     // Do not sign every historic image/video while opening the account. On a
     // phone that becomes dozens of Storage requests; a link is created only
     // after the customer explicitly opens one file.

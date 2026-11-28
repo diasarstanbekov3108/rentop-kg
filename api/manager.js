@@ -36,6 +36,32 @@ function discountForTerm(days, hasApprovedBenefit = false) {
   const tariff = Number(days) >= 15 ? 30 : Number(days) >= 7 ? 15 : 0;
   return Math.min(40, tariff + (hasApprovedBenefit ? 10 : 0));
 }
+function bishkekDate() { return new Intl.DateTimeFormat('en-CA', { timeZone:TIME_ZONE, year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date()); }
+function addCalendarDays(dateValue, days) { const date = new Date(`${dateValue}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + Number(days || 0)); return date.toISOString().slice(0, 10); }
+async function rescheduleExpiredUnpaidOrder(database, order) {
+  if (!['draft','pending_review'].includes(String(order?.status || '')) || !order?.rental_start_date || String(order.rental_start_date) >= bishkekDate()) return { order, rescheduled:false };
+  const grouped = order.order_group_id ? await database.listOrdersByGroupId(order.order_group_id) : [order];
+  const orders = grouped.length ? grouped : [order];
+  const payments = (await Promise.all(orders.map(item => database.listOrderPayments(item.id).catch(() => [])))).flat();
+  if (payments.some(payment => ['awaiting_payment','paid','confirmed'].includes(String(payment.status || '')))) return { order, rescheduled:false };
+  let startDate = addCalendarDays(bishkekDate(), 1);
+  let endDates = [];
+  for (let attempt = 0; attempt < 90; attempt += 1) {
+    endDates = orders.map(item => addCalendarDays(startDate, Math.max(1, Number(item.rental_days || 0))));
+    const conflicts = await Promise.all(orders.map((item, index) => database.findOverlappingBlockingOrder(item.id, item.laptop_id, startDate, endDates[index])));
+    if (!conflicts.some(Boolean)) {
+      const updatedRows = await Promise.all(orders.map(async (item, index) => {
+        const updated = await database.updateOrder(item.id, { rental_start_date:startDate, rental_end_date:endDates[index], draft_archived_at:null, draft_archived_by:null });
+        await database.createEvent({ order_id:item.id, event_type:'manager_rescheduled_expired_unpaid_order_from_web', actor_type:'system', metadata:{ previous_start_date:item.rental_start_date, previous_end_date:item.rental_end_date, rental_start_date:startDate, rental_end_date:endDates[index] } });
+        return updated;
+      }));
+      return { order:updatedRows.find(item => String(item?.id) === String(order.id)) || order, rescheduled:true };
+    }
+    startDate = addCalendarDays(startDate, 1);
+    endDates = [];
+  }
+  return { order, rescheduled:false, unavailable:true };
+}
 function catalogText(value, maxLength) { return String(value || '').trim().replace(/\s+/g, ' ').slice(0, maxLength); }
 function catalogPayload(payload) {
   const category = String(payload.category || 'rent');
@@ -600,11 +626,14 @@ export default async function handler(request, response) {
       return reply(response, 200, { ok:true, message:'Токен Bakai сохранён. Для проверки доступа создайте тестовый QR на 1 сом.' });
     }
     if (payload.action === 'advance_order') {
-      const order = await database.getOrder(String(payload.orderId || ''));
+      let order = await database.getOrder(String(payload.orderId || ''));
       const nextStatus = String(payload.nextStatus || '');
       if (!order) return reply(response, 404, { error:'Заявка не найдена.' });
       if (!statusTransitions[order.status]?.includes(nextStatus)) return reply(response, 409, { error:'Этот переход недоступен для текущего статуса заявки.' });
       if (nextStatus === 'awaiting_payment') {
+        const schedule = await rescheduleExpiredUnpaidOrder(database, order);
+        if (schedule.unavailable) return reply(response, 409, { error:'Не удалось найти свободные даты для этой просроченной заявки в ближайшие 90 дней. Предложите клиенту другую модель или создайте новую заявку.' });
+        order = schedule.order;
         const documents = await database.listOrderDocuments(order.id);
         const latest = new Map();
         for (const item of documents) if (!latest.has(item.kind)) latest.set(item.kind, item);
